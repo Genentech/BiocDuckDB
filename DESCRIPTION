@@ -1,0 +1,77 @@
+Package: BiocDuckDB
+Version: 0.9.0
+Date: 2026-01-21
+Title: Bioconductor DuckDB Integration and High-Level I/O
+Description:
+    Integration package providing high-level Parquet I/O functions and optimized
+    methods for single-cell analysis workflows using DuckDB-backed data structures.
+    Includes readParquet() and writeParquet() for seamless serialization of
+    SummarizedExperiment, SingleCellExperiment, and MultiAssayExperiment objects,
+    plus SQL-optimized implementations of scran and scuttle methods for variance
+    modeling, marker detection, QC metrics, and normalization. This package brings
+    together DuckDBDataFrame, DuckDBArray, and DuckDBGRanges for complete
+    Bioconductor integration.
+Authors@R:
+    c(
+        person("Patrick", "Aboyoun", role=c("aut", "cre"), email="aboyounp@gene.com"),
+        person("Genentech, Inc.", role="cph")
+    )
+License: MIT + file LICENSE
+Depends:
+    R (>= 4.3.0),
+    methods,
+    DuckDBDataFrame,
+    DuckDBArray,
+    DuckDBGRanges
+Imports:
+    BiocGenerics,
+    BiocParallel,
+    S4Vectors,
+    IRanges,
+    GenomicRanges,
+    S4Arrays,
+    SparseArray,
+    DelayedArray,
+    MatrixGenerics,
+    SummarizedExperiment,
+    SingleCellExperiment,
+    MultiAssayExperiment,
+    metapod,
+    scran,
+    scuttle,
+    DBI,
+    dplyr,
+    dbplyr,
+    duckdb,
+    arrow,
+    jsonlite
+Suggests:
+    knitr,
+    rmarkdown,
+    BiocStyle,
+    testthat,
+    ExperimentHub,
+    HDF5Array,
+    RSpectra,
+    scater,
+    scrapper,
+    TileDBArray,
+    airway,
+    scRNAseq,
+    matrixStats
+biocViews:
+    DataImport,
+    DataRepresentation,
+    Infrastructure,
+    RNASeq,
+    Sequencing,
+    SingleCell,
+    Software
+VignetteBuilder: knitr
+RoxygenNote: 7.3.3
+Encoding: UTF-8
+Collate:
+    'readParquet.R'
+    'writeParquet.R'
+    'DuckDBMatrix-scuttle.R'
+    'DuckDBMatrix-scran.R'
