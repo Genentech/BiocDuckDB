@@ -1753,7 +1753,6 @@ function(x, groups, test.type = c("t", "wilcox", "binom"), ...,
 })
 
 #' @importClassesFrom S4Vectors DataFrame
-#' @importFrom BiocGenerics cbind
 .add_row_data_DuckDBMatrix <- function(output, row.data, match.names)
 {
     if (is.null(row.data)) {
@@ -1867,7 +1866,6 @@ function(x, size.factors = NULL, block = NULL, design = NULL, subset.row = NULL,
     output
 })
 
-#' @importFrom BiocGenerics var
 #' @importFrom stats rpois rnbinom
 .generate_poisson_values_DuckDBMatrix <-
 function(x.means, size.factors, block, npts, dispersion, pseudo.count)
@@ -2759,7 +2757,6 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     DataFrame(result)
 })
 
-#' @importFrom BiocGenerics as.data.frame
 #' @importFrom dplyr collect group_by summarize
 #' @importFrom DuckDBDataFrame tblconn
 .compute_row_stats_for_cor <- function(table, row_key, datacol)
@@ -2783,7 +2780,6 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     as.data.frame(result)
 }
 
-#' @importFrom BiocGenerics as.data.frame
 #' @importFrom dplyr collect group_by summarize sql
 #' @importFrom DuckDBDataFrame tblconn
 .compute_pair_products <- function(table, row_key, col_key, datacol,

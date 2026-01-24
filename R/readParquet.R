@@ -133,7 +133,7 @@
 #' }
 #'
 #' @export
-#' @import methods
+#' @import methods BiocGenerics
 #' @importFrom jsonlite read_json
 #' @rdname readParquet
 readParquet <-
@@ -334,7 +334,6 @@ function(path,
 ### SummarizedExperiment objects
 ###
 
-#' @importFrom BiocGenerics as.data.frame
 #' @importFrom DuckDBDataFrame DuckDBDataFrame
 #' @importFrom jsonlite read_json
 #' @importFrom IRanges DataFrameList
@@ -482,7 +481,6 @@ function(path,
 ### MultiAssayExperiment objects
 ###
 
-#' @importFrom BiocGenerics as.data.frame as.list
 #' @importFrom jsonlite read_json
 #' @importFrom MultiAssayExperiment MultiAssayExperiment
 #' @importFrom stats setNames
