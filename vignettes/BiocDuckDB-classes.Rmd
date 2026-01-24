@@ -1,0 +1,502 @@
+---
+title: "Constructing Experiment Objects with BiocDuckDB"
+author:
+- name: Patrick Aboyoun
+  email: aboyounp@gene.com
+  affiliation: Genentech, Inc.
+date: "Compiled: `r format(Sys.time(), '%B %d, %Y')`"
+package: BiocDuckDB
+vignette: >
+  %\VignetteIndexEntry{Constructing Experiment Objects with BiocDuckDB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, echo=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+```
+
+# Introduction
+
+The `r Biocpkg("BiocDuckDB")` package enables analysis of genomic datasets too large for memory by storing data in Parquet format and querying via DuckDB's optimized SQL engine. This vignette demonstrates how to work with DuckDB-backed versions of Bioconductor's core experiment containers: *SummarizedExperiment*, *RangedSummarizedExperiment*, and *SingleCellExperiment*.
+
+## The Challenge
+
+Modern genomic experiments routinely generate datasets that exceed available RAM:
+
+- **Single-cell RNA-seq**: 30,000 genes × 1,000,000 cells (sparse)
+- **Spatial transcriptomics**: 10,000 genes × 100,000 spots (dense)
+- **Multi-omics**: Multiple assays across thousands of samples
+
+Traditional approaches require subsetting data or specialized file formats. BiocDuckDB offers an alternative: keep data on disk while maintaining the familiar Bioconductor API.
+
+## The Solution
+
+BiocDuckDB provides two key functions:
+
+- `writeParquet()`: Serialize Bioconductor objects to Parquet format
+- `readParquet()`: Read Parquet files as DuckDB-backed Bioconductor objects
+
+The resulting objects behave identically to their in-memory counterparts, but operations are executed via SQL queries on disk-based data.
+
+```{r load-packages}
+library(BiocDuckDB)
+library(SummarizedExperiment)
+library(SingleCellExperiment)
+```
+
+
+# SummarizedExperiment Workflow
+
+## Basic Round-Trip
+
+The simplest workflow writes an object to Parquet and reads it back:
+
+```{r se-roundtrip}
+# Load example RNA-seq data
+data(airway, package = "airway")
+airway
+
+# Write to Parquet
+se_path <- file.path(tempdir(), "airway_se")
+writeParquet(airway, se_path)
+
+# Read back as DuckDB-backed
+airway_ddb <- readParquet(se_path)
+airway_ddb
+```
+
+The DuckDB-backed object keeps data on disk, dramatically reducing memory usage.
+
+## Understanding the Storage Layout
+
+`writeParquet()` creates a structured directory with components stored separately:
+
+```{r se-structure}
+list.files(se_path, recursive = TRUE)
+```
+
+The layout follows the Frictionless Data Package specification:
+
+- `feature_data/`: Gene annotations (rowData)
+- `sample_data/`: Sample metadata (colData)
+- `assay_data/counts/`: Count matrix in coordinate format
+- `datapackage.json`: Metadata describing the schema
+
+## Storage Format: Coordinate Representation
+
+Matrices are stored in **coordinate (COO) format** rather than dense arrays:
+
+```{r coo-format}
+# Peek at the assay storage
+assay_files <- list.files(file.path(se_path, "assay_data", "counts"), 
+                          full.names = TRUE, pattern = "\\.parquet$",
+                          recursive = TRUE)
+if (length(assay_files) > 0) {
+    assay_sample <- arrow::read_parquet(assay_files[1])
+    head(assay_sample)
+}
+```
+
+Each row contains:
+- `__feature__`: Gene index (1-based)
+- `__sample__`: Sample index (1-based)
+- `value`: The actual count
+
+Dimnames are stored as metadata categories, mapping indices to labels. This sparse representation is ideal for single-cell data where most values are zero.
+
+## Operations on DuckDB-Backed Objects
+
+The DuckDB-backed *SummarizedExperiment* supports all standard operations:
+
+```{r se-operations}
+# Access components
+assay(airway_ddb, "counts")
+colData(airway_ddb)
+rowData(airway_ddb)[1:5, ]
+
+# Subsetting
+airway_sub <- airway_ddb[1:1000, 1:4]
+dim(assay(airway_sub, "counts"))
+
+# Statistical operations (pushed to SQL)
+colSums(assay(airway_sub, "counts"))
+rowMeans(assay(airway_ddb, "counts"))[1:10]
+```
+
+## Memory Comparison
+
+```{r memory-comparison}
+# In-memory object
+print(object.size(airway), units = "MB")
+
+# DuckDB-backed object (only metadata in RAM)
+print(object.size(airway_ddb), units = "MB")
+
+# Reduction factor
+as.numeric(object.size(airway) / object.size(airway_ddb))
+```
+
+
+# RangedSummarizedExperiment with Genomic Coordinates
+
+## Preserving Genomic Annotations
+
+The airway dataset includes genomic coordinates for each gene:
+
+```{r rse-coords}
+# Check object class
+class(airway)
+class(airway_ddb)
+
+# Genes are annotated with exon coordinates
+rowRanges(airway)[[1]]
+```
+
+`writeParquet()` automatically converts *GRangesList* objects to Parquet LIST[] columns, preserving all genomic information.
+
+## Genomic Operations
+
+The DuckDB-backed version supports standard *GRanges* operations:
+
+```{r rse-operations}
+# Access row ranges (returns DuckDBGRangesList)
+rr_ddb <- rowRanges(airway_ddb)
+rr_ddb
+
+# Query genomic features
+elementNROWS(rr_ddb)[1:10]  # Exons per gene
+seqinfo(airway_ddb)         # Chromosome information
+
+# Subsetting preserves structure
+airway_chr1 <- airway_ddb[1:100, ]
+airway_chr1
+```
+
+
+# SingleCellExperiment for Large-Scale Single-Cell Data
+
+## Motivation
+
+Single-cell experiments are where BiocDuckDB shines. A typical 10x Genomics experiment with 1 million cells:
+
+- **In memory**: ~30 GB (sparse matrix + metadata)
+- **Parquet storage**: ~3 GB (10x compression)
+- **DuckDB-backed RAM**: ~50 MB (metadata only)
+
+## Configuration for Large Sparse Matrices
+
+Configure block processing before writing large datasets:
+
+```{r sce-config}
+library(DelayedArray)
+library(scRNAseq)
+
+# Process data in 1 GB blocks
+setAutoBlockSize(size = 1e9)
+setAutoBlockShape("scale")
+```
+
+## Round-Trip Example
+
+```{r sce-roundtrip}
+# Load brain single-cell data (subset for demonstration)
+sce <- ZeiselBrainData()
+sce <- sce[1:2000, 1:1000]
+sce
+
+# Write to Parquet (handles sparse matrix efficiently)
+sce_path <- file.path(tempdir(), "zeisel_sce")
+writeParquet(sce, sce_path)
+
+# Read back as DuckDB-backed
+sce_ddb <- readParquet(sce_path)
+sce_ddb
+```
+
+## Storage Efficiency
+
+```{r sce-efficiency}
+# In-memory size
+sce_mem <- object.size(sce) / 1024^2
+cat(sprintf("In-memory: %.2f MB\n", sce_mem))
+
+# On-disk size
+sce_disk <- sum(file.info(
+    list.files(sce_path, full.names = TRUE, recursive = TRUE)
+)$size) / 1024^2
+cat(sprintf("Parquet: %.2f MB\n", sce_disk))
+
+# DuckDB-backed RAM
+sce_ddb_mem <- object.size(sce_ddb) / 1024^2
+cat(sprintf("DuckDB-backed: %.2f MB\n\n", sce_ddb_mem))
+
+# Compression and memory reduction
+cat(sprintf("Disk compression: %.1fx\n", sce_mem / sce_disk))
+cat(sprintf("Memory reduction: %.1fx\n", sce_mem / sce_ddb_mem))
+```
+
+## Single-Cell Analysis Operations
+
+All standard operations work on DuckDB-backed objects:
+
+```{r sce-operations}
+# Access metadata
+colData(sce_ddb)[1:5, 1:5]
+
+# QC filtering (SQL-optimized)
+high_quality <- sce_ddb[, colData(sce_ddb)$total_counts > 5000]
+cat(sprintf("Retained %d / %d cells\n", ncol(high_quality), ncol(sce_ddb)))
+
+# Feature selection
+gene_means <- rowMeans(assay(sce_ddb, "counts"))
+hvg <- sce_ddb[gene_means > 1, ]
+cat(sprintf("Selected %d / %d genes\n", nrow(hvg), nrow(sce_ddb)))
+
+# Statistical summaries (pushed to SQL)
+total_counts <- colSums(assay(sce_ddb, "counts"))
+summary(total_counts)
+```
+
+
+# Recommended Analysis Workflow
+
+## The Filter-Realize-Analyze Pattern
+
+For datasets too large for memory, follow this pattern:
+
+1. **Write** raw data to Parquet
+2. **Load** as DuckDB-backed
+3. **Filter** using SQL-optimized operations
+4. **Realize** the filtered subset to memory
+5. **Analyze** using standard Bioconductor tools
+6. **Write** results back to Parquet
+
+```{r workflow-example, eval=FALSE}
+library(scuttle)
+library(scran)
+library(scater)
+
+# 1-2. Write and load large dataset
+writeParquet(large_sce, "data/raw_counts")
+sce_ddb <- readParquet("data/raw_counts")
+
+# 3. Filter efficiently on disk (SQL-optimized)
+qc_metrics <- colData(sce_ddb)
+keep_cells <- qc_metrics$sum > 1000 & 
+              qc_metrics$detected > 500 &
+              qc_metrics$subsets_Mito_percent < 5
+sce_filtered <- sce_ddb[, keep_cells]
+
+# Keep only genes expressed in ≥10 cells
+gene_detection <- rowSums(assay(sce_filtered, "counts") > 0)
+sce_filtered <- sce_filtered[gene_detection >= 10, ]
+
+# 4. Realize filtered subset (now manageable in memory)
+sce_clean <- as(sce_filtered, "SingleCellExperiment")
+
+# 5. Standard analysis pipeline
+sce_clean <- logNormCounts(sce_clean)
+dec <- modelGeneVar(sce_clean)
+hvg <- getTopHVGs(dec, n = 2000)
+sce_clean <- runPCA(sce_clean[hvg, ], ncomponents = 50)
+sce_clean <- runUMAP(sce_clean, dimred = "PCA")
+
+# 6. Save processed results
+writeParquet(sce_clean, "data/processed_counts")
+```
+
+This pattern enables analysis of datasets 10-100x larger than available RAM.
+
+## When to Use DuckDB-Backed Objects
+
+**Ideal for**:
+
+- Initial data exploration and QC
+- Filtering and subsetting large datasets
+- Computing summary statistics
+- Storage and distribution
+- Datasets that don't fit in memory
+
+**Not ideal for**:
+
+- Iterative algorithms with random access patterns
+- Dense matrix operations (better to realize subset first)
+- Small datasets (<1 GB) that fit comfortably in memory
+
+## Performance Optimization
+
+```{r optimization-demo}
+# Efficient: Filter first, then realize
+high_expr <- rowMeans(assay(sce_ddb, "counts")) > 1
+sce_subset <- sce_ddb[high_expr, ]
+sce_mem <- as(sce_subset, "SingleCellExperiment")
+
+cat(sprintf("Filtered: %d → %d genes\n", nrow(sce_ddb), nrow(sce_subset)))
+cat(sprintf("Memory footprint: %.2f MB\n", 
+            object.size(sce_mem) / 1024^2))
+```
+
+
+# Multi-Omics with MultiAssayExperiment
+
+For multi-omics experiments, store each modality separately:
+
+```{r mae-workflow, eval=FALSE}
+library(MultiAssayExperiment)
+
+# Write each modality to its own directory
+mae_path <- file.path(tempdir(), "multiomics")
+writeParquet(rna_sce, file.path(mae_path, "rna"))
+writeParquet(protein_se, file.path(mae_path, "protein"))
+writeParquet(atac_sce, file.path(mae_path, "atac"))
+
+# Read back as DuckDB-backed experiments
+experiments <- list(
+    rna = readParquet(file.path(mae_path, "rna")),
+    protein = readParquet(file.path(mae_path, "protein")),
+    atac = readParquet(file.path(mae_path, "atac"))
+)
+
+# Construct MultiAssayExperiment
+mae <- MultiAssayExperiment(
+    experiments = experiments,
+    colData = shared_sample_data
+)
+```
+
+Each modality stays on disk until accessed, enabling memory-efficient multi-omics analysis.
+
+
+# Advanced Features
+
+## Custom Index Column Names
+
+Specify meaningful column names for better interpretability:
+
+```{r custom-cols, eval=FALSE}
+writeParquet(sce, output_path, 
+             indexcols = c("gene_id", "cell_barcode"))
+```
+
+## Partition Pruning with Dimension Tables
+
+For very large datasets, dimension tables enable efficient filtering:
+
+```{r dimtables, eval=FALSE}
+# writeParquet automatically creates dimension tables
+# These enable partition pruning in DuckDB queries
+counts <- assay(large_sce, "counts")
+dimtbls <- createDimTables(counts)  # Encodes data structure
+
+writeParquet(large_sce, output_path)  # Uses dimtbls internally
+```
+
+## Block Processing
+
+Configure block processing for matrices too large to realize at once:
+
+```{r block-config, eval=FALSE}
+# Process in 1 GB chunks
+setAutoBlockSize(1e9)
+setAutoBlockShape("scale")
+
+writeParquet(very_large_sce, output_path)
+
+# Operations use block processing automatically
+col_totals <- colSums(assay(sce_ddb, "counts"))
+```
+
+
+# Format Comparison: Parquet vs RDS
+
+Parquet offers several advantages over traditional RDS serialization:
+
+```{r format-comparison}
+# Compare storage formats
+rds_file <- tempfile(fileext = ".rds")
+saveRDS(airway, rds_file)
+
+comparison <- data.frame(
+    Format = c("RDS", "Parquet"),
+    Size_MB = c(
+        file.info(rds_file)$size / 1024^2,
+        sum(file.info(list.files(se_path, full.names = TRUE, 
+                                  recursive = TRUE))$size) / 1024^2
+    )
+)
+comparison$Compression <- with(comparison, 
+                                Size_MB[1] / Size_MB)
+comparison
+```
+
+**Parquet advantages**:
+
+- **Columnar compression**: 3-10x smaller for sparse data
+- **Cross-language**: Readable by Python, Julia, JavaScript
+- **Selective loading**: Access specific columns without loading entire file
+- **Schema metadata**: Self-describing format
+- **Query optimization**: DuckDB can push filters to Parquet metadata
+
+**RDS advantages**:
+
+- **Simplicity**: Single function call
+- **Exact serialization**: Preserves all R object attributes
+- **Random access**: Better for dense data with complex access patterns
+
+
+# Best Practices
+
+## Data Provenance
+
+Store metadata about data processing:
+
+```{r provenance}
+metadata(airway)$creation_date <- Sys.time()
+metadata(airway)$genome_build <- "GRCh38"
+metadata(airway)$processing_notes <- "Filtered for genes with mean count > 10"
+metadata(airway)$package_version <- packageVersion("BiocDuckDB")
+
+# Metadata is preserved in Parquet files
+writeParquet(airway, file.path(tempdir(), "annotated_airway"))
+```
+
+## Recommended Directory Structure
+
+Organize large projects systematically:
+
+```
+project/
+├── data/
+│   ├── raw/              # Original data (writeParquet)
+│   ├── qc/               # After QC filtering
+│   ├── normalized/       # Normalized data
+│   └── processed/        # Final analysis results
+├── metadata/
+│   └── sample_info.csv   # Sample metadata
+└── results/
+    └── analysis.Rmd      # Analysis notebooks
+```
+
+## Version Control
+
+Track data versions using directory names:
+
+```{r versioning, eval=FALSE}
+# Include date or version in path
+writeParquet(sce, sprintf("data/experiment_v%s_%s", 
+                          version, Sys.Date()))
+```
+
+
+# Session Information
+
+```{r sessioninfo}
+sessionInfo()
+```

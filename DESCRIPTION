@@ -1,6 +1,6 @@
 Package: BiocDuckDB
 Version: 0.9.0
-Date: 2026-01-21
+Date: 2026-01-23
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -52,13 +52,9 @@ Suggests:
     testthat,
     ExperimentHub,
     HDF5Array,
-    RSpectra,
     scater,
-    scrapper,
-    TileDBArray,
     airway,
-    scRNAseq,
-    matrixStats
+    scRNAseq
 biocViews:
     DataImport,
     DataRepresentation,
