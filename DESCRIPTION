@@ -1,6 +1,6 @@
 Package: BiocDuckDB
 Version: 0.9.0
-Date: 2026-01-23
+Date: 2026-01-25
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -67,7 +67,8 @@ VignetteBuilder: knitr
 RoxygenNote: 7.3.3
 Encoding: UTF-8
 Collate:
+    'DuckDBMatrix-scran.R'
+    'DuckDBMatrix-scuttle.R'
+    'fieldtypes.R'
     'readParquet.R'
     'writeParquet.R'
-    'DuckDBMatrix-scuttle.R'
-    'DuckDBMatrix-scran.R'

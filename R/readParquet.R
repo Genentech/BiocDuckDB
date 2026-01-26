@@ -132,6 +132,8 @@
 #'   \item \code{\linkS4class{DuckDBGRangesList}} for grouped genomic ranges
 #' }
 #'
+#' @include fieldtypes.R
+#'
 #' @export
 #' @import methods BiocGenerics
 #' @importFrom jsonlite read_json
