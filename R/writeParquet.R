@@ -154,6 +154,8 @@
 #' dimtbls <- createDimTables(state.x77, grid = state_grid)
 #' list.files(tf3, full.names = TRUE, recursive = TRUE)
 #'
+#' @include fieldtypes.R
+#'
 #' @keywords IO
 #'
 #' @export
@@ -277,7 +279,7 @@ function(x,
 ###
 
 #' @export
-#' @importFrom arrow write_dataset
+#' @importFrom arrow Array write_dataset
 #' @importFrom stats setNames
 #' @rdname writeParquet
 setMethod("writeParquet", "data.frame",
@@ -303,23 +305,29 @@ function(x,
         key <- setNames(list(rnms), keycol)
     }
 
+    # Protect the list columns from being coerced to atomic vectors
     for (j in seq_along(x)) {
         if (is.list(x[[j]])) {
             x[[j]] <- I(x[[j]])
         }
     }
+
+    # Combine the columns into a single data.frame
     x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
     colnames(x) <- make.unique(colnames(x), sep = "_")
+
+    # Optimize integer column storage
+    for (j in seq_along(x)) {
+        if (is.integer(x[[j]]) && length(x[[j]]) > 0L) {
+            x[[j]] <- Array$create(x[[j]], type = .arrowType(x[[j]]))
+        }
+    }
+
     write_dataset(x, path, format = "parquet", compression = "zstd",
                   compression_level = 3L, ...)
 
     schema <- list(fields = lapply(colnames(x), function(j) {
-                      if (is.factor(x[[j]])) {
-                          list(name = j, type = "string",
-                               categories = I(levels(x[[j]])))
-                      } else {
-                          list(name = j)
-                      }
+                       .buildFieldSpec(name = j, x = x[[j]])
                    }))
 
     # sortOrder represents physical organization (row index)
@@ -424,14 +432,8 @@ function(x,
     # Add domain-specific metadata to schema
     schema <- resources[[length(resources)]][["schema"]]
 
-    # Add genomicCoords declaration
-    schema[["genomicCoords"]] <- list(
-        seqname = "seqnames",
-        start = "start",
-        end = "end",
-        width = "width",
-        strand = "strand"
-    )
+    # Add genomic metadata and constraints
+    schema <- .addGenomicMetadata(schema)
 
     resources[[length(resources)]][["schema"]] <- schema
 
@@ -490,14 +492,8 @@ function(x,
     schema <- resources[[length(resources)]][["schema"]]
     rnms <- sapply(schema[["fields"]], `[[`, "name")
 
-    # Add genomicCoords declaration
-    schema[["genomicCoords"]] <- list(
-        seqname = "seqnames",
-        start = "start",
-        end = "end",
-        width = "width",
-        strand = "strand"
-    )
+    # Add genomic metadata and constraints
+    schema <- .addGenomicMetadata(schema)
 
     resources[[length(resources)]][["schema"]] <- schema
 
