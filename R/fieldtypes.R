@@ -175,8 +175,7 @@ function(field, role = NULL, min_value = NULL, max_value = NULL,
     if (!is.null(role)) {
         constraints <- switch(role,
             "start" = ,
-            "end" = ,
-            "width" = list(required = TRUE, minimum = 1L),
+            "end" = list(required = TRUE, minimum = 1L),
             "strand" = list(required = TRUE, enum = c("+", "-", "*")),
             "seqname" = list(required = TRUE),
             "percent" = list(minimum = 0, maximum = 100),
@@ -227,14 +226,14 @@ function(name, x, arrow_type = NULL, description = NULL, role = NULL, ...) {
 ### Schema Enhancement Helpers
 ###
 
-.addGenomicMetadata <- function(schema, seqname = "seqnames", start = "start",
-                                end = "end", width = "width", strand = "strand")
+.addGenomicMetadata <-
+function(schema, seqname = "seqnames", start = "start", end = "end",
+         strand = "strand")
 {
     schema[["genomicCoords"]] <- list(
         seqname = seqname,
         start = start,
         end = end,
-        width = width,
         strand = strand
     )
 
@@ -242,7 +241,6 @@ function(name, x, arrow_type = NULL, description = NULL, role = NULL, ...) {
         seqname = "seqname",
         start = "start",
         end = "end",
-        width = "width",
         strand = "strand"
     )
 

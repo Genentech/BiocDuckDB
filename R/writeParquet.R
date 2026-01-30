@@ -425,6 +425,8 @@ function(x,
          ...)
 {
     # Write Data Table
+    df <- as.data.frame(x, optional = TRUE)
+    df[["width"]] <- NULL
     resources <- callGeneric(as.data.frame(x, optional = TRUE), path = path,
                              indexcol = indexcol, keycol = keycol,
                              dimtbl = dimtbl, name = name, class = class, ...)
@@ -447,7 +449,7 @@ function(x,
 #' @export
 #' @importClassesFrom GenomicRanges GenomicRangesList
 #' @importClassesFrom IRanges CharacterList
-#' @importFrom GenomicRanges seqnames start end width strand
+#' @importFrom GenomicRanges seqnames start end strand
 #' @importFrom S4Vectors DataFrame mcols
 #' @rdname writeParquet
 setMethod("writeParquet", "GenomicRangesList",
@@ -462,7 +464,7 @@ function(x,
 {
     # Convert GenomicRangesList to DataFrame with AtomicList columns
     df <- DataFrame(seqnames = as(seqnames(x), "CharacterList"),
-                    start = start(x), end = end(x), width = width(x),
+                    start = start(x), end = end(x),
                     strand = as(strand(x), "CharacterList"))
     rownames(df) <- names(x)
 
