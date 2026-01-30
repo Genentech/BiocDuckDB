@@ -599,26 +599,26 @@ function(x,
         features <- rowData(x)
     }
     resources <-
-        callGeneric(features, path = file.path(path, "feature_data"),
+        callGeneric(features, path = file.path(path, "features"),
                     indexcol = indexcols[1L], dimtbl = dimtbls[[1L]], ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Sample Data
     resources <-
-        callGeneric(colData(x), path = file.path(path, "sample_data"),
+        callGeneric(colData(x), path = file.path(path, "samples"),
                     indexcol = indexcols[2L], dimtbl = dimtbls[[2L]], ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Assay Data
-    resources <- list(list(name = "assay_data",
-                           path = "assay_data",
+    resources <- list(list(name = "assays",
+                           path = "assays",
                            class = "data_package"))
     indexrefs <- list(list(fields = indexcols[1L],
                            reference = list(fields = indexcols[1L],
-                                            resource = "../feature_data")),
+                                            resource = "../features")),
                       list(fields = indexcols[2L],
                            reference = list(fields = indexcols[2L],
-                                            resource = "../sample_data")))
+                                            resource = "../samples")))
     callGeneric(x@assays, path = file.path(path, resources[[1L]][["path"]]),
                 indexcols = indexcols, indexrefs = indexrefs, grid = grid,
                 grid_suffix = grid_suffix, ...)
@@ -777,9 +777,9 @@ function(x,
                         resources = list()),
          ...)
 {
-    # Sample Data
-    resources <- callGeneric(colData(x), path = file.path(path, "sample_data"),
-                             indexcol = indexcols[2L], ...)
+    # Subject Data
+    resources <- callGeneric(colData(x), path = file.path(path, "subjects"),
+                             ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Sample Map
@@ -788,8 +788,8 @@ function(x,
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Experiment Data
-    resources <- list(list(name = "experiment_data",
-                           path = "experiment_data",
+    resources <- list(list(name = "experiments",
+                           path = "experiments",
                            class = "experiment_list"))
     callGeneric(experiments(x), path = file.path(path, resources[[1L]][["path"]]),
                 indexcols = indexcols, ...)

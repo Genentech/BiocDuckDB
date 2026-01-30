@@ -92,7 +92,7 @@ genomic data) encoded in the \code{datapackage.json} file.
 
 \describe{
   \item{\code{Assays}}{
-    \code{Assays} objects are read from the \code{assay_data/} subdirectory.
+    \code{Assays} objects are read from the \code{assays/} subdirectory.
   }
   \item{\code{GenomicRanges}}{
     \code{GenomicRanges} objects are read with genomic coordinates (seqnames,
@@ -104,22 +104,22 @@ genomic data) encoded in the \code{datapackage.json} file.
   }
   \item{\code{SummarizedExperiment}}{
     Basic multi-assay genomic experiments with feature and sample metadata
-    from the \code{feature_data/} and \code{sample_data/} subdirectories.
+    from the \code{features/} and \code{samples/} subdirectories.
   }
   \item{\code{RangedSummarizedExperiment}}{
     \code{SummarizedExperiment} with genomic ranges for features from the
-    \code{feature_data/} subdirectory.
+    \code{features/} subdirectory.
   }
   \item{\code{SingleCellExperiment}}{
     Single-cell genomic experiments with reduced dimensions and alternative
     experiments from the \code{embeddings/} and \code{modalities/} subdirectories.
   }
   \item{\code{ExperimentList}}{
-    \code{ExperimentList} objects are read from the \code{experiment_data/} subdirectory.
+    \code{ExperimentList} objects are read from the \code{experiments/} subdirectory.
   }
   \item{\code{MultiAssayExperiment}}{
-    Multi-experiment studies with sample mapping across experiments from the
-    \code{experiment_data/} subdirectory.
+    Multi-experiment studies that link experiments from the \code{experiments/}
+    subdirectory.
   }
 }
 }

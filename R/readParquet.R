@@ -75,7 +75,7 @@
 #' @section Supported Object Types:
 #' \describe{
 #'   \item{\code{Assays}}{
-#'     \code{Assays} objects are read from the \code{assay_data/} subdirectory.
+#'     \code{Assays} objects are read from the \code{assays/} subdirectory.
 #'   }
 #'   \item{\code{GenomicRanges}}{
 #'     \code{GenomicRanges} objects are read with genomic coordinates (seqnames,
@@ -87,22 +87,22 @@
 #'   }
 #'   \item{\code{SummarizedExperiment}}{
 #'     Basic multi-assay genomic experiments with feature and sample metadata
-#'     from the \code{feature_data/} and \code{sample_data/} subdirectories.
+#'     from the \code{features/} and \code{samples/} subdirectories.
 #'   }
 #'   \item{\code{RangedSummarizedExperiment}}{
 #'     \code{SummarizedExperiment} with genomic ranges for features from the
-#'     \code{feature_data/} subdirectory.
+#'     \code{features/} subdirectory.
 #'   }
 #'   \item{\code{SingleCellExperiment}}{
 #'     Single-cell genomic experiments with reduced dimensions and alternative
 #'     experiments from the \code{embeddings/} and \code{modalities/} subdirectories.
 #'   }
 #'   \item{\code{ExperimentList}}{
-#'     \code{ExperimentList} objects are read from the \code{experiment_data/} subdirectory.
+#'     \code{ExperimentList} objects are read from the \code{experiments/} subdirectory.
 #'   }
 #'   \item{\code{MultiAssayExperiment}}{
-#'     Multi-experiment studies with sample mapping across experiments from the
-#'     \code{experiment_data/} subdirectory.
+#'     Multi-experiment studies that link experiments from the \code{experiments/}
+#'     subdirectory.
 #'   }
 #' }
 #'
@@ -348,8 +348,8 @@ function(path,
     names(resources) <- sapply(package[["resources"]], `[[`, "name")
 
     # Dimension Dictionaries
-    dimdicts <- list(feature_data = resources[["feature_data"]][["schema"]],
-                     sample_data = resources[["sample_data"]][["schema"]])
+    dimdicts <- list(features = resources[["features"]][["schema"]],
+                     samples = resources[["samples"]][["schema"]])
 
     # Dimension Tables
     fun <- function(path, i) {
@@ -369,7 +369,7 @@ function(path,
     }
     dimtbls <- new.env(parent = emptyenv())
     dimtbls[["dimtbls"]] <-
-        as(c(fun(path, "feature_data"), fun(path, "sample_data")), "DataFrameList")
+        as(c(fun(path, "features"), fun(path, "samples")), "DataFrameList")
     dimkeycols <- lapply(dimtbls[["dimtbls"]],
                          function(x) setNames(seq_len(nrow(x)), rownames(x)))
     dimtbls[["dimtbls"]] <- endoapply(dimtbls[["dimtbls"]], function(x) {
@@ -378,31 +378,31 @@ function(path,
     })
 
     # Feature Data
-    schema <- dimdicts[["feature_data"]]
+    schema <- dimdicts[["features"]]
     keycol <- dimkeycols[1L]
 
     feature_data <- NULL
     feature_ranges <- NULL
     if (is.null(schema[["genomicCoords"]])) {
-        fullpath <- file.path(path, resources[["feature_data"]][["path"]])
+        fullpath <- file.path(path, resources[["features"]][["path"]])
         feature_data <- readParquet(fullpath,
-                                    metadata = resources[["feature_data"]],
+                                    metadata = resources[["features"]],
                                     keycol = keycol)
     } else {
-        fullpath <- file.path(path, resources[["feature_data"]][["path"]])
+        fullpath <- file.path(path, resources[["features"]][["path"]])
         feature_ranges <- readParquet(fullpath,
-                                      metadata = resources[["feature_data"]],
+                                      metadata = resources[["features"]],
                                       keycol = keycol)
     }
 
     # Sample Data
     keycol <- dimkeycols[2L]
-    fullpath <- file.path(path, resources[["sample_data"]][["path"]])
-    sample_data <- readParquet(fullpath, metadata = resources[["sample_data"]],
-                               keycol = keycol)
+    fullpath <- file.path(path, resources[["samples"]][["path"]])
+    samples <- readParquet(fullpath, metadata = resources[["samples"]],
+                           keycol = keycol)
 
     # Assays
-    fullpath <- file.path(path, resources[["assay_data"]][["path"]])
+    fullpath <- file.path(path, resources[["assays"]][["path"]])
     assays <- readParquet(fullpath, keycols = dimkeycols, dimtbls = dimtbls)
 
     # Metadata
@@ -413,7 +413,7 @@ function(path,
         se <- SummarizedExperiment(assays,
                                    rowData = feature_data,
                                    rowRanges = feature_ranges,
-                                   colData = sample_data,
+                                   colData = samples,
                                    metadata = metadata)
     } else if (class == "single_cell_experiment") {
         # Embeddings
@@ -446,7 +446,7 @@ function(path,
         se <- SingleCellExperiment(assays,
                                    rowData = feature_data,
                                    rowRanges = feature_ranges,
-                                   colData = sample_data,
+                                   colData = samples,
                                    reducedDims = rdims,
                                    altExps = alts,
                                    mainExpName = package[["main_exp_name"]],
@@ -491,20 +491,20 @@ function(path,
     names(resources) <- sapply(package[["resources"]], `[[`, "name")
 
     # Experiments
-    fullpath <- file.path(path, resources[["experiment_data"]][["path"]])
+    fullpath <- file.path(path, resources[["experiments"]][["path"]])
     experiments <- readParquet(fullpath, ...)
 
-    # Sample Data
-    sample_schema <- resources[["sample_data"]][["schema"]]
+    # Subject Data
+    sample_schema <- resources[["subjects"]][["schema"]]
     index <- .schema_keycols(sample_schema)
     pkey <- sample_schema[["primaryKey"]]
     name <- if (!is.null(pkey) && !identical(pkey, index)) pkey else NULL
-    fullpath <- file.path(path, resources[["sample_data"]][["path"]])
-    keycol <- readParquet(fullpath, metadata = resources[["sample_data"]],
+    fullpath <- file.path(path, resources[["subjects"]][["path"]])
+    keycol <- readParquet(fullpath, metadata = resources[["subjects"]],
                           datacols = name, keycol = index)
     keycol <- as.list(as.data.frame(keycol, optional = TRUE))
-    sample_data <- readParquet(fullpath, metadata = resources[["sample_data"]],
-                               keycol = keycol)
+    subjects <- readParquet(fullpath, metadata = resources[["subjects"]],
+                            keycol = keycol)
 
     # Sample Map
     index <- .schema_keycols(resources[["sample_map"]][["schema"]])
@@ -519,7 +519,7 @@ function(path,
 
     # MultiAssayExperiment
     MultiAssayExperiment(experiments,
-                         colData = sample_data,
+                         colData = subjects,
                          sampleMap = sample_map,
                          metadata = metadata)
 }
