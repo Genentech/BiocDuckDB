@@ -275,24 +275,35 @@ function(x,
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-### data.frame objects
+### data.frame & sf helper functions
 ###
 
-#' @export
-#' @importFrom arrow Array write_dataset
-#' @importFrom stats setNames
-#' @rdname writeParquet
-setMethod("writeParquet", "data.frame",
-function(x,
-         path,
-         indexcol = "__index__",
-         keycol = "__name__",
-         dimtbl = NULL,
-         name = basename(path),
-         class = "data.frame",
-         ...)
+.geometryCol <- function(x) {
+    if (inherits(x, "sf")) {
+        return(attr(x, "sf_column") %||% "geometry")
+    }
+    nms <- names(x)
+    for (nm in c("geometry", "geom", "wkb")) {
+        if (nm %in% nms) {
+            col <- x[[nm]]
+            if (inherits(col, "sfc"))
+                return(nm)
+            if (is.list(col) && length(col) > 0L &&
+                all(vapply(col, function(r) is.null(r) || is.raw(r), NA)))
+                return(nm)
+        }
+    }
+    NULL
+}
+
+.writeDataFrameParquet <-
+function(x, path, indexcol, keycol, dimtbl, name, class, ...)
 {
-    if (is.null(indexcol)) {
+    if (!dir.exists(path)) {
+        dir.create(path, recursive = TRUE)
+    }
+
+   if (is.null(indexcol)) {
         index <- NULL
     } else {
         index <- setNames(list(seq_len(nrow(x))), indexcol)
@@ -305,26 +316,42 @@ function(x,
         key <- setNames(list(rnms), keycol)
     }
 
-    # Protect the list columns from being coerced to atomic vectors
-    for (j in seq_along(x)) {
-        if (is.list(x[[j]])) {
-            x[[j]] <- I(x[[j]])
+    is_sf <- inherits(x, "sf")
+    if (is_sf) {
+        if (!requireNamespace("DuckDBSpatial", quietly = TRUE)) {
+            stop("DuckDBSpatial package required for GeoParquet support; ",
+                 "install with BiocManager::install('DuckDBSpatial')")
         }
-    }
+        # Combine the columns into a single data.frame
+        x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
+        colnames(x) <- make.unique(colnames(x), sep = "_")
+        x <- sf::st_sf(x)
 
-    # Combine the columns into a single data.frame
-    x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
-    colnames(x) <- make.unique(colnames(x), sep = "_")
-
-    # Optimize integer column storage
-    for (j in seq_along(x)) {
-        if (is.integer(x[[j]]) && length(x[[j]]) > 0L) {
-            x[[j]] <- Array$create(x[[j]], type = .arrowType(x[[j]]))
+        # defaults to compression = "zstd" and compression_level = 3L
+        DuckDBSpatial::writeGeoParquet(x, file.path(path, "part-0.parquet"),
+                         geom = attr(x, "sf_column"), ...)
+    } else {
+        # Protect the list columns from being coerced to atomic vectors
+        for (j in seq_along(x)) {
+            if (is.list(x[[j]])) {
+                x[[j]] <- I(x[[j]])
+            }
         }
-    }
 
-    write_dataset(x, path, format = "parquet", compression = "zstd",
-                  compression_level = 3L, ...)
+        # Combine the columns into a single data.frame
+        x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
+        colnames(x) <- make.unique(colnames(x), sep = "_")
+
+        # Optimize integer column storage
+        for (j in seq_along(x)) {
+            if (is.integer(x[[j]]) && length(x[[j]]) > 0L) {
+                x[[j]] <- Array$create(x[[j]], type = .arrowType(x[[j]]))
+            }
+        }
+
+        write_dataset(x, path, format = "parquet", compression = "zstd",
+                      compression_level = 3L, ...)
+    }
 
     schema <- list(fields = lapply(colnames(x), function(j) {
                        .buildFieldSpec(name = j, x = x[[j]])
@@ -349,13 +376,35 @@ function(x,
         schema[["partitioning"]] <- colnames(dimtbl)
     }
 
-    resources <- list(list(name = name,
-                           path = basename(path),
-                           class = class,
-                           format = "parquet",
-                           mediatype = "application/vnd.apache.parquet",
-                           schema = schema))
+    list(list(name = name,
+              path = basename(path),
+              class = class,
+              format = "parquet",
+              mediatype = "application/vnd.apache.parquet",
+              schema = schema))
+}
 
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### data.frame objects
+###
+
+#' @export
+#' @importFrom arrow Array write_dataset
+#' @importFrom stats setNames
+#' @rdname writeParquet
+setMethod("writeParquet", "data.frame",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         name = basename(path),
+         class = "data.frame",
+         ...)
+{
+    resources <- .writeDataFrameParquet(x, path = path, indexcol = indexcol,
+                                        keycol = keycol, dimtbl = dimtbl,
+                                        name = name, class = class, ...)
     invisible(resources)
 })
 
@@ -376,11 +425,17 @@ function(x,
          class = "data_frame",
          ...)
 {
-    # Write Data Table
-    resources <- callGeneric(as.data.frame(x, optional = TRUE), path = path,
-                             indexcol = indexcol, keycol = keycol,
-                             dimtbl = dimtbl, name = name, class = class, ...)
+    df <- as.data.frame(x, optional = TRUE)
 
+    geom <- .geometryCol(df)
+    is_sf <- !is.null(geom)
+    if (is_sf) {
+        df <- sf::st_as_sf(df, sf_column_name = geom)
+    }
+
+    resources <- .writeDataFrameParquet(df, path = path, indexcol = indexcol,
+                                        keycol = keycol, dimtbl = dimtbl,
+                                        name = name, class = class, ...)
     invisible(resources)
 })
 
@@ -799,6 +854,225 @@ function(x,
 
     write_json(package, path = file.path(path, "datapackage.json"),
                auto_unbox = TRUE, pretty = TRUE)
+
+    invisible(NULL)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### PointsLayerList objects
+###
+
+#' @export
+#' @importClassesFrom MultiAssaySpatialExperiment PointsLayerList
+#' @importFrom jsonlite write_json
+#' @rdname writeParquet
+setMethod("writeParquet", "PointsLayerList",
+function(x, path, name = basename(path),
+         class = "points_layer_list",
+         package = list(class = "points_layer_list", resources = list()),
+         ...)
+{
+    for (i in seq_along(x)) {
+        nms_i <- names(x)[i]
+        x_i <- x[[i]]
+        path_i <- paste0("point=", nms_i)
+        resources <- callGeneric(x_i, path = file.path(path, path_i), name = nms_i, ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    write_json(package, path = file.path(path, "datapackage.json"),
+               auto_unbox = TRUE, pretty = TRUE)
+
+    invisible(NULL)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### ShapesLayerList objects
+###
+
+#' @export
+#' @importClassesFrom MultiAssaySpatialExperiment ShapesLayerList
+#' @importFrom jsonlite write_json
+#' @rdname writeParquet
+setMethod("writeParquet", "ShapesLayerList",
+function(x,
+         path,
+         name = basename(path),
+         class = "shapes_layer_list",
+         package = list(class = "shapes_layer_list", resources = list()),
+         ...)
+{
+    for (i in seq_along(x)) {
+        nms_i <- names(x)[i]
+        x_i <- x[[i]]
+        path_i <- paste0("shape=", nms_i)
+        resources <- callGeneric(x_i, path = file.path(path, path_i), name = nms_i, ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    write_json(package, path = file.path(path, "datapackage.json"),
+               auto_unbox = TRUE, pretty = TRUE)
+
+    invisible(NULL)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### MultiAssaySpatialExperiment objects
+###
+
+#' @export
+#' @importClassesFrom MultiAssaySpatialExperiment MultiAssaySpatialExperiment
+#' @importFrom jsonlite write_json
+#' @rdname writeParquet
+setMethod("writeParquet", "MultiAssaySpatialExperiment",
+function(x,
+         path,
+         indexcols = c("__feature__", "__sample__"),
+         package = list(class = "multi_assay_spatial_experiment",
+                        resources = list()),
+         ...)
+{
+    # Points
+    pts <- MultiAssaySpatialExperiment::spatialPoints(x)
+    if (length(pts) > 0L) {
+        resources <- list(list(name = "points",
+                               path = "points",
+                               class = "points_layer_list"))
+        callGeneric(pts, path = file.path(path, resources[[1L]][["path"]]), ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Shapes
+    shps <- MultiAssaySpatialExperiment::spatialShapes(x)
+    if (length(shps) > 0L) {
+        resources <- list(list(name = "shapes",
+                               path = "shapes",
+                               class = "shapes_layer_list"))
+        callGeneric(shps, path = file.path(path, resources[[1L]][["path"]]), ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Images path references
+    imgs <- MultiAssaySpatialExperiment::spatialImages(x)
+    if (length(imgs) > 0L) {
+        imgs_dir <- file.path(path, "images")
+        dir.create(imgs_dir, showWarnings = FALSE, recursive = TRUE)
+        for (i in seq_along(imgs)) {
+            nm <- names(imgs)[i]
+            img_meta <- list(name = nm, type = "image", path = NA_character_)
+            write_json(img_meta, file.path(imgs_dir, paste0(nm, ".json")),
+                       auto_unbox = TRUE, pretty = TRUE)
+        }
+        package[["resources"]] <- c(package[["resources"]],
+                                    list(list(name = "images",
+                                              path = "images",
+                                              class = "raster_layer_list")))
+    }
+
+    # Labels path references
+    lbls <- MultiAssaySpatialExperiment::spatialLabels(x)
+    if (length(lbls) > 0L) {
+        lbls_dir <- file.path(path, "labels")
+        dir.create(lbls_dir, showWarnings = FALSE, recursive = TRUE)
+        for (i in seq_along(lbls)) {
+            nm <- names(lbls)[i]
+            lbl_meta <- list(name = nm, type = "label", path = NA_character_)
+            write_json(lbl_meta, file.path(lbls_dir, paste0(nm, ".json")),
+                       auto_unbox = TRUE, pretty = TRUE)
+        }
+        package[["resources"]] <- c(package[["resources"]],
+                                    list(list(name = "labels",
+                                              path = "labels",
+                                              class = "raster_layer_list")))
+    }
+
+    # Image Data
+    img_data <- MultiAssaySpatialExperiment::imgData(x)
+    if (!is.null(img_data) && nrow(img_data) > 0L) {
+        # Create images directory for materialized image files
+        imgs_dir <- file.path(path, "imgdata_images")
+        dir.create(imgs_dir, showWarnings = FALSE, recursive = TRUE)
+
+        if ("data" %in% colnames(img_data)) {
+            img_data_copy <- img_data
+            img_objs <- img_data[["data"]]
+
+            # Save each image and create relative path references
+            img_paths <- vapply(seq_along(img_objs), function(i) {
+                obj <- img_objs[[i]]
+                if (is.null(obj)) {
+                    return(NA_character_)
+                }
+
+                # Filename: imgdata_images/img_<i>.png
+                img_filename <- sprintf("img_%d.png", i - 1L)
+                img_filepath <- file.path(imgs_dir, img_filename)
+
+                # Try to copy existing file if it's a StoredSpatialImage
+                if (is(obj, "StoredSpatialImage")) {
+                    src <- tryCatch(
+                        SpatialExperiment::imgSource(obj),
+                        error = function(e) NULL
+                    )
+                    if (!is.null(src) && file.exists(src)) {
+                        # Check if it's already PNG, otherwise convert
+                        if (grepl("\\.png$", src, ignore.case = TRUE)) {
+                            file.copy(src, img_filepath, overwrite = TRUE)
+                            return(file.path("imgdata_images", img_filename))
+                        }
+                    }
+                }
+
+                # Fallback: extract raster and save as PNG
+                tryCatch({
+                    if (requireNamespace("SpatialExperiment", quietly = TRUE)) {
+                        ras <- SpatialExperiment::imgRaster(obj)
+                        # Convert raster to PNG format
+                        Y <- grDevices::col2rgb(as.matrix(ras))
+                        Y <- t(Y)
+                        Y <- Y / 255
+                        dim(Y) <- c(dim(ras), ncol(Y))
+
+                        if (requireNamespace("png", quietly = TRUE)) {
+                            png::writePNG(Y, target = img_filepath)
+                            file.path("imgdata_images", img_filename)
+                        } else {
+                            warning("png package not available; skipping image ", i)
+                            NA_character_
+                        }
+                    } else {
+                        NA_character_
+                    }
+                }, error = function(e) {
+                    warning("Failed to save image ", i, ": ", e$message)
+                    NA_character_
+                })
+            }, character(1L))
+
+            # Store relative paths to materialized images
+            img_data_copy[["image_file"]] <- img_paths
+
+            # Remove original data column (not serializable)
+            img_data_copy[["data"]] <- NULL
+
+            resources_img <- callGeneric(img_data_copy, path = file.path(path, "img_data"),
+                                         ...)
+        } else {
+            resources_img <- callGeneric(img_data, path = file.path(path, "img_data"),
+                                         ...)
+        }
+        package[["resources"]] <- c(package[["resources"]], resources_img)
+    }
+
+    # Spatial Map
+    spatial_map <- MultiAssaySpatialExperiment::spatialMap(x)
+    if (!is.null(spatial_map) && nrow(spatial_map) > 0L) {
+        resources_sm <- callGeneric(spatial_map, path = file.path(path, "spatial_map"),
+                                    ...)
+        package[["resources"]] <- c(package[["resources"]], resources_sm)
+    }
+
+    callNextMethod(x, path = path, indexcols = indexcols, package = package, ...)
 
     invisible(NULL)
 })
