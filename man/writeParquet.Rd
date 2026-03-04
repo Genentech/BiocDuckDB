@@ -13,6 +13,9 @@
 \alias{writeParquet,SingleCellExperiment-method}
 \alias{writeParquet,ExperimentList-method}
 \alias{writeParquet,MultiAssayExperiment-method}
+\alias{writeParquet,PointsLayerList-method}
+\alias{writeParquet,ShapesLayerList-method}
+\alias{writeParquet,MultiAssaySpatialExperiment-method}
 \title{Write Parquet Representation of a Bioconductor Object}
 \usage{
 writeParquet(x, path, ...)
@@ -128,6 +131,32 @@ writeParquet(x, path, ...)
   path,
   indexcols = c("__feature__", "__sample__"),
   package = list(class = "multi_assay_experiment", resources = list()),
+  ...
+)
+
+\S4method{writeParquet}{PointsLayerList}(
+  x,
+  path,
+  name = basename(path),
+  class = "points_layer_list",
+  package = list(class = "points_layer_list", resources = list()),
+  ...
+)
+
+\S4method{writeParquet}{ShapesLayerList}(
+  x,
+  path,
+  name = basename(path),
+  class = "shapes_layer_list",
+  package = list(class = "shapes_layer_list", resources = list()),
+  ...
+)
+
+\S4method{writeParquet}{MultiAssaySpatialExperiment}(
+  x,
+  path,
+  indexcols = c("__feature__", "__sample__"),
+  package = list(class = "multi_assay_spatial_experiment", resources = list()),
   ...
 )
 }

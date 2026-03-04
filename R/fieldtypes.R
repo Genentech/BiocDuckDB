@@ -65,6 +65,10 @@
     list(type = "string", format = "binary") # Base64 encoding in Frictionless
 }
 
+.fieldtype.sfc <- function(x) {
+    list(type = "string", format = "binary") # WKB geometry
+}
+
 .fieldtype.list <- function(x) {
     type <- ifelse(length(x), .fieldtype(x[[1L]])[["type"]], "any")
 

@@ -2,7 +2,7 @@
 data(airway, package = "airway")
 airway_counts <- SummarizedExperiment::assay(airway, "counts")
 airway_counts_path <- file.path(tempfile(), "airway_counts")
-writeParquet(airway_counts, airway_counts_path)
+BiocDuckDB::writeParquet(airway_counts, airway_counts_path)
 
 
 # Helper functions

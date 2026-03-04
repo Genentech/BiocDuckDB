@@ -40,6 +40,7 @@ Supported types include:
   \item \code{"single_cell_experiment"} - \code{SingleCellExperiment} objects
   \item \code{"experiment_list"} - \code{ExperimentList} objects
   \item \code{"multi_assay_experiment"} - \code{MultiAssayExperiment} objects
+  \item \code{"multi_assay_spatial_experiment"} - \code{MultiAssaySpatialExperiment} objects
 }}
 
 \item{...}{Additional arguments passed to internal helper functions.}
@@ -120,6 +121,11 @@ genomic data) encoded in the \code{datapackage.json} file.
   \item{\code{MultiAssayExperiment}}{
     Multi-experiment studies that link experiments from the \code{experiments/}
     subdirectory.
+  }
+  \item{\code{MultiAssaySpatialExperiment}}{
+    Multi-assay spatial experiments with points, shapes, imgData, and spatialMap
+    from the \code{points/}, \code{shapes/}, \code{img_data/}, \code{spatial_map/}
+    subdirectories. Requires the \code{MultiAssaySpatialExperiment} package.
   }
 }
 }

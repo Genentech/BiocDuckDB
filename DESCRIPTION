@@ -1,15 +1,16 @@
 Package: BiocDuckDB
-Version: 0.9.0
-Date: 2026-01-30
+Version: 0.9.1
+Date: 2026-03-04
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
     methods for single-cell analysis workflows using DuckDB-backed data structures.
-    Includes readParquet() and writeParquet() for seamless serialization of
-    SummarizedExperiment, SingleCellExperiment, and MultiAssayExperiment objects,
-    plus SQL-optimized implementations of scran and scuttle methods for variance
-    modeling, marker detection, QC metrics, and normalization. This package brings
-    together DuckDBDataFrame, DuckDBArray, and DuckDBGRanges for complete
+    Includes readParquet and writeParquet functions for seamless serialization
+    of SummarizedExperiment, SingleCellExperiment, MultiAssayExperiment, and
+    MultiAssaySpatialExperiment objects, plus SQL-optimized implementations of
+    scran and scuttle methods for variance modeling, marker detection,
+    QC metrics, and normalization. This package brings together DuckDBDataFrame,
+    DuckDBArray, DuckDBGRanges, and DuckDBSpatial (optional) for complete
     Bioconductor integration.
 Authors@R:
     c(
@@ -20,6 +21,7 @@ License: MIT + file LICENSE
 Depends:
     R (>= 4.3.0),
     methods,
+    stats,
     DuckDBDataFrame,
     DuckDBArray,
     DuckDBGRanges
@@ -36,6 +38,7 @@ Imports:
     SummarizedExperiment,
     SingleCellExperiment,
     MultiAssayExperiment,
+    MultiAssaySpatialExperiment,
     metapod,
     scran,
     scuttle,
@@ -50,6 +53,13 @@ Suggests:
     rmarkdown,
     BiocStyle,
     testthat,
+    grDevices,
+    matrixStats,
+    nanoparquet,
+    png,
+    sf,
+    SpatialExperiment,
+    DuckDBSpatial,
     ExperimentHub,
     HDF5Array,
     scater,
@@ -67,6 +77,7 @@ VignetteBuilder: knitr
 RoxygenNote: 7.3.3
 Encoding: UTF-8
 Collate:
+    'DuckDBDataFrame-spatial.R'
     'DuckDBMatrix-scran.R'
     'DuckDBMatrix-scuttle.R'
     'fieldtypes.R'

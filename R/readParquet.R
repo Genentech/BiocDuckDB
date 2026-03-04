@@ -34,6 +34,7 @@
 #'   \item \code{"single_cell_experiment"} - \code{SingleCellExperiment} objects
 #'   \item \code{"experiment_list"} - \code{ExperimentList} objects
 #'   \item \code{"multi_assay_experiment"} - \code{MultiAssayExperiment} objects
+#'   \item \code{"multi_assay_spatial_experiment"} - \code{MultiAssaySpatialExperiment} objects
 #' }
 #' @param ... Additional arguments passed to internal helper functions.
 #'
@@ -104,6 +105,11 @@
 #'     Multi-experiment studies that link experiments from the \code{experiments/}
 #'     subdirectory.
 #'   }
+#'   \item{\code{MultiAssaySpatialExperiment}}{
+#'     Multi-assay spatial experiments with points, shapes, imgData, and spatialMap
+#'     from the \code{points/}, \code{shapes/}, \code{img_data/}, \code{spatial_map/}
+#'     subdirectories. Requires the \code{MultiAssaySpatialExperiment} package.
+#'   }
 #' }
 #'
 #' @section Frictionless Data Package Metadata:
@@ -135,7 +141,6 @@
 #' @include fieldtypes.R
 #'
 #' @export
-#' @import methods BiocGenerics
 #' @importFrom jsonlite read_json
 #' @rdname readParquet
 readParquet <-
@@ -160,6 +165,7 @@ function(path,
            "single_cell_experiment"  = .readParquetSE(path, metadata, ...),
            "experiment_list"         = .readParquetExps(path, metadata, ...),
            "multi_assay_experiment"  = .readParquetMAE(path, metadata, ...),
+           "multi_assay_spatial_experiment" = .readParquetMASE(path, metadata, ...),
            stop("unsupported Bioconductor parquet layout"))
 }
 
@@ -515,11 +521,165 @@ function(path,
     sample_map[[1L]] <- factor(sample_map[[1L]], levels = names(experiments))
 
     # Metadata
-    metadata <- package[["annotations"]]
+    metadata <- package[["annotations"]] %||% list()
 
     # MultiAssayExperiment
     MultiAssayExperiment(experiments,
                          colData = subjects,
                          sampleMap = sample_map,
                          metadata = metadata)
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### MultiAssaySpatialExperiment objects
+### -------------------------------------------------------------------------
+
+#' @importFrom jsonlite read_json
+.readParquetMASE <- function(path, package, ...) {
+    if (!requireNamespace("MultiAssaySpatialExperiment", quietly = TRUE)) {
+        stop("package 'MultiAssaySpatialExperiment' is required to read ",
+             "multi_assay_spatial_experiment; install it with ",
+             "BiocManager::install(\"MultiAssaySpatialExperiment\")")
+    }
+    resources <- package[["resources"]]
+    names(resources) <- sapply(package[["resources"]], `[[`, "name")
+
+    # Base MAE object
+    mae <- .readParquetMAE(path, package, ...)
+
+    # Points (optional) - materialize for MASE validation
+    points <- MultiAssaySpatialExperiment::PointsLayerList()
+    if (!is.null(resources[["points"]])) {
+        fullpath <- file.path(path, resources[["points"]][["path"]])
+        pkg <- read_json(file.path(fullpath, "datapackage.json"),
+                         simplifyVector = TRUE,
+                         simplifyDataFrame = FALSE,
+                         simplifyMatrix = FALSE)
+        pts_list <- lapply(pkg[["resources"]], function(r) {
+            x <- readParquet(file.path(fullpath, r[["path"]]), metadata = r, ...)
+            as(x, "DataFrame")
+        })
+        names(pts_list) <- sapply(pkg[["resources"]], `[[`, "name")
+        points <- MultiAssaySpatialExperiment::PointsLayerList(pts_list)
+    }
+
+    # Shapes (optional) - materialize for MASE validation
+    shapes <- MultiAssaySpatialExperiment::ShapesLayerList()
+    if (!is.null(resources[["shapes"]])) {
+        fullpath <- file.path(path, resources[["shapes"]][["path"]])
+        pkg <- read_json(file.path(fullpath, "datapackage.json"),
+                         simplifyVector = TRUE,
+                         simplifyDataFrame = FALSE,
+                         simplifyMatrix = FALSE)
+        shp_list <- lapply(pkg[["resources"]], function(r) {
+            x <- readParquet(file.path(fullpath, r[["path"]]), metadata = r, ...)
+            as(x, "DataFrame")
+        })
+        names(shp_list) <- sapply(pkg[["resources"]], `[[`, "name")
+        shapes <- MultiAssaySpatialExperiment::ShapesLayerList(shp_list)
+    }
+
+    # Images (optional) - path references
+    images <- MultiAssaySpatialExperiment::RasterLayerList()
+    if (!is.null(resources[["images"]])) {
+        fullpath <- file.path(path, resources[["images"]][["path"]])
+        if (dir.exists(fullpath)) {
+            json_files <- list.files(fullpath, pattern = "\\.json$", full.names = TRUE)
+            if (length(json_files) > 0L) {
+                img_list <- lapply(json_files, function(jf) {
+                    meta <- read_json(jf, simplifyVector = TRUE)
+                    ## TODO: construct StoredSpatialImage or similar from path ref
+                    ## For now, store metadata as-is
+                    meta
+                })
+                names(img_list) <- sub("\\.json$", "", basename(json_files))
+                images <- MultiAssaySpatialExperiment::RasterLayerList(img_list)
+            }
+        }
+    }
+
+    # Labels (optional) - path references
+    labels <- MultiAssaySpatialExperiment::RasterLayerList()
+    if (!is.null(resources[["labels"]])) {
+        fullpath <- file.path(path, resources[["labels"]][["path"]])
+        if (dir.exists(fullpath)) {
+            json_files <- list.files(fullpath, pattern = "\\.json$", full.names = TRUE)
+            if (length(json_files) > 0L) {
+                lbl_list <- lapply(json_files, function(jf) {
+                    meta <- read_json(jf, simplifyVector = TRUE)
+                    ## TODO: construct appropriate label/mask object from path ref
+                    meta
+                })
+                names(lbl_list) <- sub("\\.json$", "", basename(json_files))
+                labels <- MultiAssaySpatialExperiment::RasterLayerList(lbl_list)
+            }
+        }
+    }
+
+    # imgData (optional) - must materialize
+    if (!is.null(resources[["img_data"]])) {
+        fullpath <- file.path(path, resources[["img_data"]][["path"]])
+        img_data <- readParquet(fullpath, metadata = resources[["img_data"]], ...)
+        img_data <- as(img_data, "DFrame")
+
+        # Reconstruct data column with SpatialImage objects from materialized files
+        if ("image_file" %in% colnames(img_data)) {
+            # Reconstruct StoredSpatialImage objects from saved PNG files
+            img_objs <- lapply(seq_len(nrow(img_data)), function(i) {
+                img_relpath <- img_data[["image_file"]][i]
+
+                if (is.na(img_relpath)) {
+                    return(NULL)
+                }
+
+                # Convert relative path to absolute path
+                img_fullpath <- file.path(path, img_relpath)
+
+                if (file.exists(img_fullpath)) {
+                    # Create StoredSpatialImage pointing to the materialized PNG
+                    if (requireNamespace("SpatialExperiment", quietly = TRUE)) {
+                        SpatialExperiment::SpatialImage(img_fullpath)
+                    } else {
+                        # Fallback: store path as character
+                        img_fullpath
+                    }
+                } else {
+                    warning("Image file not found: ", img_fullpath)
+                    NULL
+                }
+            })
+
+            # Remove image_file column and add reconstructed data column
+            img_data[["image_file"]] <- NULL
+            img_data[["data"]] <- img_objs
+        } else {
+            # Add data column with NULL values for compatibility if missing
+            if (!"data" %in% colnames(img_data)) {
+                img_data[["data"]] <- rep(list(NULL), nrow(img_data))
+            }
+        }
+    }
+
+    # spatialMap (optional) - materialize for MASE validation
+    spatial_map <- NULL
+    if (!is.null(resources[["spatial_map"]])) {
+        index <- .schema_keycols(resources[["spatial_map"]][["schema"]])
+        fullpath <- file.path(path, resources[["spatial_map"]][["path"]])
+        x <- readParquet(fullpath, metadata = resources[["spatial_map"]], keycol = index, ...)
+        spatial_map <- as.data.frame(x, optional = TRUE)
+        spatial_map <- S4Vectors::DataFrame(spatial_map)
+    }
+
+    MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
+        experiments = experiments(mae),
+        colData = colData(mae),
+        sampleMap = sampleMap(mae),
+        images = images,
+        labels = labels,
+        points = points,
+        shapes = shapes,
+        imgData = img_data,
+        spatialMap = spatial_map,
+        metadata = metadata(mae)
+    )
 }
