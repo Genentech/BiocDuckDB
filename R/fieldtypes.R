@@ -265,6 +265,39 @@ function(schema, seqname = "seqnames", start = "start", end = "end",
     schema
 }
 
+.addGraphMetadata <-
+function(schema, nnode, from = "from", to = "to")
+{
+    # Store nnode as graph metadata
+    schema[["graphEdges"]] <- list(
+        from = from,
+        to = to,
+        nnode = nnode
+    )
+
+    # Mark from/to columns with semantic roles
+    role_map <- list(
+        from = "query_node",
+        to = "subject_node"
+    )
+
+    for (i in seq_along(schema[["fields"]])) {
+        field_name <- schema[["fields"]][[i]][["name"]]
+        for (role_name in names(role_map)) {
+            if (!is.null(schema[["graphEdges"]][[role_name]]) &&
+                field_name == schema[["graphEdges"]][[role_name]]) {
+                schema[["fields"]][[i]] <- .addConstraints(
+                    schema[["fields"]][[i]],
+                    role = role_map[[role_name]]
+                )
+                break
+            }
+        }
+    }
+
+    schema
+}
+
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Schema Validation Helpers
 ###

@@ -8,6 +8,7 @@
 \alias{writeParquet,TransposedDataFrame-method}
 \alias{writeParquet,GenomicRanges-method}
 \alias{writeParquet,GenomicRangesList-method}
+\alias{writeParquet,SelfHits-method}
 \alias{writeParquet,Assays-method}
 \alias{writeParquet,SummarizedExperiment-method}
 \alias{writeParquet,SingleCellExperiment-method}
@@ -86,6 +87,17 @@ writeParquet(x, path, ...)
   dimtbl = NULL,
   name = basename(path),
   class = "genomic_ranges_list",
+  ...
+)
+
+\S4method{writeParquet}{SelfHits}(
+  x,
+  path,
+  indexcol = "__index__",
+  keycol = "__name__",
+  dimtbl = NULL,
+  name = basename(path),
+  class = "graph_edges",
   ...
 )
 
@@ -169,6 +181,7 @@ writeParquet(x, path, ...)
   \item \code{TransposedDataFrame} objects - transposed before writing
   \item \code{GenomicRanges} objects - genomic coordinates with metadata
   \item \code{GenomicRangesList} objects - lists of genomic ranges
+  \item \code{SelfHits} objects - graph edge lists with node count
   \item \code{Assays} objects - multi-assay arrays
   \item \code{SummarizedExperiment} objects - multi-assay summarized experiments
   \item \code{RangedSummarizedExperiment} objects - multi-assay genomic experiments
@@ -272,6 +285,11 @@ columns in the output.
 \strong{\code{GenomicRangesList} objects:} Separates list element metadata
 from ranges data, writing them to different paths with schema properties
 that describe how to split the ranges into list elements.
+
+\strong{\code{SelfHits} objects:} Writes graph edge lists as a data frame with
+\code{from}, \code{to}, and optional metadata columns. The node count
+(\code{nnode}) is stored in the schema properties to enable reconstruction as
+a \linkS4class{DuckDBSelfHits} object.
 
 \strong{\code{SummarizedExperiment} objects:} Writes multi-assay experiments
 with separate paths for feature data, sample data, and assay data.
