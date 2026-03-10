@@ -65,7 +65,7 @@
 #' \strong{\code{SingleCellExperiment} objects:} Extends \code{SummarizedExperiment}
 #' functionality by also reading reduced dimensions, alternative experiments, and
 #' column/row pairings from their respective parquet files. Pairwise graphs stored
-#' in \code{col_graphs/} and \code{row_graphs/} are reconstructed as
+#' in \code{sample_graphs/} and \code{feature_graphs/} are reconstructed as
 #' \linkS4class{DuckDBDualSubset} objects wrapping \linkS4class{DuckDBSelfHits}.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Reads multiple experiments
@@ -101,8 +101,8 @@
 #'   \item{\code{SingleCellExperiment}}{
 #'     Single-cell genomic experiments with reduced dimensions, alternative
 #'     experiments, and pairwise graphs (\code{colPairs}/\code{rowPairs}) from the
-#'     \code{embeddings/}, \code{modalities/}, \code{col_graphs/}, and
-#'     \code{row_graphs/} subdirectories.
+#'     \code{embeddings/}, \code{modalities/}, \code{sample_graphs/}, and
+#'     \code{feature_graphs/} subdirectories.
 #'   }
 #'   \item{\code{DuckDBSelfHits}}{
 #'     Graph edge lists with \code{from}, \code{to} columns and optional metadata.
@@ -497,8 +497,8 @@ function(path,
                                    metadata = metadata)
 
         # Row Graphs
-        if (!is.null(resources[["row_graphs"]])) {
-            dirpath <- file.path(path, resources[["row_graphs"]][["path"]])
+        if (!is.null(resources[["feature_graphs"]])) {
+            dirpath <- file.path(path, resources[["feature_graphs"]][["path"]])
             pkg <- read_json(file.path(dirpath, "datapackage.json"),
                              simplifyVector = TRUE,
                              simplifyDataFrame = FALSE,
@@ -512,8 +512,8 @@ function(path,
         }
 
         # Column Graphs
-        if (!is.null(resources[["col_graphs"]])) {
-            dirpath <- file.path(path, resources[["col_graphs"]][["path"]])
+        if (!is.null(resources[["sample_graphs"]])) {
+            dirpath <- file.path(path, resources[["sample_graphs"]][["path"]])
             pkg <- read_json(file.path(dirpath, "datapackage.json"),
                              simplifyVector = TRUE,
                              simplifyDataFrame = FALSE,

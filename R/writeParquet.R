@@ -113,7 +113,7 @@
 #' \code{SummarizedExperiment} with additional single-cell specific data
 #' including reduced dimensions, alternate experiments, and column/row pairings
 #' (\code{colPairs}/\code{rowPairs}). Pairwise graphs are written to
-#' \code{col_graphs/} and \code{row_graphs/} subdirectories.
+#' \code{sample_graphs/} and \code{feature_graphs/} subdirectories.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
 #' with separate paths for sample data, sample mapping, and experiment data.
@@ -838,8 +838,8 @@ function(x,
     # Row Graphs
     rpairs <- rowPairs(x, asSparse = FALSE)
     if (length(rpairs)) {
-        resources <- list(list(name = "row_graphs",
-                               path = "row_graphs",
+        resources <- list(list(name = "feature_graphs",
+                               path = "feature_graphs",
                                class = "data_package"))
         .writeParquetGraphs(rpairs,
                             path = file.path(path, resources[[1L]][["path"]]),
@@ -850,8 +850,8 @@ function(x,
     # Column Graphs
     cpairs <- colPairs(x, asSparse = FALSE)
     if (length(cpairs)) {
-        resources <- list(list(name = "col_graphs",
-                               path = "col_graphs",
+        resources <- list(list(name = "sample_graphs",
+                               path = "sample_graphs",
                                class = "data_package"))
         .writeParquetGraphs(cpairs,
                             path = file.path(path, resources[[1L]][["path"]]),
