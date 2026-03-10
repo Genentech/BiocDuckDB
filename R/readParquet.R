@@ -29,6 +29,7 @@
 #'   \item \code{"assays"} - \code{Assays} objects
 #'   \item \code{"genomic_ranges"} - \code{GenomicRanges} objects
 #'   \item \code{"genomic_ranges_list"} - \code{GenomicRangesList} objects
+#'   \item \code{"graph_edges"} - \code{DuckDBSelfHits} objects
 #'   \item \code{"summarized_experiment"} - Basic \code{SummarizedExperiment} objects
 #'   \item \code{"ranged_summarized_experiment"} - \code{RangedSummarizedExperiment} objects
 #'   \item \code{"single_cell_experiment"} - \code{SingleCellExperiment} objects
@@ -46,6 +47,7 @@
 #'   \item \code{\linkS4class{DuckDBDataFrame}} objects for row and column metadata
 #'   \item \code{\linkS4class{DuckDBGRanges}} objects for genomic ranges
 #'   \item \code{\linkS4class{DuckDBGRangesList}} objects for grouped genomic ranges
+#'   \item \code{\linkS4class{DuckDBSelfHits}} objects for graph edge lists
 #' }
 #'
 #' @details
@@ -61,8 +63,10 @@
 #' reconstructed as \code{DuckDBGRanges} objects.
 #'
 #' \strong{\code{SingleCellExperiment} objects:} Extends \code{SummarizedExperiment}
-#' functionality by also reading reduced dimensions and alternative experiments
-#' from their respective parquet files.
+#' functionality by also reading reduced dimensions, alternative experiments, and
+#' column/row pairings from their respective parquet files. Pairwise graphs stored
+#' in \code{col_graphs/} and \code{row_graphs/} are reconstructed as
+#' \linkS4class{DuckDBDualSubset} objects wrapping \linkS4class{DuckDBSelfHits}.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Reads multiple experiments
 #' along with sample data and sample mapping information, reconstructing the
@@ -95,8 +99,15 @@
 #'     \code{features/} subdirectory.
 #'   }
 #'   \item{\code{SingleCellExperiment}}{
-#'     Single-cell genomic experiments with reduced dimensions and alternative
-#'     experiments from the \code{embeddings/} and \code{modalities/} subdirectories.
+#'     Single-cell genomic experiments with reduced dimensions, alternative
+#'     experiments, and pairwise graphs (\code{colPairs}/\code{rowPairs}) from the
+#'     \code{embeddings/}, \code{modalities/}, \code{col_graphs/}, and
+#'     \code{row_graphs/} subdirectories.
+#'   }
+#'   \item{\code{DuckDBSelfHits}}{
+#'     Graph edge lists with \code{from}, \code{to} columns and optional metadata.
+#'     Node count (\code{nnode}) and column names are stored in the schema
+#'     \code{graphCoords} property and used to reconstruct the object.
 #'   }
 #'   \item{\code{ExperimentList}}{
 #'     \code{ExperimentList} objects are read from the \code{experiments/} subdirectory.
@@ -159,6 +170,7 @@ function(path,
            "data_package"            = .readParquetDataPackage(path, metadata, ...),
            "genomic_ranges"          = .readParquetGenomicRanges(path, metadata, ...),
            "genomic_ranges_list"     = .readParquetGenomicRangesList(path, metadata, ...),
+           "graph_edges"             = .readParquetGraphEdges(path, metadata, ...),
            "assays"                  = .readParquetAssays(path, metadata, ...),
            "ranged_summarized_experiment" =,
            "summarized_experiment"   =,
@@ -188,12 +200,17 @@ function(path,
     exclude <- c(keycol,
                  if (!is.null(pkey) && !identical(pkey, keycol)) pkey,
                  .schema_partitions(schema),
-                 unlist(schema[["genomicCoords"]]))
+                 unlist(schema[["genomicCoords"]]),
+                 unlist(schema[["graphEdges"]]))
     setdiff(all_fields, exclude)
 }
 
 .schema_genomic <- function(schema, role) {
     schema[["genomicCoords"]][[role]]
+}
+
+.schema_graph <- function(schema, role) {
+    schema[["graphEdges"]][[role]]
 }
 
 .schema_partitions <- function(schema) {
@@ -276,6 +293,27 @@ function(path,
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Graph edges (SelfHits) objects
+###
+
+#' @importFrom DuckDBDataFrame DuckDBSelfHits
+.readParquetGraphEdges <-
+function(path,
+         resource,
+         datacols = .schema_datacols(resource[["schema"]]),
+         keycol = .schema_keycols(resource[["schema"]]),
+         ...)
+{
+    schema <- resource[["schema"]]
+    DuckDBSelfHits(path,
+                   from = .schema_graph(schema, "from"),
+                   to = .schema_graph(schema, "to"),
+                   nnode = .schema_graph(schema, "nnode"),
+                   mcols = datacols,
+                   keycol = keycol)
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Array objects
 ###
 
@@ -346,7 +384,7 @@ function(path,
 #' @importFrom jsonlite read_json
 #' @importFrom IRanges DataFrameList
 #' @importFrom S4Vectors endoapply
-#' @importFrom SingleCellExperiment SingleCellExperiment
+#' @importFrom SingleCellExperiment SingleCellExperiment colPair<- rowPair<-
 #' @importFrom stats setNames
 #' @importFrom SummarizedExperiment SummarizedExperiment
 .readParquetSE <- function(path, package, class = package[["class"]], ...) {
@@ -438,14 +476,14 @@ function(path,
             alts <- list()
         } else {
             dirpath <- file.path(path, resources[["modalities"]][["path"]])
-            package <- read_json(file.path(dirpath, "datapackage.json"),
-                                 simplifyVector = TRUE,
-                                 simplifyDataFrame = FALSE,
-                                 simplifyMatrix = FALSE)
-            alts <- lapply(package[["resources"]], function(x) {
+            pkg <- read_json(file.path(dirpath, "datapackage.json"),
+                             simplifyVector = TRUE,
+                             simplifyDataFrame = FALSE,
+                             simplifyMatrix = FALSE)
+            alts <- lapply(pkg[["resources"]], function(x) {
                 readParquet(file.path(dirpath, x[["path"]]), ...)
             })
-            names(alts) <- sapply(package[["resources"]], `[[`, "name")
+            names(alts) <- sapply(pkg[["resources"]], `[[`, "name")
         }
 
         # SingleCellExperiment
@@ -457,6 +495,36 @@ function(path,
                                    altExps = alts,
                                    mainExpName = package[["main_exp_name"]],
                                    metadata = metadata)
+
+        # Row Graphs
+        if (!is.null(resources[["row_graphs"]])) {
+            dirpath <- file.path(path, resources[["row_graphs"]][["path"]])
+            pkg <- read_json(file.path(dirpath, "datapackage.json"),
+                             simplifyVector = TRUE,
+                             simplifyDataFrame = FALSE,
+                             simplifyMatrix = FALSE)
+            for (i in seq_along(pkg[["resources"]])) {
+                res <- pkg[["resources"]][[i]]
+                hits <- readParquet(file.path(dirpath, res[["path"]]),
+                                    metadata = res, ...)
+                rowPair(se, res[["name"]]) <- hits
+            }
+        }
+
+        # Column Graphs
+        if (!is.null(resources[["col_graphs"]])) {
+            dirpath <- file.path(path, resources[["col_graphs"]][["path"]])
+            pkg <- read_json(file.path(dirpath, "datapackage.json"),
+                             simplifyVector = TRUE,
+                             simplifyDataFrame = FALSE,
+                             simplifyMatrix = FALSE)
+            for (i in seq_along(pkg[["resources"]])) {
+                res <- pkg[["resources"]][[i]]
+                hits <- readParquet(file.path(dirpath, res[["path"]]),
+                                    metadata = res, ...)
+                colPair(se, res[["name"]]) <- hits
+            }
+        }
     } else {
         stop("unsupported Bioconductor parquet layout")
     }

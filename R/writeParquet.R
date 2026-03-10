@@ -16,6 +16,7 @@
 #'   \item \code{TransposedDataFrame} objects - transposed before writing
 #'   \item \code{GenomicRanges} objects - genomic coordinates with metadata
 #'   \item \code{GenomicRangesList} objects - lists of genomic ranges
+#'   \item \code{SelfHits} objects - graph edge lists with node count
 #'   \item \code{Assays} objects - multi-assay arrays
 #'   \item \code{SummarizedExperiment} objects - multi-assay summarized experiments
 #'   \item \code{RangedSummarizedExperiment} objects - multi-assay genomic experiments
@@ -97,6 +98,11 @@
 #' from ranges data, writing them to different paths with schema properties
 #' that describe how to split the ranges into list elements.
 #'
+#' \strong{\code{SelfHits} objects:} Writes graph edge lists as a data frame with
+#' \code{from}, \code{to}, and optional metadata columns. The node count
+#' (\code{nnode}) is stored in the schema properties to enable reconstruction as
+#' a \linkS4class{DuckDBSelfHits} object.
+#'
 #' \strong{\code{SummarizedExperiment} objects:} Writes multi-assay experiments
 #' with separate paths for feature data, sample data, and assay data.
 #'
@@ -105,7 +111,9 @@
 #'
 #' \strong{\code{SingleCellExperiment} objects:} Extends
 #' \code{SummarizedExperiment} with additional single-cell specific data
-#' including reduced dimensions and alternate experiments.
+#' including reduced dimensions, alternate experiments, and column/row pairings
+#' (\code{colPairs}/\code{rowPairs}). Pairwise graphs are written to
+#' \code{col_graphs/} and \code{row_graphs/} subdirectories.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
 #' with separate paths for sample data, sample mapping, and experiment data.
@@ -482,9 +490,9 @@ function(x,
     # Write Data Table
     df <- as.data.frame(x, optional = TRUE)
     df[["width"]] <- NULL
-    resources <- callGeneric(as.data.frame(x, optional = TRUE), path = path,
-                             indexcol = indexcol, keycol = keycol,
-                             dimtbl = dimtbl, name = name, class = class, ...)
+    resources <- callGeneric(df, path = path, indexcol = indexcol,
+                             keycol = keycol, dimtbl = dimtbl,
+                             name = name, class = class, ...)
 
     # Add domain-specific metadata to schema
     schema <- resources[[length(resources)]][["schema"]]
@@ -556,6 +564,66 @@ function(x,
 
     invisible(resources)
 })
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### SelfHits objects
+###
+
+#' @export
+#' @importClassesFrom S4Vectors SelfHits
+#' @importFrom S4Vectors nnode
+#' @rdname writeParquet
+setMethod("writeParquet", "SelfHits",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         name = basename(path),
+         class = "graph_edges",
+         ...)
+{
+    df <- as.data.frame(x, optional = TRUE)
+    resources <- callGeneric(df, path = path, indexcol = indexcol,
+                             keycol = keycol, dimtbl = dimtbl,
+                             name = name, class = class, ...)
+
+    # Add domain-specific metadata to schema
+    schema <- resources[[length(resources)]][["schema"]]
+
+    # Add graph metadata and constraints
+    schema <- .addGraphMetadata(schema, nnode(x))
+
+    resources[[length(resources)]][["schema"]] <- schema
+
+    invisible(resources)
+})
+
+.writeParquetGraphs <-
+function(x,
+         path,
+         package = list(class = "graphs", resources = list()),
+         ...)
+{
+    for (i in seq_along(x)) {
+        nms_i <- names(x)[i]
+        x_i <- x[[i]]
+
+        if (is(x_i, "DualSubset")) {
+            x_i <- x_i@hits
+        }
+
+        path_i <- paste0("graph=", nms_i)
+        resources <- writeParquet(x_i, path = file.path(path, path_i),
+                                  name = nms_i, ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    write_json(package, path = file.path(path, "datapackage.json"),
+               auto_unbox = TRUE, pretty = TRUE)
+
+    invisible(NULL)
+}
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Assays objects
@@ -724,6 +792,7 @@ function(x,
 #' @importClassesFrom SingleCellExperiment SingleCellExperiment
 #' @importFrom SingleCellExperiment altExps mainExpName
 #' @importFrom SingleCellExperiment reducedDims reducedDimNames
+#' @importFrom SingleCellExperiment colPairs rowPairs
 #' @rdname writeParquet
 setMethod("writeParquet", "SingleCellExperiment",
 function(x,
@@ -763,6 +832,30 @@ function(x,
         .writeParquetModalities(exps,
                                 path = file.path(path, resources[[1L]][["path"]]),
                                 indexcols = indexcols, ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Row Graphs
+    rpairs <- rowPairs(x, asSparse = FALSE)
+    if (length(rpairs)) {
+        resources <- list(list(name = "row_graphs",
+                               path = "row_graphs",
+                               class = "data_package"))
+        .writeParquetGraphs(rpairs,
+                            path = file.path(path, resources[[1L]][["path"]]),
+                            ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Column Graphs
+    cpairs <- colPairs(x, asSparse = FALSE)
+    if (length(cpairs)) {
+        resources <- list(list(name = "col_graphs",
+                               path = "col_graphs",
+                               class = "data_package"))
+        .writeParquetGraphs(cpairs,
+                            path = file.path(path, resources[[1L]][["path"]]),
+                            ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 

@@ -35,6 +35,7 @@ Supported types include:
   \item \code{"assays"} - \code{Assays} objects
   \item \code{"genomic_ranges"} - \code{GenomicRanges} objects
   \item \code{"genomic_ranges_list"} - \code{GenomicRangesList} objects
+  \item \code{"graph_edges"} - \code{DuckDBSelfHits} objects
   \item \code{"summarized_experiment"} - Basic \code{SummarizedExperiment} objects
   \item \code{"ranged_summarized_experiment"} - \code{RangedSummarizedExperiment} objects
   \item \code{"single_cell_experiment"} - \code{SingleCellExperiment} objects
@@ -53,6 +54,7 @@ backend classes:
   \item \code{\linkS4class{DuckDBDataFrame}} objects for row and column metadata
   \item \code{\linkS4class{DuckDBGRanges}} objects for genomic ranges
   \item \code{\linkS4class{DuckDBGRangesList}} objects for grouped genomic ranges
+  \item \code{\linkS4class{DuckDBSelfHits}} objects for graph edge lists
 }
 }
 \description{
