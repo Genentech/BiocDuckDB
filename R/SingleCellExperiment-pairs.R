@@ -92,30 +92,40 @@ function(x, type, ..., value) {
 })
 
 #' @export
-#' @importFrom SingleCellExperiment colPair<-
-#' @importFrom S4Vectors make_zero_col_DFrame
+#' @importFrom S4Vectors isSingleNumber make_zero_col_DFrame
+#' @importFrom SingleCellExperiment colPair<- colPairNames int_colData int_colData<-
 setReplaceMethod("colPair", c("SingleCellExperiment", "numeric", "DuckDBSelfHits"),
 function(x, type, ..., value) {
-    value <- DuckDBDualSubset(value)
-    if (is.null(x@int_colData@listData[["colPairs"]])) {
-        df <- make_zero_col_DFrame(length(value))
-        x@int_colData@listData[["colPairs"]] <- df
+    if (!isSingleNumber(type)) {
+        stop("'type' must be a scalar in 'colPair(<SingleCellExperiment>, type=\"numeric\") <- value'")
     }
-    x@int_colData@listData[["colPairs"]][[type]] <- value
+    if (type > length(colPairNames(x))) {
+        stop("invalid subscript 'type' in 'colPair(<SingleCellExperiment>, type=\"numeric\") <- value'")
+    }
+
+    value <- DuckDBDualSubset(value)
+    if (is.null(int_colData(x)[["colPairs"]])) {
+        df <- make_zero_col_DFrame(length(value))
+        int_colData(x)[["colPairs"]] <- df
+    }
+    int_colData(x)[["colPairs"]][[type]] <- value
     x
 })
 
 #' @export
-#' @importFrom SingleCellExperiment colPair<-
-#' @importFrom S4Vectors make_zero_col_DFrame
+#' @importFrom S4Vectors isSingleString make_zero_col_DFrame
+#' @importFrom SingleCellExperiment colPair<- int_colData int_colData<-
 setReplaceMethod("colPair", c("SingleCellExperiment", "character", "DuckDBSelfHits"),
 function(x, type, ..., value) {
-    value <- DuckDBDualSubset(value)
-    if (is.null(x@int_colData@listData[["colPairs"]])) {
-        df <- make_zero_col_DFrame(length(value))
-        x@int_colData@listData[["colPairs"]] <- df
+    if (!isSingleString(type)) {
+        stop("'type' must be a string in 'colPair(<SingleCellExperiment>, type=\"character\") <- value'")
     }
-    x@int_colData@listData[["colPairs"]][[type]] <- value
+    value <- DuckDBDualSubset(value)
+    if (is.null(int_colData(x)[["colPairs"]])) {
+        df <- make_zero_col_DFrame(length(value))
+        int_colData(x)[["colPairs"]] <- df
+    }
+    int_colData(x)[["colPairs"]][[type]] <- value
     x
 })
 
@@ -141,29 +151,39 @@ function(x, type, ..., value) {
 })
 
 #' @export
-#' @importFrom SingleCellExperiment rowPair<-
-#' @importFrom S4Vectors make_zero_col_DFrame
+#' @importFrom S4Vectors isSingleNumber make_zero_col_DFrame
+#' @importFrom SingleCellExperiment int_elementMetadata int_elementMetadata<- rowPair<- rowPairNames
 setReplaceMethod("rowPair", c("SingleCellExperiment", "numeric", "DuckDBSelfHits"),
 function(x, type, ..., value) {
-    value <- DuckDBDualSubset(value)
-    if (is.null(x@int_elementMetadata@listData[["rowPairs"]])) {
-        df <- make_zero_col_DFrame(length(value))
-        x@int_elementMetadata@listData[["rowPairs"]] <- df
+    if (!isSingleNumber(type)) {
+        stop("'type' must be a scalar in 'rowPair(<SingleCellExperiment>, type=\"numeric\") <- value'")
     }
-    x@int_elementMetadata@listData[["rowPairs"]][[type]] <- value
+    if (type > length(rowPairNames(x))) {
+        stop("invalid subscript 'type' in 'rowPair(<SingleCellExperiment>, type=\"numeric\") <- value'")
+    }
+
+    value <- DuckDBDualSubset(value)
+    if (is.null(int_elementMetadata(x)[["rowPairs"]])) {
+        df <- make_zero_col_DFrame(length(value))
+        int_elementMetadata(x)[["rowPairs"]] <- df
+    }
+    int_elementMetadata(x)[["rowPairs"]][[type]] <- value
     x
 })
 
 #' @export
-#' @importFrom SingleCellExperiment rowPair<-
-#' @importFrom S4Vectors make_zero_col_DFrame
+#' @importFrom S4Vectors isSingleString make_zero_col_DFrame
+#' @importFrom SingleCellExperiment int_elementMetadata int_elementMetadata<- rowPair<-
 setReplaceMethod("rowPair", c("SingleCellExperiment", "character", "DuckDBSelfHits"),
 function(x, type, ..., value) {
-    value <- DuckDBDualSubset(value)
-    if (is.null(x@int_elementMetadata@listData[["rowPairs"]])) {
-        df <- make_zero_col_DFrame(length(value))
-        x@int_elementMetadata@listData[["rowPairs"]] <- df
+    if (!isSingleString(type)) {
+        stop("'type' must be a string in 'rowPair(<SingleCellExperiment>, type=\"character\") <- value'")
     }
-    x@int_elementMetadata@listData[["rowPairs"]][[type]] <- value
+    value <- DuckDBDualSubset(value)
+    if (is.null(int_elementMetadata(x)[["rowPairs"]])) {
+        df <- make_zero_col_DFrame(length(value))
+        int_elementMetadata(x)[["rowPairs"]] <- df
+    }
+    int_elementMetadata(x)[["rowPairs"]][[type]] <- value
     x
 })

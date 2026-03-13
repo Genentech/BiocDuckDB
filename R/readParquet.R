@@ -99,34 +99,37 @@
 #'     \code{features/} subdirectory.
 #'   }
 #'   \item{\code{SingleCellExperiment}}{
-#'     Single-cell genomic experiments with reduced dimensions, alternative
-#'     experiments, and pairwise graphs (\code{colPairs}/\code{rowPairs}) from the
-#'     \code{embeddings/}, \code{modalities/}, \code{sample_graphs/}, and
-#'     \code{feature_graphs/} subdirectories.
+#'     Single-cell genomic experiments with reduced dimensions, loadings,
+#'     alternative experiments, and pairwise graphs from the
+#'     \code{sample_embeddings/}, \code{feature_embeddings/},
+#'     \code{modalities/}, \code{sample_graphs/}, and \code{feature_graphs/}
+#'     subdirectories.
 #'   }
 #'   \item{\code{DuckDBSelfHits}}{
-#'     Graph edge lists with \code{from}, \code{to} columns and optional metadata.
-#'     Node count (\code{nnode}) and column names are stored in the schema
-#'     \code{graphCoords} property and used to reconstruct the object.
+#'     Graph edge lists with \code{from}, \code{to} columns and optional
+#'     metadata. Node count (\code{nnode}) and column names are stored in the
+#'     schema \code{graphCoords} property and used to reconstruct the object.
 #'   }
 #'   \item{\code{ExperimentList}}{
-#'     \code{ExperimentList} objects are read from the \code{experiments/} subdirectory.
-#'   }
-#'   \item{\code{MultiAssayExperiment}}{
-#'     Multi-experiment studies that link experiments from the \code{experiments/}
+#'     \code{ExperimentList} objects are read from the \code{experiments/}
 #'     subdirectory.
 #'   }
+#'   \item{\code{MultiAssayExperiment}}{
+#'     Multi-experiment studies that link experiments from the
+#'     \code{experiments/} subdirectory.
+#'   }
 #'   \item{\code{MultiAssaySpatialExperiment}}{
-#'     Multi-assay spatial experiments with points, shapes, imgData, and spatialMap
-#'     from the \code{points/}, \code{shapes/}, \code{img_data/}, \code{spatial_map/}
-#'     subdirectories. Requires the \code{MultiAssaySpatialExperiment} package.
+#'     Multi-assay spatial experiments with points, shapes, imgData, and
+#'     spatialMap from the \code{points/}, \code{shapes/}, \code{img_data/},
+#'     \code{spatial_map/} subdirectories. Requires the
+#'     \code{MultiAssaySpatialExperiment} package.
 #'   }
 #' }
 #'
 #' @section Frictionless Data Package Metadata:
 #' This function reads data packages that follow the Frictionless Data Package
-#' specification, parsing the \code{datapackage.json} metadata file to understand
-#' the data structure. The metadata provides:
+#' specification, parsing the \code{datapackage.json} metadata file to
+#' understand the data structure. The metadata provides:
 #' \itemize{
 #'   \item Resource definitions with paths and types
 #'   \item Schema information including field types and constraints
@@ -460,18 +463,20 @@ function(path,
                                    colData = samples,
                                    metadata = metadata)
     } else if (class == "single_cell_experiment") {
-        # Embeddings
-        if (is.null(resources[["embeddings"]])) {
+        # Reduced Dimensions
+        if (is.null(resources[["sample_embeddings"]])) {
             rdims <- list()
         } else {
             keycol <- dimkeycols[2L]
-            fullpath <- file.path(path, resources[["embeddings"]][["path"]])
-            rdims <- readParquet(fullpath, metadata = resources[["embeddings"]],
+            fullpath <- file.path(path,
+                                  resources[["sample_embeddings"]][["path"]])
+            rdims <- readParquet(fullpath,
+                                 metadata = resources[["sample_embeddings"]],
                                  keycol = keycol)
             rdims <- as.list(rdims)
         }
 
-        # Modalities
+        # Alternative Experiments
         if (is.null(resources[["modalities"]])) {
             alts <- list()
         } else {
@@ -496,7 +501,20 @@ function(path,
                                    mainExpName = package[["main_exp_name"]],
                                    metadata = metadata)
 
-        # Row Graphs
+        # Row Loadings
+        if (is.null(resources[["feature_embeddings"]])) {
+            loadings <- list()
+        } else {
+            keycol <- dimkeycols[1L]
+            fullpath <- file.path(path,
+                                  resources[["feature_embeddings"]][["path"]])
+            loadings <- readParquet(fullpath,
+                                    metadata = resources[["feature_embeddings"]],
+                                    keycol = keycol)
+            rowLoadings(se) <- as.list(loadings)
+        }
+
+        # Row Pairs
         if (!is.null(resources[["feature_graphs"]])) {
             dirpath <- file.path(path, resources[["feature_graphs"]][["path"]])
             pkg <- read_json(file.path(dirpath, "datapackage.json"),
@@ -511,7 +529,7 @@ function(path,
             }
         }
 
-        # Column Graphs
+        # Column Pairs
         if (!is.null(resources[["sample_graphs"]])) {
             dirpath <- file.path(path, resources[["sample_graphs"]][["path"]])
             pkg <- read_json(file.path(dirpath, "datapackage.json"),
