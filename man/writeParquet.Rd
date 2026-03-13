@@ -299,7 +299,9 @@ with separate paths for feature data, sample data, and assay data.
 
 \strong{\code{SingleCellExperiment} objects:} Extends
 \code{SummarizedExperiment} with additional single-cell specific data
-including reduced dimensions and alternate experiments.
+including reduced dimensions, alternate experiments, and column/row pairings
+(\code{colPairs}/\code{rowPairs}). Pairwise graphs are written to
+\code{sample_graphs/} and \code{feature_graphs/} subdirectories.
 
 \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
 with separate paths for sample data, sample mapping, and experiment data.

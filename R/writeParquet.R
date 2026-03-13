@@ -304,6 +304,7 @@ function(x,
     NULL
 }
 
+#' @importFrom S4Vectors I
 .writeDataFrameParquet <-
 function(x, path, indexcol, keycol, dimtbl, name, class, ...)
 {
@@ -790,6 +791,7 @@ function(x,
 
 #' @export
 #' @importClassesFrom SingleCellExperiment SingleCellExperiment
+#' @importFrom S4Vectors I
 #' @importFrom SingleCellExperiment altExps mainExpName
 #' @importFrom SingleCellExperiment reducedDims reducedDimNames
 #' @importFrom SingleCellExperiment colPairs rowPairs
@@ -806,7 +808,25 @@ function(x,
     rownames(x) <- make.unique(rownames(x), sep = "_")
     colnames(x) <- make.unique(colnames(x), sep = "_")
 
-    # Embeddings
+    # Row Loadings
+    loadings <- rowLoadings(x)
+    if (length(loadings)) {
+        loadings <- lapply(seq_along(loadings), function(i) {
+            mat <- as.matrix(loadings[[i]])
+            dimnames(mat) <- NULL
+            I(asplit(mat, 1L))
+        })
+        loadings <- do.call(data.frame, loadings)
+        rownames(loadings) <- rownames(x)
+        colnames(loadings) <- make.unique(rowLoadingNames(x), sep = "_")
+        resources <- callGeneric(loadings,
+                                 path = file.path(path, "feature_embeddings"),
+                                 indexcol = indexcols[1L], class = "data_frame",
+                                 ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Reduced Dimensions
     rdims <- reducedDims(x)
     if (length(rdims)) {
         rdims <- lapply(seq_along(rdims), function(j) {
@@ -817,13 +837,14 @@ function(x,
         rdims <- do.call(data.frame, rdims)
         rownames(rdims) <- colnames(x)
         colnames(rdims) <- make.unique(reducedDimNames(x), sep = "_")
-        resources <- callGeneric(rdims, path = file.path(path, "embeddings"),
+        resources <- callGeneric(rdims,
+                                 path = file.path(path, "sample_embeddings"),
                                  indexcol = indexcols[2L], class = "data_frame",
                                  ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
-    # Alternative Experiment Data
+    # Alternative Experiments
     exps <- altExps(x)
     if (length(exps)) {
         resources <- list(list(name = "modalities",
@@ -835,7 +856,7 @@ function(x,
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
-    # Row Graphs
+    # Row Pairs
     rpairs <- rowPairs(x, asSparse = FALSE)
     if (length(rpairs)) {
         resources <- list(list(name = "feature_graphs",
@@ -847,7 +868,7 @@ function(x,
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
-    # Column Graphs
+    # Column Pairs
     cpairs <- colPairs(x, asSparse = FALSE)
     if (length(cpairs)) {
         resources <- list(list(name = "sample_graphs",

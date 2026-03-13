@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.9.2
-Date: 2026-03-10
+Version: 0.9.3
+Date: 2026-03-13
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -81,6 +81,7 @@ Collate:
     'DuckDBDualSubset-class.R'
     'DuckDBMatrix-scran.R'
     'DuckDBMatrix-scuttle.R'
+    'SingleCellExperiment-loadings.R'
     'SingleCellExperiment-pairs.R'
     'fieldtypes.R'
     'readParquet.R'

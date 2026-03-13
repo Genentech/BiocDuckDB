@@ -79,8 +79,10 @@ DuckDB-backed components. For ranged experiments, genomic coordinates are
 reconstructed as \code{DuckDBGRanges} objects.
 
 \strong{\code{SingleCellExperiment} objects:} Extends \code{SummarizedExperiment}
-functionality by also reading reduced dimensions and alternative experiments
-from their respective parquet files.
+functionality by also reading reduced dimensions, alternative experiments, and
+column/row pairings from their respective parquet files. Pairwise graphs stored
+in \code{sample_graphs/} and \code{feature_graphs/} are reconstructed as
+\linkS4class{DuckDBDualSubset} objects wrapping \linkS4class{DuckDBSelfHits}.
 
 \strong{\code{MultiAssayExperiment} objects:} Reads multiple experiments
 along with sample data and sample mapping information, reconstructing the
@@ -114,20 +116,30 @@ genomic data) encoded in the \code{datapackage.json} file.
     \code{features/} subdirectory.
   }
   \item{\code{SingleCellExperiment}}{
-    Single-cell genomic experiments with reduced dimensions and alternative
-    experiments from the \code{embeddings/} and \code{modalities/} subdirectories.
+    Single-cell genomic experiments with reduced dimensions, loadings,
+    alternative experiments, and pairwise graphs from the
+    \code{sample_embeddings/}, \code{feature_embeddings/},
+    \code{modalities/}, \code{sample_graphs/}, and \code{feature_graphs/}
+    subdirectories.
+  }
+  \item{\code{DuckDBSelfHits}}{
+    Graph edge lists with \code{from}, \code{to} columns and optional
+    metadata. Node count (\code{nnode}) and column names are stored in the
+    schema \code{graphCoords} property and used to reconstruct the object.
   }
   \item{\code{ExperimentList}}{
-    \code{ExperimentList} objects are read from the \code{experiments/} subdirectory.
-  }
-  \item{\code{MultiAssayExperiment}}{
-    Multi-experiment studies that link experiments from the \code{experiments/}
+    \code{ExperimentList} objects are read from the \code{experiments/}
     subdirectory.
   }
+  \item{\code{MultiAssayExperiment}}{
+    Multi-experiment studies that link experiments from the
+    \code{experiments/} subdirectory.
+  }
   \item{\code{MultiAssaySpatialExperiment}}{
-    Multi-assay spatial experiments with points, shapes, imgData, and spatialMap
-    from the \code{points/}, \code{shapes/}, \code{img_data/}, \code{spatial_map/}
-    subdirectories. Requires the \code{MultiAssaySpatialExperiment} package.
+    Multi-assay spatial experiments with points, shapes, imgData, and
+    spatialMap from the \code{points/}, \code{shapes/}, \code{img_data/},
+    \code{spatial_map/} subdirectories. Requires the
+    \code{MultiAssaySpatialExperiment} package.
   }
 }
 }
@@ -135,8 +147,8 @@ genomic data) encoded in the \code{datapackage.json} file.
 \section{Frictionless Data Package Metadata}{
 
 This function reads data packages that follow the Frictionless Data Package
-specification, parsing the \code{datapackage.json} metadata file to understand
-the data structure. The metadata provides:
+specification, parsing the \code{datapackage.json} metadata file to
+understand the data structure. The metadata provides:
 \itemize{
   \item Resource definitions with paths and types
   \item Schema information including field types and constraints
