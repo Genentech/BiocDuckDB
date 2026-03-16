@@ -1,0 +1,11 @@
+.get_internal_all <- SingleCellExperiment:::.get_internal_all
+.set_internal_all <- SingleCellExperiment:::.set_internal_all
+.clean_internal_names <- SingleCellExperiment:::.clean_internal_names
+.get_internal_names <- SingleCellExperiment:::.get_internal_names
+.set_internal_names <- SingleCellExperiment:::.set_internal_names
+.get_internal_missing <- SingleCellExperiment:::.get_internal_missing
+.get_internal_integer <- SingleCellExperiment:::.get_internal_integer
+.get_internal_character <- SingleCellExperiment:::.get_internal_character
+.set_internal_missing <- SingleCellExperiment:::.set_internal_missing
+.set_internal_numeric <- SingleCellExperiment:::.set_internal_numeric
+.set_internal_character <- SingleCellExperiment:::.set_internal_character

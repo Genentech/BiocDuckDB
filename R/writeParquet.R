@@ -103,6 +103,16 @@
 #' (\code{nnode}) is stored in the schema properties to enable reconstruction as
 #' a \linkS4class{DuckDBSelfHits} object.
 #'
+#' \strong{Automatic unnesting of nested DataFrames:} When writing
+#' \code{SingleCellExperiment} objects, any DataFrame-class columns found in
+#' \code{rowData()} or \code{colData()} are automatically extracted and moved to
+#' \code{rowTables()} or \code{colTables()} respectively. This unnesting enables
+#' independent Parquet serialization of multi-valued properties (e.g., multiple
+#' diseases per patient, multiple isoforms per gene) while keeping the main
+#' metadata tables flat and SQL-queryable. The original nested columns are
+#' removed from \code{rowData()}/\code{colData()} after extraction. This behavior
+#' is automatic and requires no user intervention.
+#'
 #' \strong{\code{SummarizedExperiment} objects:} Writes multi-assay experiments
 #' with separate paths for feature data, sample data, and assay data.
 #'
@@ -111,9 +121,14 @@
 #'
 #' \strong{\code{SingleCellExperiment} objects:} Extends
 #' \code{SummarizedExperiment} with additional single-cell specific data
-#' including reduced dimensions, alternate experiments, and column/row pairings
-#' (\code{colPairs}/\code{rowPairs}). Pairwise graphs are written to
-#' \code{sample_graphs/} and \code{feature_graphs/} subdirectories.
+#' including reduced dimensions, alternate experiments, row/column tables, and
+#' row/column pairings (\code{rowPairs}/\code{colPairs}). Row loadings are
+#' written to \code{feature_embeddings/}, reduced dimensions to
+#' \code{sample_embeddings/}, row tables to \code{feature_tables/}, column
+#' tables to \code{sample_tables/}, and pairwise graphs to
+#' \code{feature_graphs/} and \code{sample_graphs/} subdirectories. See the
+#' automatic unnesting section below for important details about DataFrame
+#' columns in \code{rowData()}/\code{colData()}.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
 #' with separate paths for sample data, sample mapping, and experiment data.
@@ -757,7 +772,7 @@ function(x,
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-### Modalities objects
+### Modalities
 ###
 
 #' @importFrom jsonlite write_json
@@ -786,10 +801,44 @@ function(x,
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Additional Dimension Tables
+###
+
+#' @importFrom jsonlite write_json
+#' @importFrom S4Vectors getListElement
+.writeParquetDimTables <-
+function(x,
+         path,
+         indexcol = "__index__",
+         package = list(class = "dimension_tables", resources = list()),
+         ...)
+{
+    for (i in seq_along(x)) {
+        nms_i <- names(x)[i]
+        x_i <- getListElement(x, i)
+        path_i <- paste0("table=", nms_i)
+        if (is(x_i, "DataFrame")) {
+            resources <-
+                writeParquet(x_i, path = file.path(path, path_i),
+                             indexcol = indexcol, name = nms_i, ...)
+        } else {
+            stop("Unsupported object type: ", class(x_i))
+        }
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    write_json(package, path = file.path(path, "datapackage.json"),
+               auto_unbox = TRUE, pretty = TRUE)
+
+    invisible(NULL)
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### SingleCellExperiment objects
 ###
 
 #' @export
+#' @importClassesFrom S4Vectors DFrame
 #' @importClassesFrom SingleCellExperiment SingleCellExperiment
 #' @importFrom S4Vectors I
 #' @importFrom SingleCellExperiment altExps mainExpName
@@ -807,6 +856,34 @@ function(x,
     # Make dimnames unique
     rownames(x) <- make.unique(rownames(x), sep = "_")
     colnames(x) <- make.unique(colnames(x), sep = "_")
+
+    # Unnest rowData
+    rdata <- rowData(x)
+    if (is(rdata, "DFrame")) {
+        nested <- unlist(lapply(rdata, is, "DFrame"))
+        nested <- names(nested)[nested]
+        for (j in nested) {
+            rowTable(x, j) <- rdata[[j]]
+            rdata[[j]] <- NULL
+        }
+        if (length(nested)) {
+            rowData(x) <- rdata
+        }
+    }
+
+    # Unnest colData
+    cdata <- colData(x)
+    if (is(cdata, "DFrame")) {
+        nested <- unlist(lapply(cdata, is, "DFrame"))
+        nested <- names(nested)[nested]
+        for (j in nested) {
+            colTable(x, j) <- cdata[[j]]
+            cdata[[j]] <- NULL
+        }
+        if (length(nested)) {
+            colData(x) <- cdata
+        }
+    }
 
     # Row Loadings
     loadings <- rowLoadings(x)
@@ -853,6 +930,30 @@ function(x,
         .writeParquetModalities(exps,
                                 path = file.path(path, resources[[1L]][["path"]]),
                                 indexcols = indexcols, ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Row Tables
+    rtables <- rowTables(x)
+    if (length(rtables)) {
+        resources <- list(list(name = "feature_tables",
+                               path = "feature_tables",
+                               class = "data_package"))
+        .writeParquetDimTables(rtables,
+                               path = file.path(path, resources[[1L]][["path"]]),
+                               indexcol = indexcols[1L], ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Column Tables
+    ctables <- colTables(x)
+    if (length(ctables)) {
+        resources <- list(list(name = "sample_tables",
+                               path = "sample_tables",
+                               class = "data_package"))
+        .writeParquetDimTables(ctables,
+                               path = file.path(path, resources[[1L]][["path"]]),
+                               indexcol = indexcols[2L], ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 

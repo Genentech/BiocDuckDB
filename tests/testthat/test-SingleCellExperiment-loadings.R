@@ -35,8 +35,8 @@ test_that("rowLoading getters/setters are functioning with character 'type'", {
     expect_identical(rowLoadingNames(sce), "Factors")
 
     # Checking for different errors.
-    expect_error(rowLoading(sce, "PCA"), "invalid subscript") 
-    expect_error(rowLoading(sce, 2), "invalid subscript") 
+    expect_error(rowLoading(sce, "PCA"), "invalid subscript")
+    expect_error(rowLoading(sce, 2), "invalid subscript")
     expect_error(rowLoading(sce, "ICA") <- l1[1:10,], "number of rows")
     expect_error(rowLoading(sce, 1) <- "huh", "number of rows")
 })
@@ -44,6 +44,7 @@ test_that("rowLoading getters/setters are functioning with character 'type'", {
 test_that("rowLoadings getters/setters are functioning", {
     rowLoadings(sce) <- list(PCA=l1, Factors=l2)
     expect_identical(rowLoadingNames(sce), c("PCA", "Factors"))
+    expect_identical(rowLoading(sce), l1)
     expect_identical(rowLoading(sce, "PCA"), l1)
     expect_identical(rowLoading(sce, 1), l1)
     expect_identical(rowLoading(sce, "Factors"), l2)
@@ -152,7 +153,7 @@ test_that("rowLoading getters/setters work with numeric indices", {
 
 test_that("rowLoadingNames getters/setters work correctly", {
     rowLoadings(sce) <- list(l1, l2)
-    expect_true(all(c("loadings1", "loadings2") %in% rowLoadingNames(sce) | 
+    expect_true(all(c("unnamed1", "unnamed2") %in% rowLoadingNames(sce) | 
                     c("1", "2") %in% rowLoadingNames(sce)))
 
     rowLoadings(sce) <- list(PCA=l1, Factors=l2)
@@ -168,8 +169,7 @@ test_that("rowLoadingNames getters/setters work correctly", {
 
     # Setting names with wrong length should error
     rowLoadings(sce) <- list(PCA=l1, Factors=l2)
-    expect_error(rowLoadingNames(sce) <- c("A"), "length")
-    expect_error(rowLoadingNames(sce) <- c("A", "B", "C"), "length")
+    expect_error(rowLoadingNames(sce) <- c("A", "B", "C"), "more column names")
 })
 
 test_that("rowLoadings work after subsetting SCE by rows", {
@@ -181,12 +181,15 @@ test_that("rowLoadings work after subsetting SCE by rows", {
     sce_sub <- sce[1:100, ]
 
     # Check loadings are subset correctly
+    expect_identical(nrow(rowLoading(sce_sub)), 100L)
     expect_identical(nrow(rowLoading(sce_sub, "PCA")), 100L)
     expect_identical(nrow(rowLoading(sce_sub, "Factors")), 100L)
+    expect_identical(rownames(rowLoading(sce_sub)), rownames(sce_sub))
     expect_identical(rownames(rowLoading(sce_sub, "PCA")), rownames(sce_sub))
     expect_identical(rownames(rowLoading(sce_sub, "Factors")), rownames(sce_sub))
 
     # Check values are correct
+    expect_identical(rowLoading(sce_sub, withDimnames=FALSE), l1[1:100, ])
     expect_identical(rowLoading(sce_sub, "PCA", withDimnames=FALSE), l1[1:100, ])
     expect_identical(rowLoading(sce_sub, "Factors", withDimnames=FALSE), l2[1:100, ])
 })

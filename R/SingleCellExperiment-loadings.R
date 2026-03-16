@@ -175,6 +175,7 @@
 #'
 #' @aliases
 #' rowLoading
+#' rowLoading,SingleCellExperiment,missing-method
 #' rowLoading,SingleCellExperiment,numeric-method
 #' rowLoading,SingleCellExperiment,character-method
 #' rowLoadings
@@ -182,6 +183,7 @@
 #' rowLoadingNames
 #' rowLoadingNames,SingleCellExperiment-method
 #' rowLoading<-
+#' rowLoading<-,SingleCellExperiment,missing-method
 #' rowLoading<-,SingleCellExperiment,numeric-method
 #' rowLoading<-,SingleCellExperiment,character-method
 #' rowLoadings<-
@@ -189,29 +191,37 @@
 #' rowLoadingNames<-
 #' rowLoadingNames<-,SingleCellExperiment,character-method
 #'
+#' @include SingleCellExperiments-internals.R
+#'
 #' @name SingleCellExperiment-loadings
 NULL
+
+.load_key <- "rowLoadings"
+
+#' @importFrom S4Vectors make_zero_col_DFrame
+.initialize_loadings <- function(x) {
+    if (is.null(x@int_elementMetadata[[.load_key]])) {
+        loadings <- make_zero_col_DFrame(nrow(x))
+        rownames(loadings) <- rownames(x)
+        x@int_elementMetadata[[.load_key]] <- loadings
+    }
+    x
+}
 
 #' @export
 setGeneric("rowLoadings", function(x, withDimnames=TRUE) standardGeneric("rowLoadings"))
 
 #' @export
-#' @importClassesFrom S4Vectors SimpleList
-#' @importFrom S4Vectors endoapply make_zero_col_DFrame
 #' @importFrom SingleCellExperiment int_elementMetadata
 setMethod("rowLoadings", "SingleCellExperiment", function(x, withDimnames=TRUE) {
-    loadings <- int_elementMetadata(x)[["rowLoadings"]]
-    if (is.null(loadings)) {
-        loadings <- make_zero_col_DFrame(nrow(x))
-    }
-    loadings <- as(loadings, "SimpleList")
+    x <- .initialize_loadings(x)
+    value <- .get_internal_all(x, getfun = int_elementMetadata, key = .load_key)
     if (withDimnames) {
-        loadings <- endoapply(loadings, function(mat) {
-            rownames(mat) <- rownames(x)
-            mat
-        })
+        for (i in seq_along(value)) {
+            rownames(value[[i]]) <- rownames(x)
+        }
     }
-    loadings
+    value
 })
 
 #' @export
@@ -219,103 +229,128 @@ setGeneric("rowLoadings<-", function(x, withDimnames=TRUE, ..., value) standardG
 
 #' @export
 #' @importClassesFrom S4Vectors List
-#' @importFrom S4Vectors DataFrame I mcols mcols<- metadata metadata<-
+#' @importFrom SingleCellExperiment int_elementMetadata int_elementMetadata<-
 setReplaceMethod("rowLoadings", "SingleCellExperiment", function(x, withDimnames=TRUE, ..., value) {
     if (!(is.null(value) || is.list(value) || is(value, "List"))) {
         stop("'invalid 'value' in 'rowLoadings(<SingleCellExperiment>) <- value'")
     }
-    if (length(value) == 0) {
-        loadings <- NULL
-    } else {
-        for (i in seq_len(length(value))) {
-            if (!identical(nrow(value[[i]]), nrow(x))) {
-                stop("invalid 'value' in 'rowLoading(<SingleCellExperiment>, type=\"character\") <- value':\n  ",
-                     "all elements in 'value' should have number of rows equal to 'nrow(x)'")
+
+    for (i in seq_along(value)) {
+        if (!identical(nrow(value[[i]]), nrow(x))) {
+            stop("invalid 'value' in 'rowLoading(<SingleCellExperiment>, type=\"character\") <- value':\n  ",
+                 "all elements in 'value' should have number of rows equal to 'nrow(x)'")
+        }
+        if (withDimnames && !is.null(rownames(value[[i]]))) {
+            if (!identical(rownames(value[[i]]), rownames(x))) {
+                warning("non-NULL 'rownames(value[[", i, "]])' should be the same as 'rownames(x)' for 'rowLoadings<-'.")
             }
-            if (withDimnames && !is.null(rownames(value[[i]]))) {
-                if (!identical(rownames(x), rownames(value[[i]]))) {
-                    warning("non-NULL 'rownames(value[[", i, "]])' should be the same as 'rownames(x)' for 'rowLoadings<-'.")
-                }
-            }
-        }
-
-        if (is.null(names(value))) {
-            names(value) <- paste0("loadings", seq_along(value))
-        }
-        loadings <- do.call(DataFrame, c(lapply(value, I), list(row.names=NULL, check.names=FALSE)))
-
-        if (is(value, "Annotated")) {
-            metadata(loadings) <- metadata(value)
-        }
-
-        if (is(value, "Vector")) {
-            mcols(loadings) <- mcols(value)
         }
     }
-    int_elementMetadata(x)[["rowLoadings"]] <- loadings
-    x
+
+    x <- .initialize_loadings(x)
+    .set_internal_all(x, value,
+                      getfun = int_elementMetadata,
+                      setfun = `int_elementMetadata<-`,
+                      key = .load_key,
+                      convertfun = NULL,
+                      xdimfun = nrow,
+                      vdimfun = nrow,
+                      funstr = "rowLoadings",
+                      xdimstr = "nrow",
+                      vdimstr = "rows")
 })
 
 #' @export
 setGeneric("rowLoadingNames", function(x) standardGeneric("rowLoadingNames"))
 
 #' @export
-setMethod("rowLoadingNames", "SingleCellExperiment", function(x) names(rowLoadings(x)))
+#' @importFrom SingleCellExperiment int_elementMetadata
+setMethod("rowLoadingNames", "SingleCellExperiment", function(x) {
+    x <- .initialize_loadings(x)
+    .get_internal_names(x, getfun = int_elementMetadata, key = .load_key)
+})
 
 #' @export
 setGeneric("rowLoadingNames<-", function(x, value) standardGeneric("rowLoadingNames<-"))
 
 #' @export
+#' @importFrom SingleCellExperiment int_elementMetadata int_elementMetadata<-
 setReplaceMethod("rowLoadingNames", c("SingleCellExperiment", "character"), function(x, value) {
-    if (length(value) != length(rowLoadings(x))) {
-        stop("invalid 'value' in 'rowLoadingNames(<SingleCellExperiment>) <- value':\n  ",
-             "'value' should have length equal to the number of results in 'x'")
-    }
-    loadings <- rowLoadings(x)
-    names(loadings) <- value
-    rowLoadings(x) <- loadings
-    x
+    x <- .initialize_loadings(x)
+    .set_internal_names(x, value,
+                        getfun = int_elementMetadata,
+                        setfun = `int_elementMetadata<-`,
+                        key = .load_key)
 })
 
 #' @export
 setGeneric("rowLoading", function(x, type, withDimnames=TRUE) standardGeneric("rowLoading"))
 
 #' @export
-#' @importFrom S4Vectors isSingleNumber
-setMethod("rowLoading", c("SingleCellExperiment", "numeric"), function(x, type, withDimnames=TRUE) {
-    if (!isSingleNumber(type)) {
-        stop("'type' must be a scalar in 'rowLoading(<SingleCellExperiment>, type=\"numeric\")'")
-    }
-    if (type > length(rowLoadingNames(x))) {
-        stop("invalid subscript 'type' in 'rowLoading(<SingleCellExperiment>, type=\"numeric\")'")
-    }
-    rowLoadings(x, withDimnames=withDimnames)[[type]]
+setMethod("rowLoading", c("SingleCellExperiment", "missing"), function(x, type, withDimnames=TRUE) {
+    x <- .initialize_loadings(x)
+    .get_internal_missing(x,
+                          basefun = rowLoading,
+                          namefun = rowLoadingNames,
+                          funstr = "rowLoading",
+                          withDimnames = withDimnames)
 })
 
 #' @export
-#' @importFrom S4Vectors isSingleString
+#' @importFrom SingleCellExperiment int_elementMetadata
+setMethod("rowLoading", c("SingleCellExperiment", "numeric"), function(x, type, withDimnames=TRUE) {
+    x <- .initialize_loadings(x)
+    out <- .get_internal_integer(x, type,
+                                 getfun = int_elementMetadata,
+                                 key = .load_key,
+                                 funstr = "rowLoading",
+                                 substr = "type")
+    if (withDimnames) {
+        rownames(out) <- rownames(x)
+    }
+    out
+})
+
+#' @export
+#' @importFrom SingleCellExperiment int_elementMetadata
 setMethod("rowLoading", c("SingleCellExperiment", "character"), function(x, type, withDimnames=TRUE) {
-    if (!isSingleString(type)) {
-        stop("'type' must be a string in 'rowLoading(<SingleCellExperiment>, type=\"character\")'")
+    x <- .initialize_loadings(x)
+    out <- .get_internal_character(x, type,
+                                   getfun = int_elementMetadata,
+                                   key = .load_key,
+                                   funstr = "rowLoading",
+                                   substr = "type",
+                                   namestr = "rowLoadingNames")
+    if (withDimnames) {
+        rownames(out) <- rownames(x)
     }
-    if (!type %in% rowLoadingNames(x)) {
-        stop("invalid subscript 'type' in 'rowLoadingNames(<SingleCellExperiment>, type=\"character\")'")
-    }
-    rowLoadings(x, withDimnames=withDimnames)[[type]]
+    out
 })
 
 #' @export
 setGeneric("rowLoading<-", function(x, type, withDimnames=TRUE, ..., value) standardGeneric("rowLoading<-"))
 
 #' @export
+setReplaceMethod("rowLoading", c("SingleCellExperiment", "missing"), function(x, type, withDimnames=TRUE, ..., value) {
+    x <- .initialize_loadings(x)
+    .set_internal_missing(x, value,
+                          withDimnames = withDimnames,
+                          basefun = `rowLoading<-`,
+                          namefun = rowLoadingNames)
+})
+
+#' @export
 #' @importFrom S4Vectors isSingleNumber
+#' @importFrom SingleCellExperiment int_elementMetadata int_elementMetadata<-
 setReplaceMethod("rowLoading", c("SingleCellExperiment", "numeric"), function(x, type, withDimnames=TRUE, ..., value) {
     if (!isSingleNumber(type)) {
         stop("'type' must be a scalar in 'rowLoading(<SingleCellExperiment>, type=\"numeric\")' <- value'")
     }
+
     if (type > length(rowLoadingNames(x))) {
         stop("'type' out of bounds in 'rowLoading(<SingleCellExperiment>, type=\"numeric\") <- value'")
     }
+
     if (!is.null(value)) {
         if (!identical(nrow(value), nrow(x))) {
             stop("invalid 'value' in 'rowLoading(<SingleCellExperiment>, type=\"numeric\") <- value':\n  ",
@@ -323,23 +358,34 @@ setReplaceMethod("rowLoading", c("SingleCellExperiment", "numeric"), function(x,
         }
         # Optional validation when withDimnames=TRUE
         if (withDimnames && !is.null(rownames(value))) {
-            if (!identical(rownames(x), rownames(value))) {
+            if (!identical(rownames(value), rownames(x))) {
                 warning("non-NULL 'rownames(value)' should be the same as 'rownames(x)' for 'rowLoading<-'.")
             }
         }
     }
-    loadings <- rowLoadings(x, withDimnames=FALSE)
-    loadings[[type]] <- value
-    rowLoadings(x, withDimnames=FALSE) <- loadings
-    x
+
+    x <- .initialize_loadings(x)
+    .set_internal_numeric(x, type, value,
+                          getfun = int_elementMetadata,
+                          setfun = `int_elementMetadata<-`,
+                          key = .load_key,
+                          convertfun = NULL,
+                          xdimfun = nrow,
+                          vdimfun = nrow,
+                          funstr = "rowLoading",
+                          xdimstr = "nrow",
+                          vdimstr = "rows",
+                          substr = "type")
 })
 
 #' @export
 #' @importFrom S4Vectors isSingleString
+#' @importFrom SingleCellExperiment int_elementMetadata int_elementMetadata<-
 setReplaceMethod("rowLoading", c("SingleCellExperiment", "character"), function(x, type, withDimnames=TRUE, ..., value) {
     if (!isSingleString(type)) {
         stop("'type' must be a string in 'rowLoading(<SingleCellExperiment>, type=\"character\") <- value'")
     }
+
     if (!is.null(value)) {
         if (!identical(nrow(value), nrow(x))) {
             stop("invalid 'value' in 'rowLoading(<SingleCellExperiment>, type=\"character\") <- value':\n  ",
@@ -347,13 +393,22 @@ setReplaceMethod("rowLoading", c("SingleCellExperiment", "character"), function(
         }
         # Optional validation when withDimnames=TRUE
         if (withDimnames && !is.null(rownames(value))) {
-            if (!identical(rownames(x), rownames(value))) {
+            if (!identical(rownames(value), rownames(x))) {
                 warning("non-NULL 'rownames(value)' should be the same as 'rownames(x)' for 'rowLoading<-'.")
             }
         }
     }
-    loadings <- rowLoadings(x, withDimnames=FALSE)
-    loadings[[type]] <- value
-    rowLoadings(x, withDimnames=FALSE) <- loadings
-    x
+
+    x <- .initialize_loadings(x)
+    .set_internal_character(x, type, value,
+                            getfun = int_elementMetadata,
+                            setfun = `int_elementMetadata<-`,
+                            key = .load_key,
+                            convertfun = NULL,
+                            xdimfun = nrow,
+                            vdimfun = nrow,
+                            funstr = "rowLoading",
+                            xdimstr = "nrow",
+                            vdimstr = "rows",
+                            substr = "type")
 })
