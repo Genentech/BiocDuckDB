@@ -3,6 +3,7 @@
 \name{SingleCellExperiment-loadings}
 \alias{SingleCellExperiment-loadings}
 \alias{rowLoading}
+\alias{rowLoading,SingleCellExperiment,missing-method}
 \alias{rowLoading,SingleCellExperiment,numeric-method}
 \alias{rowLoading,SingleCellExperiment,character-method}
 \alias{rowLoadings}
@@ -10,6 +11,7 @@
 \alias{rowLoadingNames}
 \alias{rowLoadingNames,SingleCellExperiment-method}
 \alias{rowLoading<-}
+\alias{rowLoading<-,SingleCellExperiment,missing-method}
 \alias{rowLoading<-,SingleCellExperiment,numeric-method}
 \alias{rowLoading<-,SingleCellExperiment,character-method}
 \alias{rowLoadings<-}

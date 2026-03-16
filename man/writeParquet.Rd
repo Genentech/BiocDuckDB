@@ -291,6 +291,16 @@ that describe how to split the ranges into list elements.
 (\code{nnode}) is stored in the schema properties to enable reconstruction as
 a \linkS4class{DuckDBSelfHits} object.
 
+\strong{Automatic unnesting of nested DataFrames:} When writing
+\code{SingleCellExperiment} objects, any DataFrame-class columns found in
+\code{rowData()} or \code{colData()} are automatically extracted and moved to
+\code{rowTables()} or \code{colTables()} respectively. This unnesting enables
+independent Parquet serialization of multi-valued properties (e.g., multiple
+diseases per patient, multiple isoforms per gene) while keeping the main
+metadata tables flat and SQL-queryable. The original nested columns are
+removed from \code{rowData()}/\code{colData()} after extraction. This behavior
+is automatic and requires no user intervention.
+
 \strong{\code{SummarizedExperiment} objects:} Writes multi-assay experiments
 with separate paths for feature data, sample data, and assay data.
 
@@ -299,9 +309,14 @@ with separate paths for feature data, sample data, and assay data.
 
 \strong{\code{SingleCellExperiment} objects:} Extends
 \code{SummarizedExperiment} with additional single-cell specific data
-including reduced dimensions, alternate experiments, and column/row pairings
-(\code{colPairs}/\code{rowPairs}). Pairwise graphs are written to
-\code{sample_graphs/} and \code{feature_graphs/} subdirectories.
+including reduced dimensions, alternate experiments, row/column tables, and
+row/column pairings (\code{rowPairs}/\code{colPairs}). Row loadings are
+written to \code{feature_embeddings/}, reduced dimensions to
+\code{sample_embeddings/}, row tables to \code{feature_tables/}, column
+tables to \code{sample_tables/}, and pairwise graphs to
+\code{feature_graphs/} and \code{sample_graphs/} subdirectories. See the
+automatic unnesting section below for important details about DataFrame
+columns in \code{rowData()}/\code{colData()}.
 
 \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
 with separate paths for sample data, sample mapping, and experiment data.

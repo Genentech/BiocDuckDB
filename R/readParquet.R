@@ -48,6 +48,7 @@
 #'   \item \code{\linkS4class{DuckDBGRanges}} objects for genomic ranges
 #'   \item \code{\linkS4class{DuckDBGRangesList}} objects for grouped genomic ranges
 #'   \item \code{\linkS4class{DuckDBSelfHits}} objects for graph edge lists
+#'   \item \code{\linkS4class{DuckDBDualSubset}} objects for pairwise graphs (wrapping \code{DuckDBSelfHits})
 #' }
 #'
 #' @details
@@ -63,10 +64,9 @@
 #' reconstructed as \code{DuckDBGRanges} objects.
 #'
 #' \strong{\code{SingleCellExperiment} objects:} Extends \code{SummarizedExperiment}
-#' functionality by also reading reduced dimensions, alternative experiments, and
-#' column/row pairings from their respective parquet files. Pairwise graphs stored
-#' in \code{sample_graphs/} and \code{feature_graphs/} are reconstructed as
-#' \linkS4class{DuckDBDualSubset} objects wrapping \linkS4class{DuckDBSelfHits}.
+#' functionality by also reading reduced dimensions, loadings, alternative
+#' experiments, row / column tables, and row / column pairings from their
+#' respective parquet files.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Reads multiple experiments
 #' along with sample data and sample mapping information, reconstructing the
@@ -100,10 +100,10 @@
 #'   }
 #'   \item{\code{SingleCellExperiment}}{
 #'     Single-cell genomic experiments with reduced dimensions, loadings,
-#'     alternative experiments, and pairwise graphs from the
-#'     \code{sample_embeddings/}, \code{feature_embeddings/},
-#'     \code{modalities/}, \code{sample_graphs/}, and \code{feature_graphs/}
-#'     subdirectories.
+#'     alternative experiments, row/column tables, and pairwise graphs from
+#'     the \code{sample_embeddings/}, \code{feature_embeddings/},
+#'     \code{modalities/}, \code{feature_tables/}, \code{sample_tables/},
+#'     \code{feature_graphs/}, and \code{sample_graphs/} subdirectories.
 #'   }
 #'   \item{\code{DuckDBSelfHits}}{
 #'     Graph edge lists with \code{from}, \code{to} columns and optional
@@ -150,6 +150,7 @@
 #'   \item \code{\linkS4class{DuckDBDataFrame}} for metadata storage
 #'   \item \code{\linkS4class{DuckDBGRanges}} for genomic ranges
 #'   \item \code{\linkS4class{DuckDBGRangesList}} for grouped genomic ranges
+#'   \item \code{\linkS4class{DuckDBSelfHits}} for graph edge lists
 #' }
 #'
 #' @include fieldtypes.R
@@ -514,6 +515,40 @@ function(path,
             rowLoadings(se) <- as.list(loadings)
         }
 
+        # Row Tables
+        if (!is.null(resources[["feature_tables"]])) {
+            keycol <- dimkeycols[1L]
+            dirpath <- file.path(path, resources[["feature_tables"]][["path"]])
+            pkg <- read_json(file.path(dirpath, "datapackage.json"),
+                             simplifyVector = TRUE,
+                             simplifyDataFrame = FALSE,
+                             simplifyMatrix = FALSE)
+            for (i in seq_along(pkg[["resources"]])) {
+                res <- pkg[["resources"]][[i]]
+                table <- readParquet(file.path(dirpath, res[["path"]]),
+                                     metadata = res,
+                                     keycol = keycol)
+                rowTable(se, res[["name"]]) <- table
+            }
+        }
+
+        # Column Tables
+        if (!is.null(resources[["sample_tables"]])) {
+            keycol <- dimkeycols[2L]
+            dirpath <- file.path(path, resources[["sample_tables"]][["path"]])
+            pkg <- read_json(file.path(dirpath, "datapackage.json"),
+                             simplifyVector = TRUE,
+                             simplifyDataFrame = FALSE,
+                             simplifyMatrix = FALSE)
+            for (i in seq_along(pkg[["resources"]])) {
+                res <- pkg[["resources"]][[i]]
+                table <- readParquet(file.path(dirpath, res[["path"]]),
+                                     metadata = res,
+                                     keycol = keycol)
+                colTable(se, res[["name"]]) <- table
+            }
+        }
+
         # Row Pairs
         if (!is.null(resources[["feature_graphs"]])) {
             dirpath <- file.path(path, resources[["feature_graphs"]][["path"]])
@@ -524,7 +559,7 @@ function(path,
             for (i in seq_along(pkg[["resources"]])) {
                 res <- pkg[["resources"]][[i]]
                 hits <- readParquet(file.path(dirpath, res[["path"]]),
-                                    metadata = res, ...)
+                                    metadata = res)
                 rowPair(se, res[["name"]]) <- hits
             }
         }
@@ -539,7 +574,7 @@ function(path,
             for (i in seq_along(pkg[["resources"]])) {
                 res <- pkg[["resources"]][[i]]
                 hits <- readParquet(file.path(dirpath, res[["path"]]),
-                                    metadata = res, ...)
+                                    metadata = res)
                 colPair(se, res[["name"]]) <- hits
             }
         }

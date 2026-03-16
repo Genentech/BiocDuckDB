@@ -55,6 +55,7 @@ backend classes:
   \item \code{\linkS4class{DuckDBGRanges}} objects for genomic ranges
   \item \code{\linkS4class{DuckDBGRangesList}} objects for grouped genomic ranges
   \item \code{\linkS4class{DuckDBSelfHits}} objects for graph edge lists
+  \item \code{\linkS4class{DuckDBDualSubset}} objects for pairwise graphs (wrapping \code{DuckDBSelfHits})
 }
 }
 \description{
@@ -79,10 +80,9 @@ DuckDB-backed components. For ranged experiments, genomic coordinates are
 reconstructed as \code{DuckDBGRanges} objects.
 
 \strong{\code{SingleCellExperiment} objects:} Extends \code{SummarizedExperiment}
-functionality by also reading reduced dimensions, alternative experiments, and
-column/row pairings from their respective parquet files. Pairwise graphs stored
-in \code{sample_graphs/} and \code{feature_graphs/} are reconstructed as
-\linkS4class{DuckDBDualSubset} objects wrapping \linkS4class{DuckDBSelfHits}.
+functionality by also reading reduced dimensions, loadings, alternative
+experiments, row / column tables, and row / column pairings from their
+respective parquet files.
 
 \strong{\code{MultiAssayExperiment} objects:} Reads multiple experiments
 along with sample data and sample mapping information, reconstructing the
@@ -117,10 +117,10 @@ genomic data) encoded in the \code{datapackage.json} file.
   }
   \item{\code{SingleCellExperiment}}{
     Single-cell genomic experiments with reduced dimensions, loadings,
-    alternative experiments, and pairwise graphs from the
-    \code{sample_embeddings/}, \code{feature_embeddings/},
-    \code{modalities/}, \code{sample_graphs/}, and \code{feature_graphs/}
-    subdirectories.
+    alternative experiments, row/column tables, and pairwise graphs from
+    the \code{sample_embeddings/}, \code{feature_embeddings/},
+    \code{modalities/}, \code{feature_tables/}, \code{sample_tables/},
+    \code{feature_graphs/}, and \code{sample_graphs/} subdirectories.
   }
   \item{\code{DuckDBSelfHits}}{
     Graph edge lists with \code{from}, \code{to} columns and optional
@@ -168,6 +168,7 @@ Data Package specification.
   \item \code{\linkS4class{DuckDBDataFrame}} for metadata storage
   \item \code{\linkS4class{DuckDBGRanges}} for genomic ranges
   \item \code{\linkS4class{DuckDBGRangesList}} for grouped genomic ranges
+  \item \code{\linkS4class{DuckDBSelfHits}} for graph edge lists
 }
 }
 \author{
