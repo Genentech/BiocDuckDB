@@ -720,8 +720,10 @@ function(x,
          ...)
 {
     # Make dimnames unique
-    rownames(x) <- make.unique(rownames(x), sep = "_")
-    colnames(x) <- make.unique(colnames(x), sep = "_")
+    rownames(x) <- make.unique(rownames(x) %||% as.character(seq_len(nrow(x))),
+                               sep = "_")
+    colnames(x) <- make.unique(colnames(x) %||% as.character(seq_len(ncol(x))),
+                               sep = "_")
 
     # Dimension Tables
     grid <- defaultAutoGrid(COO_SparseArray(dim(assays(x)[[1L]])))
@@ -854,8 +856,10 @@ function(x,
          ...)
 {
     # Make dimnames unique
-    rownames(x) <- make.unique(rownames(x), sep = "_")
-    colnames(x) <- make.unique(colnames(x), sep = "_")
+    rownames(x) <- make.unique(rownames(x) %||% as.character(seq_len(nrow(x))),
+                               sep = "_")
+    colnames(x) <- make.unique(colnames(x) %||% as.character(seq_len(ncol(x))),
+                               sep = "_")
 
     # Unnest rowData
     rdata <- rowData(x)
