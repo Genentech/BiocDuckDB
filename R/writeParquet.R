@@ -843,9 +843,9 @@ function(x,
 #' @importClassesFrom S4Vectors DFrame
 #' @importClassesFrom SingleCellExperiment SingleCellExperiment
 #' @importFrom S4Vectors I
-#' @importFrom SingleCellExperiment altExps mainExpName
-#' @importFrom SingleCellExperiment reducedDims reducedDimNames
-#' @importFrom SingleCellExperiment colPairs rowPairs
+#' @importFrom SingleCellExperiment altExps colPairs mainExpName
+#' @importFrom SingleCellExperiment reducedDims reducedDimNames rowPairs
+#' @importFrom SummarizedExperiment colData colData<- rowData rowData<-
 #' @rdname writeParquet
 setMethod("writeParquet", "SingleCellExperiment",
 function(x,
