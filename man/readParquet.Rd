@@ -6,43 +6,30 @@
 \usage{
 readParquet(
   path,
-  metadata = read_json(file.path(path, "datapackage.json"), simplifyVector = TRUE,
+  package = read_json(file.path(path, "datapackage.json"), simplifyVector = TRUE,
     simplifyDataFrame = FALSE, simplifyMatrix = FALSE),
-  class = metadata[["class"]],
+  model = package[["model"]],
   ...
 )
 }
 \arguments{
 \item{path}{A character string specifying the path to the directory
 containing the parquet files. The directory must contain a
-\code{datapackage.json} file that describes the structure and class of the
-Bioconductor object following the Frictionless Data Package specification
-and the written objects must have been created with
-\code{\link{writeParquet}}.}
+\code{datapackage.json} file written by \code{\link{writeParquet}}.}
 
-\item{metadata}{A list containing metadata about the object structure. If
-\code{NULL} (default), the metadata is read from
-\code{file.path(path, "datapackage.json")}. The metadata should contain
-information about the object type, resources, schemas, and any additional
-components specific to the object type following the Frictionless Data
-Package specification and the written objects must have been created with
-\code{\link{writeParquet}}.}
+\item{package}{A list containing the parsed \code{datapackage.json}
+contents. Defaults to reading \code{file.path(path, "datapackage.json")}.
+Contains the package-level \code{model} field and a \code{resources} list
+describing each parquet dataset.}
 
-\item{class}{A character string specifying the class of Bioconductor object to
-read. If \code{NULL} (default), the class is determined from the metadata.
-Supported types include:
-\itemize{
-  \item \code{"assays"} - \code{Assays} objects
-  \item \code{"genomic_ranges"} - \code{GenomicRanges} objects
-  \item \code{"genomic_ranges_list"} - \code{GenomicRangesList} objects
-  \item \code{"graph_edges"} - \code{DuckDBSelfHits} objects
-  \item \code{"summarized_experiment"} - Basic \code{SummarizedExperiment} objects
-  \item \code{"ranged_summarized_experiment"} - \code{RangedSummarizedExperiment} objects
-  \item \code{"single_cell_experiment"} - \code{SingleCellExperiment} objects
-  \item \code{"experiment_list"} - \code{ExperimentList} objects
-  \item \code{"multi_assay_experiment"} - \code{MultiAssayExperiment} objects
-  \item \code{"multi_assay_spatial_experiment"} - \code{MultiAssaySpatialExperiment} objects
-}}
+\item{model}{A character string identifying the package schema — which
+container class to reconstruct. Defaults to \code{package[["model"]]}.
+Supported values: \code{"summarized_experiment"},
+\code{"ranged_summarized_experiment"}, \code{"single_cell_experiment"},
+\code{"experiment_list"}, \code{"multi_assay_experiment"},
+\code{"multi_assay_spatial_experiment"}. When \code{NULL} (absent from the
+package JSON), all resources are returned as a \code{SimpleList} with no
+imposed schema.}
 
 \item{...}{Additional arguments passed to internal helper functions.}
 }
@@ -96,50 +83,54 @@ genomic data) encoded in the \code{datapackage.json} file.
 \section{Supported Object Types}{
 
 \describe{
-  \item{\code{Assays}}{
-    \code{Assays} objects are read from the \code{assays/} subdirectory.
-  }
   \item{\code{GenomicRanges}}{
-    \code{GenomicRanges} objects are read with genomic coordinates (seqnames,
-    start, end, strand) and metadata columns.
+    Read with genomic coordinates (\code{seqnames}, \code{start},
+    \code{end}, \code{strand}) and optional metadata columns.
   }
   \item{\code{GenomicRangesList}}{
-    \code{GenomicRangesList} objects are read with genomic coordinates
-    (seqnames, start, end, strand) and metadata columns.
-  }
-  \item{\code{SummarizedExperiment}}{
-    Basic multi-assay genomic experiments with feature and sample metadata
-    from the \code{features/} and \code{samples/} subdirectories.
-  }
-  \item{\code{RangedSummarizedExperiment}}{
-    \code{SummarizedExperiment} with genomic ranges for features from the
-    \code{features/} subdirectory.
-  }
-  \item{\code{SingleCellExperiment}}{
-    Single-cell genomic experiments with reduced dimensions, loadings,
-    alternative experiments, row/column tables, and pairwise graphs from
-    the \code{sample_embeddings/}, \code{feature_embeddings/},
-    \code{modalities/}, \code{feature_tables/}, \code{sample_tables/},
-    \code{feature_graphs/}, and \code{sample_graphs/} subdirectories.
+    Read with genomic coordinates and metadata columns.
   }
   \item{\code{DuckDBSelfHits}}{
     Graph edge lists with \code{from}, \code{to} columns and optional
-    metadata. Node count (\code{nnode}) and column names are stored in the
-    schema \code{graphCoords} property and used to reconstruct the object.
+    metadata. Node count (\code{nnode}) is stored in the schema
+    \code{graphEdges} property.
+  }
+  \item{\code{SummarizedExperiment}}{
+    Feature metadata from \code{features/}, sample metadata from
+    \code{samples/}, and assays from flat \code{assay=<name>/} directories.
+    Any complex objects stored in \code{metadata()} are written to
+    \code{unbound=<name>/} directories and restored on read.
+  }
+  \item{\code{RangedSummarizedExperiment}}{
+    As \code{SummarizedExperiment}, with \code{rowRanges} reconstructed as a
+    \code{DuckDBGRanges} from \code{features/}.
+  }
+  \item{\code{SingleCellExperiment}}{
+    Extends \code{SummarizedExperiment} with: reduced dimensions from
+    \code{sample_embeddings/}; row loadings from \code{feature_embeddings/};
+    alternative experiments from \code{modalities/} (hierarchical);
+    row/column tables from flat \code{feature_table=<name>/} and
+    \code{sample_table=<name>/} directories; row/column pairwise graphs from
+    flat \code{feature_graph=<name>/} and \code{sample_graph=<name>/}
+    directories.
   }
   \item{\code{ExperimentList}}{
-    \code{ExperimentList} objects are read from the \code{experiments/}
-    subdirectory.
+    Named collection of experiments in \code{experiment=<name>/} directories.
+    \code{SummarizedExperiment} objects are stored hierarchically with their
+    own \code{datapackage.json} (\code{layout = "nested_experiment"}).
+    Array-like objects are stored as flat parquet datasets with metadata
+    consolidated in the root \code{datapackage.json}.
   }
   \item{\code{MultiAssayExperiment}}{
-    Multi-experiment studies that link experiments from the
-    \code{experiments/} subdirectory.
+    Experiments from \code{experiments/}, subject data from
+    \code{subjects/}, and sample map from \code{sample_map/}.
   }
   \item{\code{MultiAssaySpatialExperiment}}{
-    Multi-assay spatial experiments with points, shapes, imgData, and
-    spatialMap from the \code{points/}, \code{shapes/}, \code{img_data/},
-    \code{spatial_map/} subdirectories. Requires the
-    \code{MultiAssaySpatialExperiment} package.
+    Extends \code{MultiAssayExperiment} with spatial points from flat
+    \code{sample_points=<name>/} directories, shapes from flat
+    \code{sample_shapes=<name>/} directories, image metadata from
+    \code{img_data/}, and spatial mapping from \code{spatial_map/}.
+    Requires the \code{MultiAssaySpatialExperiment} package.
   }
 }
 }
@@ -147,18 +138,28 @@ genomic data) encoded in the \code{datapackage.json} file.
 \section{Frictionless Data Package Metadata}{
 
 This function reads data packages that follow the Frictionless Data Package
-specification, parsing the \code{datapackage.json} metadata file to
-understand the data structure. The metadata provides:
+specification (extended by the BiocDuckDB profile), parsing the
+\code{datapackage.json} metadata file. Dispatch operates at two levels:
+
+\strong{Package level} (root \code{datapackage.json}):
 \itemize{
-  \item Resource definitions with paths and types
-  \item Schema information including field types and constraints
-  \item Primary key definitions for data integrity
-  \item Semantic annotations for genomic data (sequence names, coordinates)
-  \item Object type information for proper reconstruction
+  \item \code{model} — which container class to reconstruct; absent means
+    \code{SimpleList} fallback.
+  \item \code{annotations} — scalar / vector metadata attached to
+    \code{metadata()} of the returned object.
 }
-This standardized approach ensures consistent data interpretation and
-facilitates interoperability with other tools that support the Frictionless
-Data Package specification.
+
+\strong{Resource level} (entries in \code{resources} array):
+\itemize{
+  \item \code{dimension} — biological axis (\code{"feature"},
+    \code{"sample"}, \code{"crossed"}, \code{"unbound"}).
+  \item \code{layout} — physical storage pattern (e.g.,
+    \code{"data_frame"}, \code{"coord_array"}, \code{"graph_edges"},
+    \code{"nested_experiment"}); routes each resource to the
+    appropriate low-level reader via \code{.readParquetResource}.
+  \item \code{schema} — field definitions, primary keys, and BiocDuckDB
+    annotations (\code{genomicCoords}, \code{graphEdges}, \code{arrayItem}).
+}
 }
 
 \seealso{

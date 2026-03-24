@@ -6,6 +6,8 @@
 \alias{writeParquet,data.frame-method}
 \alias{writeParquet,DataFrame-method}
 \alias{writeParquet,TransposedDataFrame-method}
+\alias{writeParquet,list-method}
+\alias{writeParquet,List-method}
 \alias{writeParquet,GenomicRanges-method}
 \alias{writeParquet,GenomicRangesList-method}
 \alias{writeParquet,SelfHits-method}
@@ -31,7 +33,8 @@ writeParquet(x, path, ...)
   grid_suffix = "_group",
   BPPARAM = getAutoBPPARAM(),
   name = basename(path),
-  class = "array",
+  dimension = c("crossed", "unbound"),
+  layout = "coord_array",
   ...
 )
 
@@ -42,7 +45,8 @@ writeParquet(x, path, ...)
   keycol = "__name__",
   dimtbl = NULL,
   name = basename(path),
-  class = "data.frame",
+  dimension = c("unbound", "sample", "feature", "crossed"),
+  layout = "data_frame",
   ...
 )
 
@@ -53,7 +57,8 @@ writeParquet(x, path, ...)
   keycol = "__name__",
   dimtbl = NULL,
   name = basename(path),
-  class = "data_frame",
+  dimension = c("unbound", "sample", "feature", "crossed"),
+  layout = "data_frame",
   ...
 )
 
@@ -64,7 +69,22 @@ writeParquet(x, path, ...)
   keycol = "__name__",
   dimtbl = NULL,
   name = basename(path),
-  class = "transposed_data_frame",
+  dimension = "crossed",
+  layout = "transposed_data_frame",
+  ...
+)
+
+\S4method{writeParquet}{list}(
+  x,
+  path,
+  dimension = c("unbound", "sample", "feature", "crossed"),
+  ...
+)
+
+\S4method{writeParquet}{List}(
+  x,
+  path,
+  dimension = c("unbound", "sample", "feature", "crossed"),
   ...
 )
 
@@ -75,7 +95,8 @@ writeParquet(x, path, ...)
   keycol = "__name__",
   dimtbl = NULL,
   name = basename(path),
-  class = "genomic_ranges",
+  dimension = c("feature", "unbound"),
+  layout = "genomic_ranges",
   ...
 )
 
@@ -86,7 +107,8 @@ writeParquet(x, path, ...)
   keycol = "__name__",
   dimtbl = NULL,
   name = basename(path),
-  class = "genomic_ranges_list",
+  dimension = c("feature", "unbound"),
+  layout = "genomic_ranges_list",
   ...
 )
 
@@ -97,7 +119,8 @@ writeParquet(x, path, ...)
   keycol = "__name__",
   dimtbl = NULL,
   name = basename(path),
-  class = "graph_edges",
+  dimension = c("unbound", "sample", "feature"),
+  layout = "graph_edges",
   ...
 )
 
@@ -109,7 +132,7 @@ writeParquet(x, path, ...)
   datacol = "value",
   grid = defaultAutoGrid(COO_SparseArray(dim(x[[1L]]))),
   grid_suffix = "group__",
-  package = list(class = "assays", resources = list()),
+  dimension = "crossed",
   ...
 )
 
@@ -117,7 +140,7 @@ writeParquet(x, path, ...)
   x,
   path,
   indexcols = c("__feature__", "__sample__"),
-  package = list(class = ifelse(is(x, "RangedSummarizedExperiment"),
+  package = list(model = ifelse(is(x, "RangedSummarizedExperiment"),
     "ranged_summarized_experiment", "summarized_experiment"), resources = list()),
   ...
 )
@@ -126,7 +149,7 @@ writeParquet(x, path, ...)
   x,
   path,
   indexcols = c("__feature__", "__sample__"),
-  package = list(class = "single_cell_experiment", resources = list()),
+  package = list(model = "single_cell_experiment", resources = list()),
   ...
 )
 
@@ -134,7 +157,7 @@ writeParquet(x, path, ...)
   x,
   path,
   indexcols = c("__feature__", "__sample__"),
-  package = list(class = "experiment_list", resources = list()),
+  package = list(model = "experiment_list", resources = list()),
   ...
 )
 
@@ -142,33 +165,19 @@ writeParquet(x, path, ...)
   x,
   path,
   indexcols = c("__feature__", "__sample__"),
-  package = list(class = "multi_assay_experiment", resources = list()),
+  package = list(model = "multi_assay_experiment", resources = list()),
   ...
 )
 
-\S4method{writeParquet}{PointsLayerList}(
-  x,
-  path,
-  name = basename(path),
-  class = "points_layer_list",
-  package = list(class = "points_layer_list", resources = list()),
-  ...
-)
+\S4method{writeParquet}{PointsLayerList}(x, path, ...)
 
-\S4method{writeParquet}{ShapesLayerList}(
-  x,
-  path,
-  name = basename(path),
-  class = "shapes_layer_list",
-  package = list(class = "shapes_layer_list", resources = list()),
-  ...
-)
+\S4method{writeParquet}{ShapesLayerList}(x, path, ...)
 
 \S4method{writeParquet}{MultiAssaySpatialExperiment}(
   x,
   path,
   indexcols = c("__feature__", "__sample__"),
-  package = list(class = "multi_assay_spatial_experiment", resources = list()),
+  package = list(model = "multi_assay_spatial_experiment", resources = list()),
   ...
 )
 }
@@ -176,18 +185,28 @@ writeParquet(x, path, ...)
 \item{x}{The object to write. Supported types include:
 \itemize{
   \item Array-like objects - converted to coordinate (long) format
-  \item \code{data.frame} objects - written directly with optional row names
-  \item \code{DataFrame} objects - written with column type information
+  \item \code{data.frame} / \code{DataFrame} objects - written with field type metadata
   \item \code{TransposedDataFrame} objects - transposed before writing
+  \item \code{list} / \code{List} objects - each element dispatched individually;
+    requires \code{dimension}; \code{layout} defaults to \code{NULL} (each
+    element's method supplies its own default layout)
   \item \code{GenomicRanges} objects - genomic coordinates with metadata
-  \item \code{GenomicRangesList} objects - lists of genomic ranges
-  \item \code{SelfHits} objects - graph edge lists with node count
-  \item \code{Assays} objects - multi-assay arrays
-  \item \code{SummarizedExperiment} objects - multi-assay summarized experiments
-  \item \code{RangedSummarizedExperiment} objects - multi-assay genomic experiments
-  \item \code{SingleCellExperiment} objects - single-cell genomic experiments
-  \item \code{ExperimentList} objects - multi-experiment lists
-  \item \code{MultiAssayExperiment} objects - multi-experiment genomic studies
+  \item \code{GenomicRangesList} objects - lists of genomic ranges stored as
+    LIST-typed columns
+  \item \code{SelfHits} objects - graph edge lists with node count metadata
+  \item \code{Assays} objects - collection of feature-by-sample matrices
+  \item \code{SummarizedExperiment} objects - feature/sample metadata with assays
+  \item \code{RangedSummarizedExperiment} objects - as above with genomic ranges
+    for features
+  \item \code{SingleCellExperiment} objects - extends \code{SummarizedExperiment}
+    with embeddings, alt experiments, dimension tables, and pairwise graphs
+  \item \code{ExperimentList} objects - named collection of experiments
+  \item \code{MultiAssayExperiment} objects - multi-experiment study with subject
+    metadata and sample map
+  \item \code{PointsLayerList} / \code{ShapesLayerList} objects - spatial point
+    and polygon layers
+  \item \code{MultiAssaySpatialExperiment} objects - spatially-resolved
+    multi-assay experiment
 }}
 
 \item{path}{A character string specifying the path where the data will be
@@ -225,7 +244,17 @@ when \code{grid} contains multiple cells. Defaults to
 \item{name}{A character string specifying the name of the resource. Defaults
 to the basename of the \code{path} argument.}
 
-\item{class}{A character string specifying the class of the resource.}
+\item{dimension}{A character string describing which biological axis the
+resource is indexed by. One of \code{"feature"}, \code{"sample"},
+\code{"crossed"} (feature \eqn{\times} sample Cartesian product), or
+\code{"unbound"} (not tied to either axis).}
+
+\item{layout}{A character string identifying the physical storage layout of
+the resource. Recorded in \code{datapackage.json} and used by
+\code{readParquet} to dispatch the correct reader. Examples:
+\code{"data_frame"}, \code{"coord_array"}, \code{"embedding_table"},
+\code{"genomic_ranges"}, \code{"graph_edges"}, \code{"nested_data_frame"},
+\code{"nested_experiment"}.}
 
 \item{indexcol}{For \code{data.frame} and \code{Vector} objects, a character
 string specifying the column name for the integer index column in the
@@ -240,13 +269,33 @@ Set to \code{NULL} to omit this column.}
 \item{dimtbl}{For \code{data.frame} and \code{Vector} objects, an optional
 \code{data.frame} containing a dimension table with partitioning information.}
 
-\item{package}{A list containing the name of the data package and a list of
-resources. Only used by complex objects such as \code{SummarizedExperiment}
-and \code{MultiAssayExperiment}.}
+\item{package}{A list used by experiment-level methods to accumulate the
+\code{datapackage.json} contents before writing. Contains:
+\itemize{
+  \item \code{model} - Package-level schema identifier (e.g.
+    \code{"single_cell_experiment"}). Determines which \code{readParquet}
+    reader reconstructs the object. Distinct from the resource-level
+    \code{layout} field — \code{model} describes the whole package;
+    \code{layout} describes one resource within it.
+  \item \code{resources} - Accumulating list of resource entries, each
+    contributed by a primitive \code{writeParquet} method call.
+}
+Callers should not normally set this; the default is supplied by each
+experiment method.}
 }
 \value{
-Invisibly returns the \code{path} argument, allowing for function
-chaining.
+For primitive methods (\code{ANY}, \code{data.frame}, \code{DataFrame},
+\code{TransposedDataFrame}, \code{GenomicRanges}, \code{GenomicRangesList},
+\code{SelfHits}, \code{Assays}, \code{list}, \code{List},
+\code{PointsLayerList}, \code{ShapesLayerList}): invisibly returns a list of
+Frictionless resource entries suitable for inclusion in a
+\code{datapackage.json} \code{resources} array.
+
+For complex experiment methods (\code{SummarizedExperiment},
+\code{SingleCellExperiment}, \code{ExperimentList},
+\code{MultiAssayExperiment}, \code{MultiAssaySpatialExperiment}):
+invisibly returns \code{NULL}; the \code{datapackage.json} is written to
+\code{path} as a side effect.
 }
 \description{
 An \code{arrow::write_dataset} wrapper function to write the Parquet
@@ -286,8 +335,8 @@ columns in the output.
 from ranges data, writing them to different paths with schema properties
 that describe how to split the ranges into list elements.
 
-\strong{\code{SelfHits} objects:} Writes graph edge lists as a data frame with
-\code{from}, \code{to}, and optional metadata columns. The node count
+\strong{\code{SelfHits} objects:} Writes graph edge lists as a data frame
+with \code{from}, \code{to}, and optional metadata columns. The node count
 (\code{nnode}) is stored in the schema properties to enable reconstruction as
 a \linkS4class{DuckDBSelfHits} object.
 
@@ -298,8 +347,8 @@ a \linkS4class{DuckDBSelfHits} object.
 independent Parquet serialization of multi-valued properties (e.g., multiple
 diseases per patient, multiple isoforms per gene) while keeping the main
 metadata tables flat and SQL-queryable. The original nested columns are
-removed from \code{rowData()}/\code{colData()} after extraction. This behavior
-is automatic and requires no user intervention.
+removed from \code{rowData()}/\code{colData()} after extraction. This
+behavior is automatic and requires no user intervention.
 
 \strong{\code{SummarizedExperiment} objects:} Writes multi-assay experiments
 with separate paths for feature data, sample data, and assay data.
@@ -308,39 +357,52 @@ with separate paths for feature data, sample data, and assay data.
 \code{SummarizedExperiment} functionality with genomic ranges for features.
 
 \strong{\code{SingleCellExperiment} objects:} Extends
-\code{SummarizedExperiment} with additional single-cell specific data
-including reduced dimensions, alternate experiments, row/column tables, and
-row/column pairings (\code{rowPairs}/\code{colPairs}). Row loadings are
-written to \code{feature_embeddings/}, reduced dimensions to
-\code{sample_embeddings/}, row tables to \code{feature_tables/}, column
-tables to \code{sample_tables/}, and pairwise graphs to
-\code{feature_graphs/} and \code{sample_graphs/} subdirectories. See the
-automatic unnesting section below for important details about DataFrame
-columns in \code{rowData()}/\code{colData()}.
+\code{SummarizedExperiment} with single-cell specific data. All collections
+are written as flat resource directories directly under \code{path}. The
+directory name encodes both axis and type: \code{feature_embeddings/},
+\code{sample_embeddings/}, \code{feature_table=<name>/},
+\code{sample_table=<name>/}, \code{feature_graph=<name>/},
+\code{sample_graph=<name>/}. The path prefix is derived automatically from
+\code{layout}. Alternative experiments remain hierarchical under
+\code{modalities/}. See the automatic unnesting section for details about
+\code{DataFrame} columns in \code{rowData()}/\code{colData()}.
 
 \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
 with separate paths for sample data, sample mapping, and experiment data.
 }
 \section{Frictionless Data Package Metadata}{
 
-This function implements the Frictionless Data Package specification for
-metadata, creating \code{datapackage.json} files that describe the data
-structures of the written objects. This function creates a separate
-\code{datapackage.json} file for each object type, including:
+This function writes a \code{datapackage.json} file (Frictionless Data
+Package v2.0) alongside the Parquet files. The file contains two levels of
+metadata:
+
+\strong{Package-level fields} (top of \code{datapackage.json}):
 \itemize{
-  \item \code{name} - The name/class of the data package
-  \item \code{resources} - A list of data resources, each containing:
-  \itemize{
-    \item \code{name} - Resource identifier
-    \item \code{path} - Relative path to the data files
-    \item \code{class} - Class of the resource (e.g., "data_frame", "array")
-    \item \code{format} - File format ("parquet")
-    \item \code{mediatype} - MIME type ("application/vnd.apache.parquet")
-    \item \code{schema} - Field definitions with types and constraints
-  }
+  \item \code{model} - Overall schema identifier. Determines which
+    \code{readParquet} reader is used to reconstruct the container object
+    (e.g. \code{"single_cell_experiment"}, \code{"multi_assay_experiment"}).
+    When absent, \code{readParquet} returns a \code{SimpleList} of resources
+    with no imposed schema.
+  \item \code{annotations} - Scalar/vector elements from \code{metadata(x)};
+    complex objects are written as \code{unbound} resources instead.
 }
-This standardized metadata format ensures interoperability and provides
-comprehensive documentation of the data structure for downstream analysis.
+
+\strong{Per-resource fields} (each entry in the \code{resources} array):
+\itemize{
+  \item \code{name} - Resource identifier (typically the object name)
+  \item \code{path} - Relative directory path to the Parquet dataset
+  \item \code{dimension} - Biological axis: \code{"feature"}, \code{"sample"},
+    \code{"crossed"}, or \code{"unbound"}
+  \item \code{layout} - Physical storage layout (BiocDuckDB extension);
+    together with \code{dimension}, uniquely determines the R accessor and
+    AnnData slot used during reconstruction
+  \item \code{format} - File format (\code{"parquet"})
+  \item \code{mediatype} - MIME type (\code{"application/vnd.apache.parquet"})
+  \item \code{schema} - Field definitions including types, primary key,
+    sort order, and foreign key references
+}
+See the BiocDuckDB storage patterns documentation for the full
+\code{model} table and \code{dimension} + \code{layout} dispatch table.
 }
 
 \examples{

@@ -11,18 +11,28 @@
 #' @param x The object to write. Supported types include:
 #' \itemize{
 #'   \item Array-like objects - converted to coordinate (long) format
-#'   \item \code{data.frame} objects - written directly with optional row names
-#'   \item \code{DataFrame} objects - written with column type information
+#'   \item \code{data.frame} / \code{DataFrame} objects - written with field type metadata
 #'   \item \code{TransposedDataFrame} objects - transposed before writing
+#'   \item \code{list} / \code{List} objects - each element dispatched individually;
+#'     requires \code{dimension}; \code{layout} defaults to \code{NULL} (each
+#'     element's method supplies its own default layout)
 #'   \item \code{GenomicRanges} objects - genomic coordinates with metadata
-#'   \item \code{GenomicRangesList} objects - lists of genomic ranges
-#'   \item \code{SelfHits} objects - graph edge lists with node count
-#'   \item \code{Assays} objects - multi-assay arrays
-#'   \item \code{SummarizedExperiment} objects - multi-assay summarized experiments
-#'   \item \code{RangedSummarizedExperiment} objects - multi-assay genomic experiments
-#'   \item \code{SingleCellExperiment} objects - single-cell genomic experiments
-#'   \item \code{ExperimentList} objects - multi-experiment lists
-#'   \item \code{MultiAssayExperiment} objects - multi-experiment genomic studies
+#'   \item \code{GenomicRangesList} objects - lists of genomic ranges stored as
+#'     LIST-typed columns
+#'   \item \code{SelfHits} objects - graph edge lists with node count metadata
+#'   \item \code{Assays} objects - collection of feature-by-sample matrices
+#'   \item \code{SummarizedExperiment} objects - feature/sample metadata with assays
+#'   \item \code{RangedSummarizedExperiment} objects - as above with genomic ranges
+#'     for features
+#'   \item \code{SingleCellExperiment} objects - extends \code{SummarizedExperiment}
+#'     with embeddings, alt experiments, dimension tables, and pairwise graphs
+#'   \item \code{ExperimentList} objects - named collection of experiments
+#'   \item \code{MultiAssayExperiment} objects - multi-experiment study with subject
+#'     metadata and sample map
+#'   \item \code{PointsLayerList} / \code{ShapesLayerList} objects - spatial point
+#'     and polygon layers
+#'   \item \code{MultiAssaySpatialExperiment} objects - spatially-resolved
+#'     multi-assay experiment
 #' }
 #' @param path A character string specifying the path where the data will be
 #' written. The path will be created if it doesn't exist.
@@ -58,15 +68,45 @@
 #' \code{getAutoBPPARAM()}.
 #' @param name A character string specifying the name of the resource. Defaults
 #' to the basename of the \code{path} argument.
-#' @param class A character string specifying the class of the resource.
-#' @param package A list containing the name of the data package and a list of
-#' resources. Only used by complex objects such as \code{SummarizedExperiment}
-#' and \code{MultiAssayExperiment}.
+#' @param dimension A character string describing which biological axis the
+#' resource is indexed by. One of \code{"feature"}, \code{"sample"},
+#' \code{"crossed"} (feature \eqn{\times} sample Cartesian product), or
+#' \code{"unbound"} (not tied to either axis).
+#' @param layout A character string identifying the physical storage layout of
+#' the resource. Recorded in \code{datapackage.json} and used by
+#' \code{readParquet} to dispatch the correct reader. Examples:
+#' \code{"data_frame"}, \code{"coord_array"}, \code{"embedding_table"},
+#' \code{"genomic_ranges"}, \code{"graph_edges"}, \code{"nested_data_frame"},
+#' \code{"nested_experiment"}.
+#' @param package A list used by experiment-level methods to accumulate the
+#' \code{datapackage.json} contents before writing. Contains:
+#' \itemize{
+#'   \item \code{model} - Package-level schema identifier (e.g.
+#'     \code{"single_cell_experiment"}). Determines which \code{readParquet}
+#'     reader reconstructs the object. Distinct from the resource-level
+#'     \code{layout} field — \code{model} describes the whole package;
+#'     \code{layout} describes one resource within it.
+#'   \item \code{resources} - Accumulating list of resource entries, each
+#'     contributed by a primitive \code{writeParquet} method call.
+#' }
+#' Callers should not normally set this; the default is supplied by each
+#' experiment method.
 #' @param ... Additional arguments to pass to \code{arrow::write_dataset},
 #' such as \code{format} (e.g., "parquet", "csv"), \code{compression}, etc.
 #'
-#' @return Invisibly returns the \code{path} argument, allowing for function
-#' chaining.
+#' @return
+#' For primitive methods (\code{ANY}, \code{data.frame}, \code{DataFrame},
+#' \code{TransposedDataFrame}, \code{GenomicRanges}, \code{GenomicRangesList},
+#' \code{SelfHits}, \code{Assays}, \code{list}, \code{List},
+#' \code{PointsLayerList}, \code{ShapesLayerList}): invisibly returns a list of
+#' Frictionless resource entries suitable for inclusion in a
+#' \code{datapackage.json} \code{resources} array.
+#'
+#' For complex experiment methods (\code{SummarizedExperiment},
+#' \code{SingleCellExperiment}, \code{ExperimentList},
+#' \code{MultiAssayExperiment}, \code{MultiAssaySpatialExperiment}):
+#' invisibly returns \code{NULL}; the \code{datapackage.json} is written to
+#' \code{path} as a side effect.
 #'
 #' @details
 #' This function provides specialized handling for different object types:
@@ -98,8 +138,8 @@
 #' from ranges data, writing them to different paths with schema properties
 #' that describe how to split the ranges into list elements.
 #'
-#' \strong{\code{SelfHits} objects:} Writes graph edge lists as a data frame with
-#' \code{from}, \code{to}, and optional metadata columns. The node count
+#' \strong{\code{SelfHits} objects:} Writes graph edge lists as a data frame
+#' with \code{from}, \code{to}, and optional metadata columns. The node count
 #' (\code{nnode}) is stored in the schema properties to enable reconstruction as
 #' a \linkS4class{DuckDBSelfHits} object.
 #'
@@ -110,8 +150,8 @@
 #' independent Parquet serialization of multi-valued properties (e.g., multiple
 #' diseases per patient, multiple isoforms per gene) while keeping the main
 #' metadata tables flat and SQL-queryable. The original nested columns are
-#' removed from \code{rowData()}/\code{colData()} after extraction. This behavior
-#' is automatic and requires no user intervention.
+#' removed from \code{rowData()}/\code{colData()} after extraction. This
+#' behavior is automatic and requires no user intervention.
 #'
 #' \strong{\code{SummarizedExperiment} objects:} Writes multi-assay experiments
 #' with separate paths for feature data, sample data, and assay data.
@@ -120,38 +160,51 @@
 #' \code{SummarizedExperiment} functionality with genomic ranges for features.
 #'
 #' \strong{\code{SingleCellExperiment} objects:} Extends
-#' \code{SummarizedExperiment} with additional single-cell specific data
-#' including reduced dimensions, alternate experiments, row/column tables, and
-#' row/column pairings (\code{rowPairs}/\code{colPairs}). Row loadings are
-#' written to \code{feature_embeddings/}, reduced dimensions to
-#' \code{sample_embeddings/}, row tables to \code{feature_tables/}, column
-#' tables to \code{sample_tables/}, and pairwise graphs to
-#' \code{feature_graphs/} and \code{sample_graphs/} subdirectories. See the
-#' automatic unnesting section below for important details about DataFrame
-#' columns in \code{rowData()}/\code{colData()}.
+#' \code{SummarizedExperiment} with single-cell specific data. All collections
+#' are written as flat resource directories directly under \code{path}. The
+#' directory name encodes both axis and type: \code{feature_embeddings/},
+#' \code{sample_embeddings/}, \code{feature_table=<name>/},
+#' \code{sample_table=<name>/}, \code{feature_graph=<name>/},
+#' \code{sample_graph=<name>/}. The path prefix is derived automatically from
+#' \code{layout}. Alternative experiments remain hierarchical under
+#' \code{modalities/}. See the automatic unnesting section for details about
+#' \code{DataFrame} columns in \code{rowData()}/\code{colData()}.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
 #' with separate paths for sample data, sample mapping, and experiment data.
 #'
 #' @section Frictionless Data Package Metadata:
-#' This function implements the Frictionless Data Package specification for
-#' metadata, creating \code{datapackage.json} files that describe the data
-#' structures of the written objects. This function creates a separate
-#' \code{datapackage.json} file for each object type, including:
+#' This function writes a \code{datapackage.json} file (Frictionless Data
+#' Package v2.0) alongside the Parquet files. The file contains two levels of
+#' metadata:
+#'
+#' \strong{Package-level fields} (top of \code{datapackage.json}):
 #' \itemize{
-#'   \item \code{name} - The name/class of the data package
-#'   \item \code{resources} - A list of data resources, each containing:
-#'   \itemize{
-#'     \item \code{name} - Resource identifier
-#'     \item \code{path} - Relative path to the data files
-#'     \item \code{class} - Class of the resource (e.g., "data_frame", "array")
-#'     \item \code{format} - File format ("parquet")
-#'     \item \code{mediatype} - MIME type ("application/vnd.apache.parquet")
-#'     \item \code{schema} - Field definitions with types and constraints
-#'   }
+#'   \item \code{model} - Overall schema identifier. Determines which
+#'     \code{readParquet} reader is used to reconstruct the container object
+#'     (e.g. \code{"single_cell_experiment"}, \code{"multi_assay_experiment"}).
+#'     When absent, \code{readParquet} returns a \code{SimpleList} of resources
+#'     with no imposed schema.
+#'   \item \code{annotations} - Scalar/vector elements from \code{metadata(x)};
+#'     complex objects are written as \code{unbound} resources instead.
 #' }
-#' This standardized metadata format ensures interoperability and provides
-#' comprehensive documentation of the data structure for downstream analysis.
+#'
+#' \strong{Per-resource fields} (each entry in the \code{resources} array):
+#' \itemize{
+#'   \item \code{name} - Resource identifier (typically the object name)
+#'   \item \code{path} - Relative directory path to the Parquet dataset
+#'   \item \code{dimension} - Biological axis: \code{"feature"}, \code{"sample"},
+#'     \code{"crossed"}, or \code{"unbound"}
+#'   \item \code{layout} - Physical storage layout (BiocDuckDB extension);
+#'     together with \code{dimension}, uniquely determines the R accessor and
+#'     AnnData slot used during reconstruction
+#'   \item \code{format} - File format (\code{"parquet"})
+#'   \item \code{mediatype} - MIME type (\code{"application/vnd.apache.parquet"})
+#'   \item \code{schema} - Field definitions including types, primary key,
+#'     sort order, and foreign key references
+#' }
+#' See the BiocDuckDB storage patterns documentation for the full
+#' \code{model} table and \code{dimension} + \code{layout} dispatch table.
 #'
 #' @author Patrick Aboyoun
 #'
@@ -199,11 +252,20 @@ function(x, path, ...)
 }
 
 #' @importFrom S4Vectors metadata
-.vectorMetadata <-
-function(x)
-{
+.vectorMetadata <- function(x) {
     md <- metadata(x)
     md <- md[vapply(md, is.vector, logical(1L))]
+    if (length(md) == 0L)
+        md <- NULL
+    md
+}
+
+#' @importClassesFrom S4Vectors List
+#' @importFrom S4Vectors metadata
+.unboundMetadata <- function(x) {
+    md <- metadata(x)
+    md <- md[vapply(md, function(x) is(x, "List") || !is.null(dim(x)),
+                    logical(1L))]
     if (length(md) == 0L)
         md <- NULL
     md
@@ -231,9 +293,12 @@ function(x,
          grid_suffix = "_group",
          BPPARAM = getAutoBPPARAM(),
          name = basename(path),
-         class = "array",
+         dimension = c("crossed", "unbound"),
+         layout = "coord_array",
          ...)
 {
+    dimension <- match.arg(dimension)
+
     if (is.null(dim(x))) {
         stop("the default method of writeParquet requires 'x' to be array-like")
     }
@@ -280,16 +345,16 @@ function(x,
 
     # Generate foreign key metadata
     if (is.null(indexrefs)) {
-        indexrefs <- rep(list(fields = ""), length(indexcols))
+        indexrefs <- lapply(seq_along(indexcols), function(i) {
+            list(fields = indexcols[i], reference = list(fields = ""))
+        })
     }
-    indexrefs <- lapply(seq_along(indexcols), function(i) {
-        list(fields = indexcols[i], reference = indexrefs[[i]])
-    })
 
     schema <- list(fields = fields, foreignKeys = indexrefs)
     resources <- list(list(name = name,
                            path = basename(path),
-                           class = class,
+                           dimension = dimension,
+                           layout = layout,
                            format = "parquet",
                            mediatype = "application/vnd.apache.parquet",
                            schema = schema))
@@ -319,9 +384,11 @@ function(x,
     NULL
 }
 
+#' @importFrom arrow Array write_dataset
 #' @importFrom S4Vectors I
+#' @importFrom stats setNames
 .writeDataFrameParquet <-
-function(x, path, indexcol, keycol, dimtbl, name, class, ...)
+function(x, path, indexcol, keycol, dimtbl, name, dimension, layout, ...)
 {
     if (!dir.exists(path)) {
         dir.create(path, recursive = TRUE)
@@ -402,7 +469,8 @@ function(x, path, indexcol, keycol, dimtbl, name, class, ...)
 
     list(list(name = name,
               path = basename(path),
-              class = class,
+              dimension = dimension,
+              layout = layout,
               format = "parquet",
               mediatype = "application/vnd.apache.parquet",
               schema = schema))
@@ -413,8 +481,6 @@ function(x, path, indexcol, keycol, dimtbl, name, class, ...)
 ###
 
 #' @export
-#' @importFrom arrow Array write_dataset
-#' @importFrom stats setNames
 #' @rdname writeParquet
 setMethod("writeParquet", "data.frame",
 function(x,
@@ -423,12 +489,15 @@ function(x,
          keycol = "__name__",
          dimtbl = NULL,
          name = basename(path),
-         class = "data.frame",
+         dimension = c("unbound", "sample", "feature", "crossed"),
+         layout = "data_frame",
          ...)
 {
+    dimension <- match.arg(dimension)
     resources <- .writeDataFrameParquet(x, path = path, indexcol = indexcol,
                                         keycol = keycol, dimtbl = dimtbl,
-                                        name = name, class = class, ...)
+                                        name = name, dimension = dimension,
+                                        layout = layout, ...)
     invisible(resources)
 })
 
@@ -446,9 +515,11 @@ function(x,
          keycol = "__name__",
          dimtbl = NULL,
          name = basename(path),
-         class = "data_frame",
+         dimension = c("unbound", "sample", "feature", "crossed"),
+         layout = "data_frame",
          ...)
 {
+    dimension <- match.arg(dimension)
     df <- as.data.frame(x, optional = TRUE)
 
     geom <- .geometryCol(df)
@@ -459,7 +530,8 @@ function(x,
 
     resources <- .writeDataFrameParquet(df, path = path, indexcol = indexcol,
                                         keycol = keycol, dimtbl = dimtbl,
-                                        name = name, class = class, ...)
+                                        name = name, dimension = dimension,
+                                        layout = layout, ...)
     invisible(resources)
 })
 
@@ -477,12 +549,86 @@ function(x,
          keycol = "__name__",
          dimtbl = NULL,
          name = basename(path),
-         class = "transposed_data_frame",
+         dimension = "crossed",
+         layout = "transposed_data_frame",
          ...)
 {
     resources <- callGeneric(t(x), path = path, indexcol = indexcol,
                              keycol = keycol, dimtbl = dimtbl,
-                             name = name, class = class, ...)
+                             name = name, dimension = dimension,
+                             layout = layout, ...)
+    invisible(resources)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### list helper functions
+###
+
+.writeListParquet <- function(x, path, dimension, ...)
+{
+    layout <- list(...)[["layout"]]
+    if (is.null(layout)) {
+        prefix <- ""
+    } else {
+        prefix <- switch(layout,
+                         coord_array =,
+                         data_frame =,
+                         transposed_data_frame = "assay=",
+                         nested_data_frame     = "table=",
+                         graph_edges           = "graph=",
+                         spatial_points        = "points=",
+                         spatial_shapes        = "shapes=",
+                         stop("unsupported layout: ", layout))
+        if (dimension != "crossed") {
+            prefix <- sprintf("%s_%s", dimension, prefix)
+        }
+    }
+
+    resources <- list()
+    for (i in seq_along(x)) {
+        x_i <- getListElement(x, i)
+        nms_i <- names(x)[i] %||% sprintf("item-%d", i)
+        path_i <- sprintf("%s%s", prefix, nms_i)
+        resources <- c(resources,
+                       writeParquet(x_i, path = file.path(path, path_i),
+                                    name = nms_i, dimension = dimension, ...))
+    }
+    resources
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### list objects
+###
+
+#' @export
+#' @importFrom S4Vectors getListElement
+#' @rdname writeParquet
+setMethod("writeParquet", "list",
+function(x,
+         path,
+         dimension = c("unbound", "sample", "feature", "crossed"),
+         ...)
+{
+    dimension <- match.arg(dimension)
+    resources <- .writeListParquet(x, path = path, dimension = dimension, ...)
+    invisible(resources)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### List objects
+###
+
+#' @export
+#' @importFrom S4Vectors getListElement
+#' @rdname writeParquet
+setMethod("writeParquet", "List",
+function(x,
+         path,
+         dimension = c("unbound", "sample", "feature", "crossed"),
+         ...)
+{
+    dimension <- match.arg(dimension)
+    resources <- .writeListParquet(x, path = path, dimension = dimension, ...)
     invisible(resources)
 })
 
@@ -500,15 +646,19 @@ function(x,
          keycol = "__name__",
          dimtbl = NULL,
          name = basename(path),
-         class = "genomic_ranges",
+         dimension = c("feature", "unbound"),
+         layout = "genomic_ranges",
          ...)
 {
+    dimension <- match.arg(dimension)
+
     # Write Data Table
     df <- as.data.frame(x, optional = TRUE)
     df[["width"]] <- NULL
     resources <- callGeneric(df, path = path, indexcol = indexcol,
                              keycol = keycol, dimtbl = dimtbl,
-                             name = name, class = class, ...)
+                             name = name, dimension = dimension,
+                             layout = layout, ...)
 
     # Add domain-specific metadata to schema
     schema <- resources[[length(resources)]][["schema"]]
@@ -538,9 +688,12 @@ function(x,
          keycol = "__name__",
          dimtbl = NULL,
          name = basename(path),
-         class = "genomic_ranges_list",
+         dimension = c("feature", "unbound"),
+         layout = "genomic_ranges_list",
          ...)
 {
+    dimension <- match.arg(dimension)
+
     # Convert GenomicRangesList to DataFrame with AtomicList columns
     df <- DataFrame(seqnames = as(seqnames(x), "CharacterList"),
                     start = start(x), end = end(x),
@@ -566,12 +719,13 @@ function(x,
     df <- as.data.frame(df, optional = TRUE)
 
     # Write Data Table
-    resources <- callGeneric(df, path = path, indexcol = indexcol, keycol = keycol,
-                             dimtbl = dimtbl, name = name, class = class, ...)
+    resources <- callGeneric(df, path = path, indexcol = indexcol,
+                             keycol = keycol, dimtbl = dimtbl,
+                             name = name, dimension = dimension,
+                             layout = layout, ...)
 
     # Add domain-specific metadata to schema for ranges
     schema <- resources[[length(resources)]][["schema"]]
-    rnms <- sapply(schema[["fields"]], `[[`, "name")
 
     # Add genomic metadata and constraints
     schema <- .addGenomicMetadata(schema)
@@ -596,13 +750,16 @@ function(x,
          keycol = "__name__",
          dimtbl = NULL,
          name = basename(path),
-         class = "graph_edges",
+         dimension = c("unbound", "sample", "feature"),
+         layout = "graph_edges",
          ...)
 {
+    dimension <- match.arg(dimension)
     df <- as.data.frame(x, optional = TRUE)
     resources <- callGeneric(df, path = path, indexcol = indexcol,
                              keycol = keycol, dimtbl = dimtbl,
-                             name = name, class = class, ...)
+                             name = name, dimension = dimension,
+                             layout = layout, ...)
 
     # Add domain-specific metadata to schema
     schema <- resources[[length(resources)]][["schema"]]
@@ -618,27 +775,14 @@ function(x,
 .writeParquetGraphs <-
 function(x,
          path,
-         package = list(class = "graphs", resources = list()),
+         dimension = c("sample", "feature"),
          ...)
 {
-    for (i in seq_along(x)) {
-        nms_i <- names(x)[i]
-        x_i <- x[[i]]
-
-        if (is(x_i, "DualSubset")) {
-            x_i <- x_i@hits
-        }
-
-        path_i <- paste0("graph=", nms_i)
-        resources <- writeParquet(x_i, path = file.path(path, path_i),
-                                  name = nms_i, ...)
-        package[["resources"]] <- c(package[["resources"]], resources)
-    }
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-
-    invisible(NULL)
+    dimension <- match.arg(dimension)
+    x <- lapply(x, function(y) if (is(y, "DualSubset")) y@hits  else y)
+    resources <- .writeListParquet(x, path = path, dimension = dimension,
+                                   layout = "graph_edges", ...)
+    invisible(resources)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -649,7 +793,6 @@ function(x,
 #' @importClassesFrom S4Vectors DataFrame TransposedDataFrame
 #' @importClassesFrom SummarizedExperiment Assays
 #' @importFrom S4Vectors getListElement
-#' @importFrom jsonlite write_json
 #' @rdname writeParquet
 setMethod("writeParquet", "Assays",
 function(x,
@@ -659,41 +802,42 @@ function(x,
          datacol = "value",
          grid = defaultAutoGrid(COO_SparseArray(dim(x[[1L]]))),
          grid_suffix = "group__",
-         package = list(class = "assays", resources = list()),
+         dimension = "crossed",
          ...)
 {
     # Write transpose of the assays
     indexcols <- rev(indexcols)
     indexrefs <- rev(indexrefs)
     grid <- t(grid)
+    resources <- list()
     for (i in seq_along(x)) {
         nms_i <- names(x)[i]
         x_i <- t(getListElement(x, i))
         path_i <- paste0("assay=", nms_i)
         if (is(x_i, "DataFrame")) {
-            resources <-
-                callGeneric(x_i, path = file.path(path, path_i),
-                            indexcol = indexcols[1L], name = nms_i, ...)
+            resources <- c(resources,
+                           callGeneric(x_i, path = file.path(path, path_i),
+                                       indexcol = indexcols[1L], name = nms_i,
+                                       dimension = dimension, ...))
         } else if (is(x_i, "TransposedDataFrame")) {
-            resources <-
-                callGeneric(x_i, path = file.path(path, path_i),
-                            indexcol = indexcols[2L], name = nms_i, ...)
+            resources <- c(resources,
+                           callGeneric(x_i, path = file.path(path, path_i),
+                                       indexcol = indexcols[2L], name = nms_i,
+                                       dimension = dimension, ...))
         } else {
             # Array-like object
             dimnames(x_i) <- NULL
-            resources <-
-                callGeneric(x_i, path = file.path(path, path_i),
-                            indexcols = indexcols, indexrefs = indexrefs,
-                            datacol = datacol, grid = grid,
-                            grid_suffix = grid_suffix, name = nms_i, ...)
+            resources <- c(resources,
+                           callGeneric(x_i, path = file.path(path, path_i),
+                                       indexcols = indexcols,
+                                       indexrefs = indexrefs, datacol = datacol,
+                                       grid = grid, grid_suffix = grid_suffix,
+                                       name = nms_i, dimension = dimension,
+                                       ...))
         }
-        package[["resources"]] <- c(package[["resources"]], resources)
     }
 
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-
-    invisible(NULL)
+    invisible(resources)
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -713,7 +857,7 @@ setMethod("writeParquet", "SummarizedExperiment",
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(class = ifelse(is(x, "RangedSummarizedExperiment"),
+         package = list(model = ifelse(is(x, "RangedSummarizedExperiment"),
                                        "ranged_summarized_experiment",
                                        "summarized_experiment"),
                         resources = list()),
@@ -741,29 +885,45 @@ function(x,
     }
     resources <-
         callGeneric(features, path = file.path(path, "features"),
-                    indexcol = indexcols[1L], dimtbl = dimtbls[[1L]], ...)
+                    indexcol = indexcols[1L], dimtbl = dimtbls[[1L]],
+                    dimension = "feature", ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Sample Data
     resources <-
         callGeneric(colData(x), path = file.path(path, "samples"),
-                    indexcol = indexcols[2L], dimtbl = dimtbls[[2L]], ...)
+                    indexcol = indexcols[2L], dimtbl = dimtbls[[2L]],
+                    dimension = "sample", ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Assay Data
-    resources <- list(list(name = "assays",
-                           path = "assays",
-                           class = "data_package"))
     indexrefs <- list(list(fields = indexcols[1L],
                            reference = list(fields = indexcols[1L],
-                                            resource = "../features")),
+                                            resource = "features")),
                       list(fields = indexcols[2L],
                            reference = list(fields = indexcols[2L],
-                                            resource = "../samples")))
-    callGeneric(x@assays, path = file.path(path, resources[[1L]][["path"]]),
-                indexcols = indexcols, indexrefs = indexrefs, grid = grid,
-                grid_suffix = grid_suffix, ...)
+                                            resource = "samples")))
+    resources <- callGeneric(x@assays, path = path,
+                             indexcols = indexcols, indexrefs = indexrefs,
+                             grid = grid, grid_suffix = grid_suffix,
+                             dimension = "crossed", ...)
     package[["resources"]] <- c(package[["resources"]], resources)
+
+    # Metadata / unstructured data - guard against unsupported object types
+    unbound <- .unboundMetadata(x)
+    for (k in seq_along(unbound)) {
+        uns_k <- unbound[[k]]
+        nms_k <- names(unbound)[k] %||% sprintf("item-%d", k)
+        path_k <- sprintf("unbound=%s", nms_k)
+        resources <- try(callGeneric(uns_k,
+                                     path = file.path(path, path_k),
+                                     name = nms_k,
+                                     dimension = "unbound", ...),
+                         silent = TRUE)
+        if (!inherits(resources, "try-error")) {
+            package[["resources"]] <- c(package[["resources"]], resources)
+        }
+    }
 
     package[["annotations"]] <- .vectorMetadata(x)
 
@@ -782,15 +942,16 @@ function(x,
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(class = "modalities", resources = list()),
+         package = list(model = "experiment_list", resources = list()),
          ...)
 {
     for (i in seq_along(x)) {
         nms_i <- names(x)[i]
         x_i <- x[[i]]
         path_i <- paste0("modality=", nms_i)
-        resources <- list(name = nms_i, path = path_i, class = "data_package")
-        resources <- list(resources)
+        resources <- list(list(name = nms_i, path = path_i,
+                               dimension = "crossed",
+                               layout = "nested_experiment"))
         writeParquet(x_i, path = file.path(path, path_i), indexcols = indexcols,
                      ...)
         package[["resources"]] <- c(package[["resources"]], resources)
@@ -811,28 +972,20 @@ function(x,
 .writeParquetDimTables <-
 function(x,
          path,
+         dimension = c("sample", "feature"),
          indexcol = "__index__",
-         package = list(class = "dimension_tables", resources = list()),
          ...)
 {
+    dimension <- match.arg(dimension)
     for (i in seq_along(x)) {
-        nms_i <- names(x)[i]
         x_i <- getListElement(x, i)
-        path_i <- paste0("table=", nms_i)
-        if (is(x_i, "DataFrame")) {
-            resources <-
-                writeParquet(x_i, path = file.path(path, path_i),
-                             indexcol = indexcol, name = nms_i, ...)
-        } else {
+        if (!is(x_i, "DataFrame"))
             stop("Unsupported object type: ", class(x_i))
-        }
-        package[["resources"]] <- c(package[["resources"]], resources)
     }
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-
-    invisible(NULL)
+    resources <- .writeListParquet(x, path = path, dimension = dimension,
+                                   layout = "nested_data_frame",
+                                   indexcol = indexcol, ...)
+    invisible(resources)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -851,7 +1004,7 @@ setMethod("writeParquet", "SingleCellExperiment",
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(class = "single_cell_experiment",
+         package = list(model = "single_cell_experiment",
                         resources = list()),
          ...)
 {
@@ -902,7 +1055,9 @@ function(x,
         colnames(loadings) <- make.unique(rowLoadingNames(x), sep = "_")
         resources <- callGeneric(loadings,
                                  path = file.path(path, "feature_embeddings"),
-                                 indexcol = indexcols[1L], class = "data_frame",
+                                 indexcol = indexcols[1L],
+                                 dimension = "feature",
+                                 layout = "embedding_table",
                                  ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
@@ -920,7 +1075,9 @@ function(x,
         colnames(rdims) <- make.unique(reducedDimNames(x), sep = "_")
         resources <- callGeneric(rdims,
                                  path = file.path(path, "sample_embeddings"),
-                                 indexcol = indexcols[2L], class = "data_frame",
+                                 indexcol = indexcols[2L],
+                                 dimension = "sample",
+                                 layout = "embedding_table",
                                  ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
@@ -930,9 +1087,10 @@ function(x,
     if (length(exps)) {
         resources <- list(list(name = "modalities",
                                path = "modalities",
-                               class = "data_package"))
+                               dimension = "crossed",
+                               layout = "nested_experiment"))
         .writeParquetModalities(exps,
-                                path = file.path(path, resources[[1L]][["path"]]),
+                                path = file.path(path, "modalities"),
                                 indexcols = indexcols, ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
@@ -940,48 +1098,34 @@ function(x,
     # Row Tables
     rtables <- rowTables(x)
     if (length(rtables)) {
-        resources <- list(list(name = "feature_tables",
-                               path = "feature_tables",
-                               class = "data_package"))
-        .writeParquetDimTables(rtables,
-                               path = file.path(path, resources[[1L]][["path"]]),
-                               indexcol = indexcols[1L], ...)
+        resources <- .writeParquetDimTables(rtables, path = path,
+                                            indexcol = indexcols[1L],
+                                            dimension = "feature", ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
     # Column Tables
     ctables <- colTables(x)
     if (length(ctables)) {
-        resources <- list(list(name = "sample_tables",
-                               path = "sample_tables",
-                               class = "data_package"))
-        .writeParquetDimTables(ctables,
-                               path = file.path(path, resources[[1L]][["path"]]),
-                               indexcol = indexcols[2L], ...)
+        resources <- .writeParquetDimTables(ctables, path = path,
+                                            indexcol = indexcols[2L],
+                                            dimension = "sample", ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
     # Row Pairs
     rpairs <- rowPairs(x, asSparse = FALSE)
     if (length(rpairs)) {
-        resources <- list(list(name = "feature_graphs",
-                               path = "feature_graphs",
-                               class = "data_package"))
-        .writeParquetGraphs(rpairs,
-                            path = file.path(path, resources[[1L]][["path"]]),
-                            ...)
+        resources <- .writeParquetGraphs(rpairs, path = path,
+                                         dimension = "feature", ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
     # Column Pairs
     cpairs <- colPairs(x, asSparse = FALSE)
     if (length(cpairs)) {
-        resources <- list(list(name = "sample_graphs",
-                               path = "sample_graphs",
-                               class = "data_package"))
-        .writeParquetGraphs(cpairs,
-                            path = file.path(path, resources[[1L]][["path"]]),
-                            ...)
+        resources <- .writeParquetGraphs(cpairs, path = path,
+                                         dimension = "sample", ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
@@ -1006,7 +1150,7 @@ setMethod("writeParquet", "ExperimentList",
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(class = "experiment_list", resources = list()),
+         package = list(model = "experiment_list", resources = list()),
          ...)
 {
     for (i in seq_along(x)) {
@@ -1014,15 +1158,18 @@ function(x,
         x_i <- x[[i]]
         path_i <- paste0("experiment=", nms_i)
         if (is(x_i, "SummarizedExperiment")) {
-            resources <- list(name = nms_i, path = path_i, class = "data_package")
-            resources <- list(resources)
-            callGeneric(x_i, path = file.path(path, path_i), indexcols = indexcols, ...)
+            resources <- list(list(name = nms_i, path = path_i,
+                                   dimension = "crossed",
+                                   layout = "nested_experiment"))
+           callGeneric(x_i, path = file.path(path, path_i),
+                       indexcols = indexcols, ...)
         } else {
             # Array-like object
             resources <-
-                writeParquet(x_i, path = file.path(path, path_i),
-                             indexcols = indexcols, datacol = "value",
-                             grid_suffix = "group__", name = nms_i, ...)
+                callGeneric(x_i, path = file.path(path, path_i),
+                            indexcols = indexcols, datacol = "value",
+                            grid_suffix = "group__", name = nms_i,
+                            dimension = "crossed", layout = "coord_array", ...)
         }
         package[["resources"]] <- c(package[["resources"]], resources)
     }
@@ -1047,24 +1194,23 @@ setMethod("writeParquet", "MultiAssayExperiment",
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(class = "multi_assay_experiment",
+         package = list(model = "multi_assay_experiment",
                         resources = list()),
          ...)
 {
     # Subject Data
     resources <- callGeneric(colData(x), path = file.path(path, "subjects"),
-                             ...)
+                             dimension = "sample", ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Sample Map
     resources <- callGeneric(sampleMap(x), path = file.path(path, "sample_map"),
-                             ...)
+                             dimension = "unbound", ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Experiment Data
-    resources <- list(list(name = "experiments",
-                           path = "experiments",
-                           class = "experiment_list"))
+    resources <- list(list(name = "experiments", path = "experiments",
+                           dimension = "crossed", layout = "nested_experiment"))
     callGeneric(experiments(x), path = file.path(path, resources[[1L]][["path"]]),
                 indexcols = indexcols, ...)
     package[["resources"]] <- c(package[["resources"]], resources)
@@ -1083,26 +1229,12 @@ function(x,
 
 #' @export
 #' @importClassesFrom MultiAssaySpatialExperiment PointsLayerList
-#' @importFrom jsonlite write_json
 #' @rdname writeParquet
-setMethod("writeParquet", "PointsLayerList",
-function(x, path, name = basename(path),
-         class = "points_layer_list",
-         package = list(class = "points_layer_list", resources = list()),
-         ...)
+setMethod("writeParquet", "PointsLayerList", function(x, path, ...)
 {
-    for (i in seq_along(x)) {
-        nms_i <- names(x)[i]
-        x_i <- x[[i]]
-        path_i <- paste0("point=", nms_i)
-        resources <- callGeneric(x_i, path = file.path(path, path_i), name = nms_i, ...)
-        package[["resources"]] <- c(package[["resources"]], resources)
-    }
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-
-    invisible(NULL)
+    resources <- .writeListParquet(x, path = path, dimension = "sample",
+                                   layout = "spatial_points", ...)
+    invisible(resources)
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1111,28 +1243,12 @@ function(x, path, name = basename(path),
 
 #' @export
 #' @importClassesFrom MultiAssaySpatialExperiment ShapesLayerList
-#' @importFrom jsonlite write_json
 #' @rdname writeParquet
-setMethod("writeParquet", "ShapesLayerList",
-function(x,
-         path,
-         name = basename(path),
-         class = "shapes_layer_list",
-         package = list(class = "shapes_layer_list", resources = list()),
-         ...)
+setMethod("writeParquet", "ShapesLayerList", function(x, path, ...)
 {
-    for (i in seq_along(x)) {
-        nms_i <- names(x)[i]
-        x_i <- x[[i]]
-        path_i <- paste0("shape=", nms_i)
-        resources <- callGeneric(x_i, path = file.path(path, path_i), name = nms_i, ...)
-        package[["resources"]] <- c(package[["resources"]], resources)
-    }
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-
-    invisible(NULL)
+    resources <- .writeListParquet(x, path = path, dimension = "sample",
+                                   layout = "spatial_shapes", ...)
+    invisible(resources)
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1147,27 +1263,21 @@ setMethod("writeParquet", "MultiAssaySpatialExperiment",
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(class = "multi_assay_spatial_experiment",
+         package = list(model = "multi_assay_spatial_experiment",
                         resources = list()),
          ...)
 {
     # Points
     pts <- MultiAssaySpatialExperiment::spatialPoints(x)
     if (length(pts) > 0L) {
-        resources <- list(list(name = "points",
-                               path = "points",
-                               class = "points_layer_list"))
-        callGeneric(pts, path = file.path(path, resources[[1L]][["path"]]), ...)
+        resources <- callGeneric(pts, path = path, ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
     # Shapes
     shps <- MultiAssaySpatialExperiment::spatialShapes(x)
     if (length(shps) > 0L) {
-        resources <- list(list(name = "shapes",
-                               path = "shapes",
-                               class = "shapes_layer_list"))
-        callGeneric(shps, path = file.path(path, resources[[1L]][["path"]]), ...)
+        resources <- callGeneric(shps, path = path, ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
@@ -1184,8 +1294,7 @@ function(x,
         }
         package[["resources"]] <- c(package[["resources"]],
                                     list(list(name = "images",
-                                              path = "images",
-                                              class = "raster_layer_list")))
+                                              path = "images")))
     }
 
     # Labels path references
@@ -1201,8 +1310,7 @@ function(x,
         }
         package[["resources"]] <- c(package[["resources"]],
                                     list(list(name = "labels",
-                                              path = "labels",
-                                              class = "raster_layer_list")))
+                                              path = "labels")))
     }
 
     # Image Data
@@ -1274,11 +1382,13 @@ function(x,
             # Remove original data column (not serializable)
             img_data_copy[["data"]] <- NULL
 
-            resources_img <- callGeneric(img_data_copy, path = file.path(path, "img_data"),
-                                         ...)
+            resources_img <- callGeneric(img_data_copy,
+                                         path = file.path(path, "img_data"),
+                                         dimension = "unbound", ...)
         } else {
-            resources_img <- callGeneric(img_data, path = file.path(path, "img_data"),
-                                         ...)
+            resources_img <- callGeneric(img_data,
+                                         path = file.path(path, "img_data"),
+                                         dimension = "unbound", ...)
         }
         package[["resources"]] <- c(package[["resources"]], resources_img)
     }
@@ -1287,7 +1397,7 @@ function(x,
     spatial_map <- MultiAssaySpatialExperiment::spatialMap(x)
     if (!is.null(spatial_map) && nrow(spatial_map) > 0L) {
         resources_sm <- callGeneric(spatial_map, path = file.path(path, "spatial_map"),
-                                    ...)
+                                    dimension = "unbound", ...)
         package[["resources"]] <- c(package[["resources"]], resources_sm)
     }
 
