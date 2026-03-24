@@ -11,32 +11,19 @@
 #'
 #' @param path A character string specifying the path to the directory
 #' containing the parquet files. The directory must contain a
-#' \code{datapackage.json} file that describes the structure and class of the
-#' Bioconductor object following the Frictionless Data Package specification
-#' and the written objects must have been created with
-#' \code{\link{writeParquet}}.
-#' @param metadata A list containing metadata about the object structure. If
-#' \code{NULL} (default), the metadata is read from
-#' \code{file.path(path, "datapackage.json")}. The metadata should contain
-#' information about the object type, resources, schemas, and any additional
-#' components specific to the object type following the Frictionless Data
-#' Package specification and the written objects must have been created with
-#' \code{\link{writeParquet}}.
-#' @param class A character string specifying the class of Bioconductor object to
-#' read. If \code{NULL} (default), the class is determined from the metadata.
-#' Supported types include:
-#' \itemize{
-#'   \item \code{"assays"} - \code{Assays} objects
-#'   \item \code{"genomic_ranges"} - \code{GenomicRanges} objects
-#'   \item \code{"genomic_ranges_list"} - \code{GenomicRangesList} objects
-#'   \item \code{"graph_edges"} - \code{DuckDBSelfHits} objects
-#'   \item \code{"summarized_experiment"} - Basic \code{SummarizedExperiment} objects
-#'   \item \code{"ranged_summarized_experiment"} - \code{RangedSummarizedExperiment} objects
-#'   \item \code{"single_cell_experiment"} - \code{SingleCellExperiment} objects
-#'   \item \code{"experiment_list"} - \code{ExperimentList} objects
-#'   \item \code{"multi_assay_experiment"} - \code{MultiAssayExperiment} objects
-#'   \item \code{"multi_assay_spatial_experiment"} - \code{MultiAssaySpatialExperiment} objects
-#' }
+#' \code{datapackage.json} file written by \code{\link{writeParquet}}.
+#' @param package A list containing the parsed \code{datapackage.json}
+#' contents. Defaults to reading \code{file.path(path, "datapackage.json")}.
+#' Contains the package-level \code{model} field and a \code{resources} list
+#' describing each parquet dataset.
+#' @param model A character string identifying the package schema — which
+#' container class to reconstruct. Defaults to \code{package[["model"]]}.
+#' Supported values: \code{"summarized_experiment"},
+#' \code{"ranged_summarized_experiment"}, \code{"single_cell_experiment"},
+#' \code{"experiment_list"}, \code{"multi_assay_experiment"},
+#' \code{"multi_assay_spatial_experiment"}. When \code{NULL} (absent from the
+#' package JSON), all resources are returned as a \code{SimpleList} with no
+#' imposed schema.
 #' @param ... Additional arguments passed to internal helper functions.
 #'
 #' @return
@@ -79,67 +66,81 @@
 #'
 #' @section Supported Object Types:
 #' \describe{
-#'   \item{\code{Assays}}{
-#'     \code{Assays} objects are read from the \code{assays/} subdirectory.
-#'   }
 #'   \item{\code{GenomicRanges}}{
-#'     \code{GenomicRanges} objects are read with genomic coordinates (seqnames,
-#'     start, end, strand) and metadata columns.
+#'     Read with genomic coordinates (\code{seqnames}, \code{start},
+#'     \code{end}, \code{strand}) and optional metadata columns.
 #'   }
 #'   \item{\code{GenomicRangesList}}{
-#'     \code{GenomicRangesList} objects are read with genomic coordinates
-#'     (seqnames, start, end, strand) and metadata columns.
-#'   }
-#'   \item{\code{SummarizedExperiment}}{
-#'     Basic multi-assay genomic experiments with feature and sample metadata
-#'     from the \code{features/} and \code{samples/} subdirectories.
-#'   }
-#'   \item{\code{RangedSummarizedExperiment}}{
-#'     \code{SummarizedExperiment} with genomic ranges for features from the
-#'     \code{features/} subdirectory.
-#'   }
-#'   \item{\code{SingleCellExperiment}}{
-#'     Single-cell genomic experiments with reduced dimensions, loadings,
-#'     alternative experiments, row/column tables, and pairwise graphs from
-#'     the \code{sample_embeddings/}, \code{feature_embeddings/},
-#'     \code{modalities/}, \code{feature_tables/}, \code{sample_tables/},
-#'     \code{feature_graphs/}, and \code{sample_graphs/} subdirectories.
+#'     Read with genomic coordinates and metadata columns.
 #'   }
 #'   \item{\code{DuckDBSelfHits}}{
 #'     Graph edge lists with \code{from}, \code{to} columns and optional
-#'     metadata. Node count (\code{nnode}) and column names are stored in the
-#'     schema \code{graphCoords} property and used to reconstruct the object.
+#'     metadata. Node count (\code{nnode}) is stored in the schema
+#'     \code{graphEdges} property.
+#'   }
+#'   \item{\code{SummarizedExperiment}}{
+#'     Feature metadata from \code{features/}, sample metadata from
+#'     \code{samples/}, and assays from flat \code{assay=<name>/} directories.
+#'     Any complex objects stored in \code{metadata()} are written to
+#'     \code{unbound=<name>/} directories and restored on read.
+#'   }
+#'   \item{\code{RangedSummarizedExperiment}}{
+#'     As \code{SummarizedExperiment}, with \code{rowRanges} reconstructed as a
+#'     \code{DuckDBGRanges} from \code{features/}.
+#'   }
+#'   \item{\code{SingleCellExperiment}}{
+#'     Extends \code{SummarizedExperiment} with: reduced dimensions from
+#'     \code{sample_embeddings/}; row loadings from \code{feature_embeddings/};
+#'     alternative experiments from \code{modalities/} (hierarchical);
+#'     row/column tables from flat \code{feature_table=<name>/} and
+#'     \code{sample_table=<name>/} directories; row/column pairwise graphs from
+#'     flat \code{feature_graph=<name>/} and \code{sample_graph=<name>/}
+#'     directories.
 #'   }
 #'   \item{\code{ExperimentList}}{
-#'     \code{ExperimentList} objects are read from the \code{experiments/}
-#'     subdirectory.
+#'     Named collection of experiments in \code{experiment=<name>/} directories.
+#'     \code{SummarizedExperiment} objects are stored hierarchically with their
+#'     own \code{datapackage.json} (\code{layout = "nested_experiment"}).
+#'     Array-like objects are stored as flat parquet datasets with metadata
+#'     consolidated in the root \code{datapackage.json}.
 #'   }
 #'   \item{\code{MultiAssayExperiment}}{
-#'     Multi-experiment studies that link experiments from the
-#'     \code{experiments/} subdirectory.
+#'     Experiments from \code{experiments/}, subject data from
+#'     \code{subjects/}, and sample map from \code{sample_map/}.
 #'   }
 #'   \item{\code{MultiAssaySpatialExperiment}}{
-#'     Multi-assay spatial experiments with points, shapes, imgData, and
-#'     spatialMap from the \code{points/}, \code{shapes/}, \code{img_data/},
-#'     \code{spatial_map/} subdirectories. Requires the
-#'     \code{MultiAssaySpatialExperiment} package.
+#'     Extends \code{MultiAssayExperiment} with spatial points from flat
+#'     \code{sample_points=<name>/} directories, shapes from flat
+#'     \code{sample_shapes=<name>/} directories, image metadata from
+#'     \code{img_data/}, and spatial mapping from \code{spatial_map/}.
+#'     Requires the \code{MultiAssaySpatialExperiment} package.
 #'   }
 #' }
 #'
 #' @section Frictionless Data Package Metadata:
 #' This function reads data packages that follow the Frictionless Data Package
-#' specification, parsing the \code{datapackage.json} metadata file to
-#' understand the data structure. The metadata provides:
+#' specification (extended by the BiocDuckDB profile), parsing the
+#' \code{datapackage.json} metadata file. Dispatch operates at two levels:
+#'
+#' \strong{Package level} (root \code{datapackage.json}):
 #' \itemize{
-#'   \item Resource definitions with paths and types
-#'   \item Schema information including field types and constraints
-#'   \item Primary key definitions for data integrity
-#'   \item Semantic annotations for genomic data (sequence names, coordinates)
-#'   \item Object type information for proper reconstruction
+#'   \item \code{model} — which container class to reconstruct; absent means
+#'     \code{SimpleList} fallback.
+#'   \item \code{annotations} — scalar / vector metadata attached to
+#'     \code{metadata()} of the returned object.
 #' }
-#' This standardized approach ensures consistent data interpretation and
-#' facilitates interoperability with other tools that support the Frictionless
-#' Data Package specification.
+#'
+#' \strong{Resource level} (entries in \code{resources} array):
+#' \itemize{
+#'   \item \code{dimension} — biological axis (\code{"feature"},
+#'     \code{"sample"}, \code{"crossed"}, \code{"unbound"}).
+#'   \item \code{layout} — physical storage pattern (e.g.,
+#'     \code{"data_frame"}, \code{"coord_array"}, \code{"graph_edges"},
+#'     \code{"nested_experiment"}); routes each resource to the
+#'     appropriate low-level reader via \code{.readParquetResource}.
+#'   \item \code{schema} — field definitions, primary keys, and BiocDuckDB
+#'     annotations (\code{genomicCoords}, \code{graphEdges}, \code{arrayItem}).
+#' }
 #'
 #' @author Patrick Aboyoun
 #'
@@ -160,29 +161,23 @@
 #' @rdname readParquet
 readParquet <-
 function(path,
-         metadata = read_json(file.path(path, "datapackage.json"),
-                              simplifyVector = TRUE,
-                              simplifyDataFrame = FALSE,
-                              simplifyMatrix = FALSE),
-         class = metadata[["class"]],
+         package = read_json(file.path(path, "datapackage.json"),
+                             simplifyVector = TRUE,
+                             simplifyDataFrame = FALSE,
+                             simplifyMatrix = FALSE),
+         model = package[["model"]],
          ...)
 {
-    switch(class,
-           "data_frame"              = .readParquetDataFrame(path, metadata, ...),
-           "transposed_data_frame"   = .readParquetTransposedDataFrame(path, metadata, ...),
-           "array"                   = .readParquetArray(path, metadata, ...),
-           "data_package"            = .readParquetDataPackage(path, metadata, ...),
-           "genomic_ranges"          = .readParquetGenomicRanges(path, metadata, ...),
-           "genomic_ranges_list"     = .readParquetGenomicRangesList(path, metadata, ...),
-           "graph_edges"             = .readParquetGraphEdges(path, metadata, ...),
-           "assays"                  = .readParquetAssays(path, metadata, ...),
-           "ranged_summarized_experiment" =,
-           "summarized_experiment"   =,
-           "single_cell_experiment"  = .readParquetSE(path, metadata, ...),
-           "experiment_list"         = .readParquetExps(path, metadata, ...),
-           "multi_assay_experiment"  = .readParquetMAE(path, metadata, ...),
-           "multi_assay_spatial_experiment" = .readParquetMASE(path, metadata, ...),
-           stop("unsupported Bioconductor parquet layout"))
+    if (is.null(model))
+        return(.readParquetSimpleList(path, package, ...))
+    switch(model,
+           "summarized_experiment"          =,
+           "ranged_summarized_experiment"   =,
+           "single_cell_experiment"         = .readParquetSE(path, package, ...),
+           "experiment_list"                = .readParquetExps(path, package, ...),
+           "multi_assay_experiment"         = .readParquetMAE(path, package, ...),
+           "multi_assay_spatial_experiment" = .readParquetMASE(path, package, ...),
+           stop("unsupported model: ", model))
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -219,6 +214,42 @@ function(path,
 
 .schema_partitions <- function(schema) {
     schema[["partitioning"]]
+}
+
+.filterResources <- function(resources, dimension, layout = NULL) {
+    if (is.null(layout)) {
+        fun <- function(x) isTRUE(x[["dimension"]] %in% dimension)
+    } else {
+        fun <- function(x) {
+            isTRUE(x[["dimension"]] %in% dimension) &&
+            isTRUE(x[["layout"]] %in% layout)
+        }
+    }
+    Filter(fun, resources)
+}
+
+#' @importFrom S4Vectors SimpleList
+.readParquetSimpleList <- function(path, package, ...) {
+    resources <- package[["resources"]]
+    out <- lapply(resources, function(r) .readParquetResource(path, r, ...))
+    names(out) <- sapply(resources, `[[`, "name")
+    SimpleList(out)
+}
+
+.readParquetResource <- function(path, resource, ...) {
+    fullpath <- file.path(path, resource[["path"]])
+    switch(resource[["layout"]],
+           "data_frame"            =,
+           "embedding_table"       =,
+           "nested_data_frame"     =,
+           "spatial_points"        =,
+           "spatial_shapes"        = .readParquetDataFrame(fullpath, resource, ...),
+           "transposed_data_frame" = .readParquetTransposedDataFrame(fullpath, resource, ...),
+           "coord_array"           = .readParquetArray(fullpath, resource, ...),
+           "genomic_ranges"        = .readParquetGenomicRanges(fullpath, resource, ...),
+           "genomic_ranges_list"   = .readParquetGenomicRangesList(fullpath, resource, ...),
+           "graph_edges"           = .readParquetGraphEdges(fullpath, resource, ...),
+           stop("unsupported layout: ", resource[["layout"]]))
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -355,29 +386,21 @@ function(path,
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-### Generic Data Packages
+### Modalities
 ###
 
-.readParquetDataPackage <- function(path, package, ...) {
-    lst <- lapply(package[["resources"]], function(x) {
-        readParquet(file.path(path, x[["path"]]), metadata = x, ...)
+#' @importFrom jsonlite read_json
+.readParquetModalities <- function(path, resource, ...) {
+    dirpath <- file.path(path, resource[["path"]])
+    pkg <- read_json(file.path(dirpath, "datapackage.json"),
+                     simplifyVector = TRUE,
+                     simplifyDataFrame = FALSE,
+                     simplifyMatrix = FALSE)
+    alts <- lapply(pkg[["resources"]], function(x) {
+        readParquet(file.path(dirpath, x[["path"]]), ...)
     })
-    names(lst) <- sapply(package[["resources"]], `[[`, "name")
-    lst
-}
-
-### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-### Assays objects
-###
-
-.readParquetAssays <- function(path, package, keycols, dimtbls, ...) {
-    # Assays are written transposed, so we need to transpose them back
-    assays <- lapply(package[["resources"]], function(x) {
-        t(readParquet(file.path(path, x[["path"]]), metadata = x,
-                      keycols = rev(keycols), dimtbls = dimtbls, ...))
-    })
-    names(assays) <- sapply(package[["resources"]], `[[`, "name")
-    assays
+    names(alts) <- sapply(pkg[["resources"]], `[[`, "name")
+    alts
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -385,27 +408,27 @@ function(path,
 ###
 
 #' @importFrom DuckDBDataFrame DuckDBDataFrame
-#' @importFrom jsonlite read_json
 #' @importFrom IRanges DataFrameList
 #' @importFrom S4Vectors endoapply
 #' @importFrom SingleCellExperiment SingleCellExperiment colPair<- rowPair<-
 #' @importFrom stats setNames
 #' @importFrom SummarizedExperiment SummarizedExperiment
-.readParquetSE <- function(path, package, class = package[["class"]], ...) {
+.readParquetSE <- function(path, package, ...) {
     resources <- package[["resources"]]
     names(resources) <- sapply(package[["resources"]], `[[`, "name")
 
-    # Dimension Dictionaries
-    dimdicts <- list(features = resources[["features"]][["schema"]],
-                     samples = resources[["samples"]][["schema"]])
+    # Dimension Resources
+    feature_res <- resources[["features"]]
+    sample_res <- resources[["samples"]]
 
     # Dimension Tables
-    fun <- function(path, i) {
-        keycol <- .schema_keycols(dimdicts[[i]])
-        pkey <- dimdicts[[i]][["primaryKey"]]
+    fun <- function(res) {
+        schema <- res[["schema"]]
+        keycol <- .schema_keycols(schema)
+        pkey <- schema[["primaryKey"]]
         name <- if (!identical(pkey, keycol)) pkey else NULL
-        partitions <- .schema_partitions(dimdicts[[i]])
-        df <- DuckDBDataFrame(file.path(path, resources[[i]][["path"]]),
+        partitions <- .schema_partitions(schema)
+        df <- DuckDBDataFrame(file.path(path, res[["path"]]),
                               datacols = c(name, partitions),
                               keycol = keycol)
         df <- as.data.frame(df, optional = TRUE)
@@ -416,8 +439,7 @@ function(path,
         setNames(list(df), keycol)
     }
     dimtbls <- new.env(parent = emptyenv())
-    dimtbls[["dimtbls"]] <-
-        as(c(fun(path, "features"), fun(path, "samples")), "DataFrameList")
+    dimtbls[["dimtbls"]] <- as(c(fun(feature_res), fun(sample_res)), "DataFrameList")
     dimkeycols <- lapply(dimtbls[["dimtbls"]],
                          function(x) setNames(seq_len(nrow(x)), rownames(x)))
     dimtbls[["dimtbls"]] <- endoapply(dimtbls[["dimtbls"]], function(x) {
@@ -426,70 +448,58 @@ function(path,
     })
 
     # Feature Data
-    schema <- dimdicts[["features"]]
     keycol <- dimkeycols[1L]
-
     feature_data <- NULL
     feature_ranges <- NULL
-    if (is.null(schema[["genomicCoords"]])) {
-        fullpath <- file.path(path, resources[["features"]][["path"]])
-        feature_data <- readParquet(fullpath,
-                                    metadata = resources[["features"]],
-                                    keycol = keycol)
+    if (isTRUE(feature_res[["layout"]] %in% c("genomic_ranges", "genomic_ranges_list"))) {
+        feature_ranges <- .readParquetResource(path, feature_res, keycol = keycol)
     } else {
-        fullpath <- file.path(path, resources[["features"]][["path"]])
-        feature_ranges <- readParquet(fullpath,
-                                      metadata = resources[["features"]],
-                                      keycol = keycol)
+        feature_data <- .readParquetResource(path, feature_res, keycol = keycol)
     }
 
     # Sample Data
     keycol <- dimkeycols[2L]
-    fullpath <- file.path(path, resources[["samples"]][["path"]])
-    samples <- readParquet(fullpath, metadata = resources[["samples"]],
-                           keycol = keycol)
+    samples <- .readParquetResource(path, sample_res, keycol = keycol)
 
     # Assays
-    fullpath <- file.path(path, resources[["assays"]][["path"]])
-    assays <- readParquet(fullpath, keycols = dimkeycols, dimtbls = dimtbls)
+    assay_res <- .filterResources(resources, "crossed",
+                                  c("coord_array", "data_frame",
+                                    "transposed_data_frame"))
+    assays <- lapply(assay_res, function(res) {
+        # Assays are written transposed, so we need to transpose them back
+        t(.readParquetResource(path, res, keycols = rev(dimkeycols),
+                               dimtbls = dimtbls))
+    })
+    names(assays) <- sapply(assay_res, `[[`, "name")
 
     # Metadata
-    metadata <- package[["annotations"]]
+    metadata <- package[["annotations"]] %||% list()
+    for (res in .filterResources(resources, "unbound")) {
+        metadata[[res[["name"]]]] <- .readParquetResource(path, res, ...)
+    }
 
     # SummarizedExperiment
-    if (class %in% c("ranged_summarized_experiment", "summarized_experiment")) {
+    if (isTRUE(package[["model"]] %in% c("ranged_summarized_experiment", "summarized_experiment"))) {
         se <- SummarizedExperiment(assays,
                                    rowData = feature_data,
                                    rowRanges = feature_ranges,
                                    colData = samples,
                                    metadata = metadata)
-    } else if (class == "single_cell_experiment") {
+    } else if (isTRUE(package[["model"]] == "single_cell_experiment")) {
         # Reduced Dimensions
-        if (is.null(resources[["sample_embeddings"]])) {
-            rdims <- list()
+        rdim_res <- .filterResources(resources, "sample", "embedding_table")
+        rdims <- if (length(rdim_res)) {
+            as.list(.readParquetResource(path, rdim_res[[1L]], keycol = dimkeycols[2L]))
         } else {
-            keycol <- dimkeycols[2L]
-            fullpath <- file.path(path,
-                                  resources[["sample_embeddings"]][["path"]])
-            rdims <- readParquet(fullpath,
-                                 metadata = resources[["sample_embeddings"]],
-                                 keycol = keycol)
-            rdims <- as.list(rdims)
+            list()
         }
 
         # Alternative Experiments
-        if (is.null(resources[["modalities"]])) {
-            alts <- list()
+        mod_res <- .filterResources(resources, "crossed", "nested_experiment")
+        alts <- if (length(mod_res)) {
+            .readParquetModalities(path, mod_res[[1L]], ...)
         } else {
-            dirpath <- file.path(path, resources[["modalities"]][["path"]])
-            pkg <- read_json(file.path(dirpath, "datapackage.json"),
-                             simplifyVector = TRUE,
-                             simplifyDataFrame = FALSE,
-                             simplifyMatrix = FALSE)
-            alts <- lapply(pkg[["resources"]], function(x) {
-                readParquet(file.path(dirpath, x[["path"]]), ...)
-            })
-            names(alts) <- sapply(pkg[["resources"]], `[[`, "name")
+            list()
         }
 
         # SingleCellExperiment
@@ -503,83 +513,33 @@ function(path,
                                    metadata = metadata)
 
         # Row Loadings
-        if (is.null(resources[["feature_embeddings"]])) {
-            loadings <- list()
-        } else {
-            keycol <- dimkeycols[1L]
-            fullpath <- file.path(path,
-                                  resources[["feature_embeddings"]][["path"]])
-            loadings <- readParquet(fullpath,
-                                    metadata = resources[["feature_embeddings"]],
-                                    keycol = keycol)
-            rowLoadings(se) <- as.list(loadings)
+        load_res <- .filterResources(resources, "feature", "embedding_table")
+        if (length(load_res)) {
+            rowLoadings(se) <- as.list(.readParquetResource(path, load_res[[1L]],
+                                                            keycol = dimkeycols[1L]))
         }
 
         # Row Tables
-        if (!is.null(resources[["feature_tables"]])) {
-            keycol <- dimkeycols[1L]
-            dirpath <- file.path(path, resources[["feature_tables"]][["path"]])
-            pkg <- read_json(file.path(dirpath, "datapackage.json"),
-                             simplifyVector = TRUE,
-                             simplifyDataFrame = FALSE,
-                             simplifyMatrix = FALSE)
-            for (i in seq_along(pkg[["resources"]])) {
-                res <- pkg[["resources"]][[i]]
-                table <- readParquet(file.path(dirpath, res[["path"]]),
-                                     metadata = res,
-                                     keycol = keycol)
-                rowTable(se, res[["name"]]) <- table
-            }
+        for (res in .filterResources(resources, "feature", "nested_data_frame")) {
+            rowTable(se, res[["name"]]) <- .readParquetResource(path, res,
+                                                                keycol = dimkeycols[1L])
         }
 
         # Column Tables
-        if (!is.null(resources[["sample_tables"]])) {
-            keycol <- dimkeycols[2L]
-            dirpath <- file.path(path, resources[["sample_tables"]][["path"]])
-            pkg <- read_json(file.path(dirpath, "datapackage.json"),
-                             simplifyVector = TRUE,
-                             simplifyDataFrame = FALSE,
-                             simplifyMatrix = FALSE)
-            for (i in seq_along(pkg[["resources"]])) {
-                res <- pkg[["resources"]][[i]]
-                table <- readParquet(file.path(dirpath, res[["path"]]),
-                                     metadata = res,
-                                     keycol = keycol)
-                colTable(se, res[["name"]]) <- table
-            }
+        for (res in .filterResources(resources, "sample", "nested_data_frame")) {
+            colTable(se, res[["name"]]) <- .readParquetResource(path, res,
+                                                                keycol = dimkeycols[2L])
         }
 
         # Row Pairs
-        if (!is.null(resources[["feature_graphs"]])) {
-            dirpath <- file.path(path, resources[["feature_graphs"]][["path"]])
-            pkg <- read_json(file.path(dirpath, "datapackage.json"),
-                             simplifyVector = TRUE,
-                             simplifyDataFrame = FALSE,
-                             simplifyMatrix = FALSE)
-            for (i in seq_along(pkg[["resources"]])) {
-                res <- pkg[["resources"]][[i]]
-                hits <- readParquet(file.path(dirpath, res[["path"]]),
-                                    metadata = res)
-                rowPair(se, res[["name"]]) <- hits
-            }
+        for (res in .filterResources(resources, "feature", "graph_edges")) {
+            rowPair(se, res[["name"]]) <- .readParquetResource(path, res)
         }
 
         # Column Pairs
-        if (!is.null(resources[["sample_graphs"]])) {
-            dirpath <- file.path(path, resources[["sample_graphs"]][["path"]])
-            pkg <- read_json(file.path(dirpath, "datapackage.json"),
-                             simplifyVector = TRUE,
-                             simplifyDataFrame = FALSE,
-                             simplifyMatrix = FALSE)
-            for (i in seq_along(pkg[["resources"]])) {
-                res <- pkg[["resources"]][[i]]
-                hits <- readParquet(file.path(dirpath, res[["path"]]),
-                                    metadata = res)
-                colPair(se, res[["name"]]) <- hits
-            }
+        for (res in .filterResources(resources, "sample", "graph_edges")) {
+            colPair(se, res[["name"]]) <- .readParquetResource(path, res)
         }
-    } else {
-        stop("unsupported Bioconductor parquet layout")
     }
 
     se
@@ -589,28 +549,23 @@ function(path,
 ### ExperimentList objects
 ###
 
-#' @importFrom jsonlite read_json
+#' @importFrom MultiAssayExperiment ExperimentList
 .readParquetExps <- function(path, package, ...) {
-    exps <- lapply(package[["resources"]], function(x) {
-                       fullpath <- file.path(path, x[["path"]])
-                       jsonfile <- file.path(fullpath, "datapackage.json")
-                       if (file.exists(jsonfile)) {
-                           x <- read_json(jsonfile,
-                                          simplifyVector = TRUE,
-                                          simplifyDataFrame = FALSE,
-                                          simplifyMatrix = FALSE)
-                       }
-                       readParquet(fullpath, metadata = x, ...)
-                   })
+    exps <- lapply(package[["resources"]], function(res) {
+        if (isTRUE(res[["layout"]] == "nested_experiment")) {
+            readParquet(file.path(path, res[["path"]]), ...)
+        } else { # array-like object
+            .readParquetResource(path, res, ...)
+        }
+    })
     names(exps) <- sapply(package[["resources"]], `[[`, "name")
-    exps
+    ExperimentList(exps)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### MultiAssayExperiment objects
 ###
 
-#' @importFrom jsonlite read_json
 #' @importFrom MultiAssayExperiment MultiAssayExperiment
 #' @importFrom stats setNames
 .readParquetMAE <- function(path, package, ...) {
@@ -622,22 +577,24 @@ function(path,
     experiments <- readParquet(fullpath, ...)
 
     # Subject Data
-    sample_schema <- resources[["subjects"]][["schema"]]
-    index <- .schema_keycols(sample_schema)
-    pkey <- sample_schema[["primaryKey"]]
+    subject_res <- resources[["subjects"]]
+    subject_schema <- subject_res[["schema"]]
+    index <- .schema_keycols(subject_schema)
+    pkey <- subject_schema[["primaryKey"]]
     name <- if (!is.null(pkey) && !identical(pkey, index)) pkey else NULL
-    fullpath <- file.path(path, resources[["subjects"]][["path"]])
-    keycol <- readParquet(fullpath, metadata = resources[["subjects"]],
-                          datacols = name, keycol = index)
+    fullpath <- file.path(path, subject_res[["path"]])
+    keycol <- .readParquetDataFrame(fullpath, resource = subject_res,
+                                    datacols = name, keycol = index)
     keycol <- as.list(as.data.frame(keycol, optional = TRUE))
-    subjects <- readParquet(fullpath, metadata = resources[["subjects"]],
-                            keycol = keycol)
+    subjects <- .readParquetDataFrame(fullpath, resource = subject_res,
+                                      keycol = keycol)
 
     # Sample Map
-    index <- .schema_keycols(resources[["sample_map"]][["schema"]])
-    fullpath <- file.path(path, resources[["sample_map"]][["path"]])
-    sample_map <- readParquet(fullpath, metadata = resources[["sample_map"]],
-                              keycol = index)
+    sample_map_res <- resources[["sample_map"]]
+    index <- .schema_keycols(sample_map_res[["schema"]])
+    fullpath <- file.path(path, sample_map_res[["path"]])
+    sample_map <- .readParquetDataFrame(fullpath, resource = sample_map_res,
+                                        keycol = index)
     sample_map <- as.data.frame(sample_map, optional = TRUE)
     sample_map[[1L]] <- factor(sample_map[[1L]], levels = names(experiments))
 
@@ -669,35 +626,27 @@ function(path,
     mae <- .readParquetMAE(path, package, ...)
 
     # Points (optional) - materialize for MASE validation
-    points <- MultiAssaySpatialExperiment::PointsLayerList()
-    if (!is.null(resources[["points"]])) {
-        fullpath <- file.path(path, resources[["points"]][["path"]])
-        pkg <- read_json(file.path(fullpath, "datapackage.json"),
-                         simplifyVector = TRUE,
-                         simplifyDataFrame = FALSE,
-                         simplifyMatrix = FALSE)
-        pts_list <- lapply(pkg[["resources"]], function(r) {
-            x <- readParquet(file.path(fullpath, r[["path"]]), metadata = r, ...)
-            as(x, "DataFrame")
+    points_res <- .filterResources(resources, "sample", "spatial_points")
+    if (length(points_res)) {
+        points_list <- lapply(points_res, function(r) {
+            as(.readParquetResource(path, r, ...), "DataFrame")
         })
-        names(pts_list) <- sapply(pkg[["resources"]], `[[`, "name")
-        points <- MultiAssaySpatialExperiment::PointsLayerList(pts_list)
+        names(points_list) <- sapply(points_res, `[[`, "name")
+        points <- MultiAssaySpatialExperiment::PointsLayerList(points_list)
+    } else {
+        points <- MultiAssaySpatialExperiment::PointsLayerList()
     }
 
     # Shapes (optional) - materialize for MASE validation
-    shapes <- MultiAssaySpatialExperiment::ShapesLayerList()
-    if (!is.null(resources[["shapes"]])) {
-        fullpath <- file.path(path, resources[["shapes"]][["path"]])
-        pkg <- read_json(file.path(fullpath, "datapackage.json"),
-                         simplifyVector = TRUE,
-                         simplifyDataFrame = FALSE,
-                         simplifyMatrix = FALSE)
-        shp_list <- lapply(pkg[["resources"]], function(r) {
-            x <- readParquet(file.path(fullpath, r[["path"]]), metadata = r, ...)
-            as(x, "DataFrame")
+    shapes_res <- .filterResources(resources, "sample", "spatial_shapes")
+    if (length(shapes_res)) {
+        shapes_list <- lapply(shapes_res, function(r) {
+            as(.readParquetResource(path, r, ...), "DataFrame")
         })
-        names(shp_list) <- sapply(pkg[["resources"]], `[[`, "name")
-        shapes <- MultiAssaySpatialExperiment::ShapesLayerList(shp_list)
+        names(shapes_list) <- sapply(shapes_res, `[[`, "name")
+        shapes <- MultiAssaySpatialExperiment::ShapesLayerList(shapes_list)
+    } else {
+        shapes <- MultiAssaySpatialExperiment::ShapesLayerList()
     }
 
     # Images (optional) - path references
@@ -707,14 +656,14 @@ function(path,
         if (dir.exists(fullpath)) {
             json_files <- list.files(fullpath, pattern = "\\.json$", full.names = TRUE)
             if (length(json_files) > 0L) {
-                img_list <- lapply(json_files, function(jf) {
+                images_list <- lapply(json_files, function(jf) {
                     meta <- read_json(jf, simplifyVector = TRUE)
                     ## TODO: construct StoredSpatialImage or similar from path ref
                     ## For now, store metadata as-is
                     meta
                 })
-                names(img_list) <- sub("\\.json$", "", basename(json_files))
-                images <- MultiAssaySpatialExperiment::RasterLayerList(img_list)
+                names(images_list) <- sub("\\.json$", "", basename(json_files))
+                images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
             }
         }
     }
@@ -726,21 +675,24 @@ function(path,
         if (dir.exists(fullpath)) {
             json_files <- list.files(fullpath, pattern = "\\.json$", full.names = TRUE)
             if (length(json_files) > 0L) {
-                lbl_list <- lapply(json_files, function(jf) {
+                labels_list <- lapply(json_files, function(jf) {
                     meta <- read_json(jf, simplifyVector = TRUE)
                     ## TODO: construct appropriate label/mask object from path ref
                     meta
                 })
-                names(lbl_list) <- sub("\\.json$", "", basename(json_files))
-                labels <- MultiAssaySpatialExperiment::RasterLayerList(lbl_list)
+                names(labels_list) <- sub("\\.json$", "", basename(json_files))
+                labels <- MultiAssaySpatialExperiment::RasterLayerList(labels_list)
             }
         }
     }
 
     # imgData (optional) - must materialize
+    img_data <- NULL
     if (!is.null(resources[["img_data"]])) {
         fullpath <- file.path(path, resources[["img_data"]][["path"]])
-        img_data <- readParquet(fullpath, metadata = resources[["img_data"]], ...)
+        img_data <- .readParquetDataFrame(fullpath,
+                                          resource = resources[["img_data"]],
+                                          ...)
         img_data <- as(img_data, "DFrame")
 
         # Reconstruct data column with SpatialImage objects from materialized files
@@ -784,9 +736,11 @@ function(path,
     # spatialMap (optional) - materialize for MASE validation
     spatial_map <- NULL
     if (!is.null(resources[["spatial_map"]])) {
-        index <- .schema_keycols(resources[["spatial_map"]][["schema"]])
-        fullpath <- file.path(path, resources[["spatial_map"]][["path"]])
-        x <- readParquet(fullpath, metadata = resources[["spatial_map"]], keycol = index, ...)
+        spatial_map_res <- resources[["spatial_map"]]
+        index <- .schema_keycols(spatial_map_res[["schema"]])
+        fullpath <- file.path(path, spatial_map_res[["path"]])
+        x <- .readParquetDataFrame(fullpath, resource = spatial_map_res,
+                                   keycol = index, ...)
         spatial_map <- as.data.frame(x, optional = TRUE)
         spatial_map <- S4Vectors::DataFrame(spatial_map)
     }

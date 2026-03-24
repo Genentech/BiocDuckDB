@@ -76,7 +76,7 @@
                   format = "variable",
                   arrayItem = list(type = type))
 
-    lengths_x <- unique(lengths(x))
+    lengths_x <- as.vector(unique(lengths(x)))
     if (length(lengths_x) == 1L) {
         field[["format"]] <- "fixed"
         field[["constraints"]] <- list(minLength = lengths_x,
