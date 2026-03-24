@@ -114,16 +114,12 @@ genomic data) encoded in the \code{datapackage.json} file.
     flat \code{feature_graph=<name>/} and \code{sample_graph=<name>/}
     directories.
   }
-  \item{\code{ExperimentList}}{
-    Named collection of experiments in \code{experiment=<name>/} directories.
-    \code{SummarizedExperiment} objects are stored hierarchically with their
-    own \code{datapackage.json} (\code{layout = "nested_experiment"}).
-    Array-like objects are stored as flat parquet datasets with metadata
-    consolidated in the root \code{datapackage.json}.
-  }
   \item{\code{MultiAssayExperiment}}{
-    Experiments from \code{experiments/}, subject data from
-    \code{subjects/}, and sample map from \code{sample_map/}.
+    Experiments written directly to root as \code{experiment=<name>/}
+    directories (flattened). Each \code{SummarizedExperiment} has its own
+    \code{datapackage.json} (\code{layout = "nested_experiment"}).
+    Also includes \code{subjects} (subject metadata) and \code{sample_map}
+    (subject-to-sample mapping) as \code{unbound} resources.
   }
   \item{\code{MultiAssaySpatialExperiment}}{
     Extends \code{MultiAssayExperiment} with spatial points from flat

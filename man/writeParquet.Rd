@@ -153,13 +153,7 @@ writeParquet(x, path, ...)
   ...
 )
 
-\S4method{writeParquet}{ExperimentList}(
-  x,
-  path,
-  indexcols = c("__feature__", "__sample__"),
-  package = list(model = "experiment_list", resources = list()),
-  ...
-)
+\S4method{writeParquet}{ExperimentList}(x, path, indexcols = c("__feature__", "__sample__"), ...)
 
 \S4method{writeParquet}{MultiAssayExperiment}(
   x,
@@ -200,7 +194,10 @@ writeParquet(x, path, ...)
     for features
   \item \code{SingleCellExperiment} objects - extends \code{SummarizedExperiment}
     with embeddings, alt experiments, dimension tables, and pairwise graphs
-  \item \code{ExperimentList} objects - named collection of experiments
+  \item \code{ExperimentList} objects - named collection of experiments;
+    primitive method used internally by \code{MultiAssayExperiment} and
+    \code{SingleCellExperiment} (altExps); returns resources without writing
+    \code{datapackage.json}
   \item \code{MultiAssayExperiment} objects - multi-experiment study with subject
     metadata and sample map
   \item \code{PointsLayerList} / \code{ShapesLayerList} objects - spatial point
@@ -287,15 +284,14 @@ experiment method.}
 For primitive methods (\code{ANY}, \code{data.frame}, \code{DataFrame},
 \code{TransposedDataFrame}, \code{GenomicRanges}, \code{GenomicRangesList},
 \code{SelfHits}, \code{Assays}, \code{list}, \code{List},
-\code{PointsLayerList}, \code{ShapesLayerList}): invisibly returns a list of
-Frictionless resource entries suitable for inclusion in a
-\code{datapackage.json} \code{resources} array.
+\code{ExperimentList}, \code{PointsLayerList}, \code{ShapesLayerList}):
+invisibly returns a list of Frictionless resource entries suitable for
+inclusion in a \code{datapackage.json} \code{resources} array.
 
-For complex experiment methods (\code{SummarizedExperiment},
-\code{SingleCellExperiment}, \code{ExperimentList},
-\code{MultiAssayExperiment}, \code{MultiAssaySpatialExperiment}):
-invisibly returns \code{NULL}; the \code{datapackage.json} is written to
-\code{path} as a side effect.
+For experiment methods (\code{SummarizedExperiment},
+\code{SingleCellExperiment}, \code{MultiAssayExperiment},
+\code{MultiAssaySpatialExperiment}): invisibly returns \code{NULL}; the
+\code{datapackage.json} is written to \code{path} as a side effect.
 }
 \description{
 An \code{arrow::write_dataset} wrapper function to write the Parquet

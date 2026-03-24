@@ -97,16 +97,12 @@
 #'     flat \code{feature_graph=<name>/} and \code{sample_graph=<name>/}
 #'     directories.
 #'   }
-#'   \item{\code{ExperimentList}}{
-#'     Named collection of experiments in \code{experiment=<name>/} directories.
-#'     \code{SummarizedExperiment} objects are stored hierarchically with their
-#'     own \code{datapackage.json} (\code{layout = "nested_experiment"}).
-#'     Array-like objects are stored as flat parquet datasets with metadata
-#'     consolidated in the root \code{datapackage.json}.
-#'   }
 #'   \item{\code{MultiAssayExperiment}}{
-#'     Experiments from \code{experiments/}, subject data from
-#'     \code{subjects/}, and sample map from \code{sample_map/}.
+#'     Experiments written directly to root as \code{experiment=<name>/}
+#'     directories (flattened). Each \code{SummarizedExperiment} has its own
+#'     \code{datapackage.json} (\code{layout = "nested_experiment"}).
+#'     Also includes \code{subjects} (subject metadata) and \code{sample_map}
+#'     (subject-to-sample mapping) as \code{unbound} resources.
 #'   }
 #'   \item{\code{MultiAssaySpatialExperiment}}{
 #'     Extends \code{MultiAssayExperiment} with spatial points from flat
@@ -550,15 +546,15 @@ function(path,
 ###
 
 #' @importFrom MultiAssayExperiment ExperimentList
-.readParquetExps <- function(path, package, ...) {
-    exps <- lapply(package[["resources"]], function(res) {
+.readParquetExps <- function(path, resources, ...) {
+    exps <- lapply(resources, function(res) {
         if (isTRUE(res[["layout"]] == "nested_experiment")) {
             readParquet(file.path(path, res[["path"]]), ...)
         } else { # array-like object
             .readParquetResource(path, res, ...)
         }
     })
-    names(exps) <- sapply(package[["resources"]], `[[`, "name")
+    names(exps) <- sapply(resources, `[[`, "name")
     ExperimentList(exps)
 }
 
@@ -573,8 +569,8 @@ function(path,
     names(resources) <- sapply(package[["resources"]], `[[`, "name")
 
     # Experiments
-    fullpath <- file.path(path, resources[["experiments"]][["path"]])
-    experiments <- readParquet(fullpath, ...)
+    exps_res <- .filterResources(resources, dimension = "crossed")
+    experiments <- .readParquetExps(path, exps_res, ...)
 
     # Subject Data
     subject_res <- resources[["subjects"]]

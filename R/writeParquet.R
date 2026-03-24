@@ -26,7 +26,10 @@
 #'     for features
 #'   \item \code{SingleCellExperiment} objects - extends \code{SummarizedExperiment}
 #'     with embeddings, alt experiments, dimension tables, and pairwise graphs
-#'   \item \code{ExperimentList} objects - named collection of experiments
+#'   \item \code{ExperimentList} objects - named collection of experiments;
+#'     primitive method used internally by \code{MultiAssayExperiment} and
+#'     \code{SingleCellExperiment} (altExps); returns resources without writing
+#'     \code{datapackage.json}
 #'   \item \code{MultiAssayExperiment} objects - multi-experiment study with subject
 #'     metadata and sample map
 #'   \item \code{PointsLayerList} / \code{ShapesLayerList} objects - spatial point
@@ -98,15 +101,14 @@
 #' For primitive methods (\code{ANY}, \code{data.frame}, \code{DataFrame},
 #' \code{TransposedDataFrame}, \code{GenomicRanges}, \code{GenomicRangesList},
 #' \code{SelfHits}, \code{Assays}, \code{list}, \code{List},
-#' \code{PointsLayerList}, \code{ShapesLayerList}): invisibly returns a list of
-#' Frictionless resource entries suitable for inclusion in a
-#' \code{datapackage.json} \code{resources} array.
+#' \code{ExperimentList}, \code{PointsLayerList}, \code{ShapesLayerList}):
+#' invisibly returns a list of Frictionless resource entries suitable for
+#' inclusion in a \code{datapackage.json} \code{resources} array.
 #'
-#' For complex experiment methods (\code{SummarizedExperiment},
-#' \code{SingleCellExperiment}, \code{ExperimentList},
-#' \code{MultiAssayExperiment}, \code{MultiAssaySpatialExperiment}):
-#' invisibly returns \code{NULL}; the \code{datapackage.json} is written to
-#' \code{path} as a side effect.
+#' For experiment methods (\code{SummarizedExperiment},
+#' \code{SingleCellExperiment}, \code{MultiAssayExperiment},
+#' \code{MultiAssaySpatialExperiment}): invisibly returns \code{NULL}; the
+#' \code{datapackage.json} is written to \code{path} as a side effect.
 #'
 #' @details
 #' This function provides specialized handling for different object types:
@@ -1150,34 +1152,30 @@ setMethod("writeParquet", "ExperimentList",
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(model = "experiment_list", resources = list()),
          ...)
 {
+    resources <- list()
     for (i in seq_along(x)) {
         nms_i <- names(x)[i]
         x_i <- x[[i]]
         path_i <- paste0("experiment=", nms_i)
         if (is(x_i, "SummarizedExperiment")) {
-            resources <- list(list(name = nms_i, path = path_i,
-                                   dimension = "crossed",
-                                   layout = "nested_experiment"))
+            res_i <- list(list(name = nms_i, path = path_i,
+                               dimension = "crossed",
+                               layout = "nested_experiment"))
            callGeneric(x_i, path = file.path(path, path_i),
                        indexcols = indexcols, ...)
         } else {
             # Array-like object
-            resources <-
+            res_i <-
                 callGeneric(x_i, path = file.path(path, path_i),
                             indexcols = indexcols, datacol = "value",
                             grid_suffix = "group__", name = nms_i,
                             dimension = "crossed", layout = "coord_array", ...)
         }
-        package[["resources"]] <- c(package[["resources"]], resources)
+        resources <- c(resources, res_i)
     }
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-
-    invisible(NULL)
+    invisible(resources)
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1209,10 +1207,8 @@ function(x,
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Experiment Data
-    resources <- list(list(name = "experiments", path = "experiments",
-                           dimension = "crossed", layout = "nested_experiment"))
-    callGeneric(experiments(x), path = file.path(path, resources[[1L]][["path"]]),
-                indexcols = indexcols, ...)
+    resources <- callGeneric(experiments(x), path = path, indexcols = indexcols,
+                             ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     package[["annotations"]] <- .vectorMetadata(x)

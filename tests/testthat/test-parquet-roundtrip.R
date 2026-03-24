@@ -315,10 +315,10 @@ test_that("SingleCellExperiment with colPairs (graph_edges) works", {
 })
 
 # ==============================================================================
-# ExperimentList Tests
+# MultiAssayExperiment Tests
 # ==============================================================================
 
-test_that("ExperimentList with nested experiments works", {
+test_that("MultiAssayExperiment with nested experiments works", {
     set.seed(106)
     ncells <- 20L
     ngenes_rna <- 30L
@@ -336,36 +336,39 @@ test_that("ExperimentList with nested experiments works", {
     sce1 <- SingleCellExperiment(assays = list(counts = counts_rna))
     sce2 <- SingleCellExperiment(assays = list(counts = counts_protein))
 
-    el <- ExperimentList(RNA = sce1, Protein = sce2)
+    # Create MAE with proper sample mapping
+    mae <- MultiAssayExperiment(
+        experiments = ExperimentList(RNA = sce1, Protein = sce2)
+    )
 
     # Round-trip
     tmpdir <- tempfile()
-    writeParquet(el, tmpdir)
-    el2 <- readParquet(tmpdir)
+    writeParquet(mae, tmpdir)
+    mae2 <- readParquet(tmpdir)
 
     # Check structure
-    expect_s4_class(el2, "ExperimentList")
-    expect_identical(names(el2), c("RNA", "Protein"))
-    expect_identical(length(el2), 2L)
+    expect_s4_class(mae2, "MultiAssayExperiment")
+    expect_identical(names(experiments(mae2)), c("RNA", "Protein"))
+    expect_identical(length(experiments(mae2)), 2L)
 
     # Check each experiment
-    expect_s4_class(el2[["RNA"]], "SingleCellExperiment")
-    expect_s4_class(el2[["Protein"]], "SingleCellExperiment")
+    expect_s4_class(mae2[["RNA"]], "SingleCellExperiment")
+    expect_s4_class(mae2[["Protein"]], "SingleCellExperiment")
 
     # Check RNA experiment
-    rna_expected <- assay(sce1, "counts")
+    rna_expected <- assay(mae[["RNA"]], "counts")
     names(dimnames(rna_expected)) <- c("__feature__", "__sample__")
-    checkDuckDBMatrix(assay(el2[["RNA"]], "counts"), rna_expected)
+    checkDuckDBMatrix(assay(mae2[["RNA"]], "counts"), rna_expected)
 
     # Check Protein experiment
-    protein_expected <- assay(sce2, "counts")
+    protein_expected <- assay(mae[["Protein"]], "counts")
     names(dimnames(protein_expected)) <- c("__feature__", "__sample__")
-    checkDuckDBMatrix(assay(el2[["Protein"]], "counts"), protein_expected)
+    checkDuckDBMatrix(assay(mae2[["Protein"]], "counts"), protein_expected)
 
     unlink(tmpdir, recursive = TRUE)
 })
 
-test_that("ExperimentList with flat array-like objects works", {
+test_that("MultiAssayExperiment with flat array-like objects works", {
     set.seed(107)
 
     # Array-like objects (not SE)
@@ -376,30 +379,32 @@ test_that("ExperimentList with flat array-like objects works", {
     rownames(mat2) <- paste0("Feature2_", 1:60)
     colnames(mat1) <- colnames(mat2) <- paste0("Sample", 1:20)
 
-    el <- ExperimentList(Dataset1 = mat1, Dataset2 = mat2)
+    mae <- MultiAssayExperiment(
+        experiments = ExperimentList(Dataset1 = mat1, Dataset2 = mat2)
+    )
 
     # Round-trip
     tmpdir <- tempfile()
-    writeParquet(el, tmpdir)
-    el2 <- readParquet(tmpdir)
+    writeParquet(mae, tmpdir)
+    mae2 <- readParquet(tmpdir)
 
     # Check structure
-    expect_s4_class(el2, "ExperimentList")
-    expect_identical(names(el2), c("Dataset1", "Dataset2"))
-    expect_identical(length(el2), 2L)
+    expect_s4_class(mae2, "MultiAssayExperiment")
+    expect_identical(names(experiments(mae2)), c("Dataset1", "Dataset2"))
+    expect_identical(length(experiments(mae2)), 2L)
 
     # Array-like objects come back as DuckDBMatrix
-    expect_s4_class(el2[["Dataset1"]], "DuckDBMatrix")
-    expect_s4_class(el2[["Dataset2"]], "DuckDBMatrix")
+    expect_s4_class(mae2[["Dataset1"]], "DuckDBMatrix")
+    expect_s4_class(mae2[["Dataset2"]], "DuckDBMatrix")
 
     # Check matrices with proper dimnames names
     mat1_expected <- mat1
     names(dimnames(mat1_expected)) <- c("__feature__", "__sample__")
-    checkDuckDBMatrix(el2[["Dataset1"]], mat1_expected)
+    checkDuckDBMatrix(mae2[["Dataset1"]], mat1_expected)
 
     mat2_expected <- mat2
     names(dimnames(mat2_expected)) <- c("__feature__", "__sample__")
-    checkDuckDBMatrix(el2[["Dataset2"]], mat2_expected)
+    checkDuckDBMatrix(mae2[["Dataset2"]], mat2_expected)
 
     unlink(tmpdir, recursive = TRUE)
 })
