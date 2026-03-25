@@ -165,11 +165,12 @@
 #' \code{SummarizedExperiment} with single-cell specific data. All collections
 #' are written as flat resource directories directly under \code{path}. The
 #' directory name encodes both axis and type: \code{feature_embeddings/},
-#' \code{sample_embeddings/}, \code{feature_table=<name>/},
-#' \code{sample_table=<name>/}, \code{feature_graph=<name>/},
-#' \code{sample_graph=<name>/}. The path prefix is derived automatically from
-#' \code{layout}. Alternative experiments remain hierarchical under
-#' \code{modalities/}. See the automatic unnesting section for details about
+#' \code{sample_embeddings/}, \code{feature_table_<name>/},
+#' \code{sample_table_<name>/}, \code{feature_graph_<name>/},
+#' \code{sample_graph_<name>/}, \code{experiment_<name>/}. The path prefix is
+#' derived automatically from \code{layout}. Alternative experiments are written
+#' directly to root (flattened, same pattern as \code{MultiAssayExperiment}
+#' experiments). See the automatic unnesting section for details about
 #' \code{DataFrame} columns in \code{rowData()}/\code{colData()}.
 #'
 #' \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies
@@ -575,11 +576,11 @@ function(x,
         prefix <- switch(layout,
                          coord_array =,
                          data_frame =,
-                         transposed_data_frame = "assay=",
-                         nested_data_frame     = "table=",
-                         graph_edges           = "graph=",
-                         spatial_points        = "points=",
-                         spatial_shapes        = "shapes=",
+                         transposed_data_frame = "assay_",
+                         nested_data_frame     = "table_",
+                         graph_edges           = "graph_",
+                         spatial_points        = "points_",
+                         spatial_shapes        = "shapes_",
                          stop("unsupported layout: ", layout))
         if (dimension != "crossed") {
             prefix <- sprintf("%s_%s", dimension, prefix)
@@ -815,7 +816,7 @@ function(x,
     for (i in seq_along(x)) {
         nms_i <- names(x)[i]
         x_i <- t(getListElement(x, i))
-        path_i <- paste0("assay=", nms_i)
+        path_i <- paste0("assay_", nms_i)
         if (is(x_i, "DataFrame")) {
             resources <- c(resources,
                            callGeneric(x_i, path = file.path(path, path_i),
@@ -936,36 +937,6 @@ function(x,
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-### Modalities
-###
-
-#' @importFrom jsonlite write_json
-.writeParquetModalities <-
-function(x,
-         path,
-         indexcols = c("__feature__", "__sample__"),
-         package = list(model = "experiment_list", resources = list()),
-         ...)
-{
-    for (i in seq_along(x)) {
-        nms_i <- names(x)[i]
-        x_i <- x[[i]]
-        path_i <- paste0("modality=", nms_i)
-        resources <- list(list(name = nms_i, path = path_i,
-                               dimension = "crossed",
-                               layout = "nested_experiment"))
-        writeParquet(x_i, path = file.path(path, path_i), indexcols = indexcols,
-                     ...)
-        package[["resources"]] <- c(package[["resources"]], resources)
-    }
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-
-    invisible(NULL)
-}
-
-### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Additional Dimension Tables
 ###
 
@@ -997,6 +968,7 @@ function(x,
 #' @export
 #' @importClassesFrom S4Vectors DFrame
 #' @importClassesFrom SingleCellExperiment SingleCellExperiment
+#' @importFrom MultiAssayExperiment ExperimentList
 #' @importFrom S4Vectors I
 #' @importFrom SingleCellExperiment altExps colPairs mainExpName
 #' @importFrom SingleCellExperiment reducedDims reducedDimNames rowPairs
@@ -1085,15 +1057,9 @@ function(x,
     }
 
     # Alternative Experiments
-    exps <- altExps(x)
+    exps <- ExperimentList(altExps(x))
     if (length(exps)) {
-        resources <- list(list(name = "modalities",
-                               path = "modalities",
-                               dimension = "crossed",
-                               layout = "nested_experiment"))
-        .writeParquetModalities(exps,
-                                path = file.path(path, "modalities"),
-                                indexcols = indexcols, ...)
+        resources <- callGeneric(exps, path = path, indexcols = indexcols, ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
@@ -1158,7 +1124,7 @@ function(x,
     for (i in seq_along(x)) {
         nms_i <- names(x)[i]
         x_i <- x[[i]]
-        path_i <- paste0("experiment=", nms_i)
+        path_i <- paste0("experiment_", nms_i)
         if (is(x_i, "SummarizedExperiment")) {
             res_i <- list(list(name = nms_i, path = path_i,
                                dimension = "crossed",

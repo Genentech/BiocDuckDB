@@ -356,11 +356,12 @@ with separate paths for feature data, sample data, and assay data.
 \code{SummarizedExperiment} with single-cell specific data. All collections
 are written as flat resource directories directly under \code{path}. The
 directory name encodes both axis and type: \code{feature_embeddings/},
-\code{sample_embeddings/}, \code{feature_table=<name>/},
-\code{sample_table=<name>/}, \code{feature_graph=<name>/},
-\code{sample_graph=<name>/}. The path prefix is derived automatically from
-\code{layout}. Alternative experiments remain hierarchical under
-\code{modalities/}. See the automatic unnesting section for details about
+\code{sample_embeddings/}, \code{feature_table_<name>/},
+\code{sample_table_<name>/}, \code{feature_graph_<name>/},
+\code{sample_graph_<name>/}, \code{experiment_<name>/}. The path prefix is
+derived automatically from \code{layout}. Alternative experiments are written
+directly to root (flattened, same pattern as \code{MultiAssayExperiment}
+experiments). See the automatic unnesting section for details about
 \code{DataFrame} columns in \code{rowData()}/\code{colData()}.
 
 \strong{\code{MultiAssayExperiment} objects:} Writes multi-experiment studies

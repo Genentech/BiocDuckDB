@@ -80,9 +80,9 @@
 #'   }
 #'   \item{\code{SummarizedExperiment}}{
 #'     Feature metadata from \code{features/}, sample metadata from
-#'     \code{samples/}, and assays from flat \code{assay=<name>/} directories.
+#'     \code{samples/}, and assays from flat \code{assay_<name>/} directories.
 #'     Any complex objects stored in \code{metadata()} are written to
-#'     \code{unbound=<name>/} directories and restored on read.
+#'     \code{unbound_<name>/} directories and restored on read.
 #'   }
 #'   \item{\code{RangedSummarizedExperiment}}{
 #'     As \code{SummarizedExperiment}, with \code{rowRanges} reconstructed as a
@@ -91,14 +91,14 @@
 #'   \item{\code{SingleCellExperiment}}{
 #'     Extends \code{SummarizedExperiment} with: reduced dimensions from
 #'     \code{sample_embeddings/}; row loadings from \code{feature_embeddings/};
-#'     alternative experiments from \code{modalities/} (hierarchical);
-#'     row/column tables from flat \code{feature_table=<name>/} and
-#'     \code{sample_table=<name>/} directories; row/column pairwise graphs from
-#'     flat \code{feature_graph=<name>/} and \code{sample_graph=<name>/}
+#'     alternative experiments from \code{experiment_<name>/} directories;
+#'     row/column tables from flat \code{feature_table_<name>/} and
+#'     \code{sample_table_<name>/} directories; row/column pairwise graphs from
+#'     flat \code{feature_graph_<name>/} and \code{sample_graph_<name>/}
 #'     directories.
 #'   }
 #'   \item{\code{MultiAssayExperiment}}{
-#'     Experiments written directly to root as \code{experiment=<name>/}
+#'     Experiments written directly to root as \code{experiment_<name>/}
 #'     directories (flattened). Each \code{SummarizedExperiment} has its own
 #'     \code{datapackage.json} (\code{layout = "nested_experiment"}).
 #'     Also includes \code{subjects} (subject metadata) and \code{sample_map}
@@ -106,8 +106,8 @@
 #'   }
 #'   \item{\code{MultiAssaySpatialExperiment}}{
 #'     Extends \code{MultiAssayExperiment} with spatial points from flat
-#'     \code{sample_points=<name>/} directories, shapes from flat
-#'     \code{sample_shapes=<name>/} directories, image metadata from
+#'     \code{sample_points_<name>/} directories, shapes from flat
+#'     \code{sample_shapes_<name>/} directories, image metadata from
 #'     \code{img_data/}, and spatial mapping from \code{spatial_map/}.
 #'     Requires the \code{MultiAssaySpatialExperiment} package.
 #'   }
@@ -382,24 +382,6 @@ function(path,
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-### Modalities
-###
-
-#' @importFrom jsonlite read_json
-.readParquetModalities <- function(path, resource, ...) {
-    dirpath <- file.path(path, resource[["path"]])
-    pkg <- read_json(file.path(dirpath, "datapackage.json"),
-                     simplifyVector = TRUE,
-                     simplifyDataFrame = FALSE,
-                     simplifyMatrix = FALSE)
-    alts <- lapply(pkg[["resources"]], function(x) {
-        readParquet(file.path(dirpath, x[["path"]]), ...)
-    })
-    names(alts) <- sapply(pkg[["resources"]], `[[`, "name")
-    alts
-}
-
-### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### SummarizedExperiment objects
 ###
 
@@ -491,9 +473,10 @@ function(path,
         }
 
         # Alternative Experiments
-        mod_res <- .filterResources(resources, "crossed", "nested_experiment")
-        alts <- if (length(mod_res)) {
-            .readParquetModalities(path, mod_res[[1L]], ...)
+        altexp_res <- .filterResources(resources, "crossed",
+                                       "nested_experiment")
+        alts <- if (length(altexp_res)) {
+            as.list(.readParquetExps(path, altexp_res, ...))
         } else {
             list()
         }
