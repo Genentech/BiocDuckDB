@@ -917,7 +917,7 @@ function(x,
     for (k in seq_along(unbound)) {
         uns_k <- unbound[[k]]
         nms_k <- names(unbound)[k] %||% sprintf("item-%d", k)
-        path_k <- sprintf("unbound=%s", nms_k)
+        path_k <- sprintf("unbound_%s", nms_k)
         resources <- try(callGeneric(uns_k,
                                      path = file.path(path, path_k),
                                      name = nms_k,
