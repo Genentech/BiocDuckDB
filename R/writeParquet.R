@@ -279,12 +279,10 @@ function(x, path, ...)
 ###
 
 #' @export
-#' @importFrom DelayedArray blockApply currentViewport defaultAutoGrid
-#' @importFrom DelayedArray effectiveGrid getAutoBPPARAM
+#' @importFrom DelayedArray defaultAutoGrid getAutoBPPARAM
 #' @importFrom DuckDBArray writeCoordArray
-#' @importFrom S4Arrays mapToGrid
 #' @importFrom S4Vectors head tail
-#' @importFrom SparseArray COO_SparseArray nzvals
+#' @importFrom SparseArray COO_SparseArray
 #' @rdname writeParquet
 setMethod("writeParquet", "ANY",
 function(x,
@@ -344,6 +342,266 @@ function(x,
                                     categoriesOrdered = TRUE)
                            }
                        }),
+                list(list(name = datacol)))
+
+    # Generate foreign key metadata
+    if (is.null(indexrefs)) {
+        indexrefs <- lapply(seq_along(indexcols), function(i) {
+            list(fields = indexcols[i], reference = list(fields = ""))
+        })
+    }
+
+    schema <- list(fields = fields, foreignKeys = indexrefs)
+    resources <- list(list(name = name,
+                           path = basename(path),
+                           dimension = dimension,
+                           layout = layout,
+                           format = "parquet",
+                           mediatype = "application/vnd.apache.parquet",
+                           schema = schema))
+
+    invisible(resources)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### DuckDBArray objects (fast path via DuckDB COPY TO)
+###
+
+#' @importFrom DBI dbQuoteIdentifier
+.quoteColumns <-
+function(conn, cols)
+{
+    vapply(cols, function(col) {
+        as.character(dbQuoteIdentifier(conn, col))
+    }, character(1L), USE.NAMES = FALSE)
+}
+
+#' @importFrom dbplyr sql_render
+.buildCopyToSQL <-
+function(tbl, indexcols, datacol, conn, target_path, where_clause = NULL)
+{
+    # Quote all columns
+    quoted_cols <- .quoteColumns(conn, c(indexcols, datacol))
+
+    # Order by reversed indexcols (column-major order)
+    quoted_order_cols <- .quoteColumns(conn, rev(indexcols))
+
+    # Build SQL with optional WHERE clause
+    if (!is.null(where_clause) && nzchar(where_clause)) {
+        sprintf(
+            "COPY (SELECT %s FROM (%s) WHERE %s ORDER BY %s) TO '%s' (FORMAT 'parquet', COMPRESSION 'zstd', ROW_GROUP_SIZE 491520, COMPRESSION_LEVEL 3)",
+            paste(quoted_cols, collapse = ", "),
+            sql_render(tbl),
+            where_clause,
+            paste(quoted_order_cols, collapse = ", "),
+            target_path
+        )
+    } else {
+        sprintf(
+            "COPY (SELECT %s FROM (%s) ORDER BY %s) TO '%s' (FORMAT 'parquet', COMPRESSION 'zstd', ROW_GROUP_SIZE 491520, COMPRESSION_LEVEL 3)",
+            paste(quoted_cols, collapse = ", "),
+            sql_render(tbl),
+            paste(quoted_order_cols, collapse = ", "),
+            target_path
+        )
+    }
+}
+
+#' @importFrom DBI dbExecute
+.writeDuckDBArraySingle <-
+function(tbl, conn, path, indexcols, datacol, arrowtype, ...)
+{
+    dir.create(path, recursive = TRUE, showWarnings = FALSE)
+    target <- file.path(path, "part-0.parquet")
+
+    sql <- .buildCopyToSQL(tbl, indexcols, datacol, conn, target)
+    dbExecute(conn, sql)
+    invisible(NULL)
+}
+
+#' @importFrom DBI dbExecute dbQuoteIdentifier
+#' @importFrom duckdb duckdb_register
+.buildTempTableFilter <-
+function(conn, col_name, values)
+{
+    col_quoted <- as.character(dbQuoteIdentifier(conn, col_name))
+
+    # Small lists: inline IN clause
+    if (length(values) <= 100L) {
+        vals_str <- paste(values, collapse = ", ")
+        return(sprintf("%s IN (%s)", col_quoted, vals_str))
+    }
+
+    # Medium lists: temp table with VALUES clause
+    if (length(values) <= 10000L) {
+        temp_suffix <- basename(tempfile(pattern = ""))
+        temp_name <- sprintf("temp_viewport_%s_%s", col_name, temp_suffix)
+
+        # Build VALUES clause: (1), (2), (3), ...
+        values_clause <- paste0("(", paste(values, collapse = "), ("), ")")
+        dbExecute(conn, sprintf(
+            "CREATE TEMP TABLE %s (val) AS SELECT * FROM (VALUES %s) t(val)",
+            temp_name, values_clause
+        ))
+
+        return(sprintf("%s IN (SELECT val FROM %s)", col_quoted, temp_name))
+    }
+
+    # Large lists: register R data frame as virtual table
+    temp_suffix <- basename(tempfile(pattern = ""))
+    temp_name <- sprintf("temp_viewport_%s_%s", col_name, temp_suffix)
+    df <- data.frame(val = values)
+    duckdb_register(conn, temp_name, df)
+
+    sprintf("%s IN (SELECT val FROM %s)", col_quoted, temp_name)
+}
+
+#' @importFrom DBI dbExecute
+#' @importFrom DelayedArray currentViewport effectiveGrid
+#' @importFrom IRanges ranges start end
+#' @importFrom S4Arrays mapToGrid
+.writeDuckDBCellFUN <-
+function(block, conn, tbl, path, indexcols, datacol, grid_suffix,
+         keycols, ...)
+{
+    # Get grid context from blockApply environment
+    grid <- effectiveGrid()
+    viewport <- currentViewport()
+    group <- as.vector(mapToGrid(start(viewport), grid)[["major"]])
+
+    # Extract coordinate VALUES for this viewport from keycols using viewport ranges
+    vp_ranges <- ranges(viewport)
+    viewport_coords <- lapply(seq_along(indexcols), function(j) {
+        col <- indexcols[j]
+        start_idx <- start(vp_ranges)[j]
+        end_idx <- end(vp_ranges)[j]
+        keycols[[col]][start_idx:end_idx]
+    })
+    names(viewport_coords) <- indexcols
+
+    # Build hive partition directory
+    subdir <- paste0(indexcols, grid_suffix, "=", group)
+    target_dir <- do.call(file.path, c(list(path), as.list(subdir)))
+    dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
+
+    # Build SQL WHERE clause using IN lists
+    where_clauses <- mapply(function(col, vals) {
+        .buildTempTableFilter(conn, col, as.integer(vals))
+    }, indexcols, viewport_coords, SIMPLIFY = FALSE)
+    where_clause <- paste(where_clauses, collapse = " AND ")
+
+    # Generate and execute COPY TO
+    target_path <- file.path(target_dir, "part-0.parquet")
+    sql <- .buildCopyToSQL(tbl, indexcols, datacol, conn, target_path, where_clause)
+
+    dbExecute(conn, sql)
+    NULL
+}
+
+#' @importFrom DelayedArray blockApply
+#' @importFrom DuckDBDataFrame dbconn tblconn
+#' @importFrom SparseArray COO_SparseArray
+.writeDuckDBArrayPartitioned <-
+function(x, path, indexcols, datacol, grid, grid_suffix, idxtypes,
+         arrowtype, BPPARAM, ...)
+{
+    # Extract components from DuckDBArray once
+    seed <- x@seed
+    conn <- dbconn(seed)
+    tbl <- tblconn(seed)
+    keycols <- seed@table@keycols
+
+    # Create empty COO_SparseArray
+    empty_array <- COO_SparseArray(dim(x), dimnames = dimnames(x))
+
+    # Use blockApply to iterate viewports
+    blockApply(empty_array,
+               FUN = .writeDuckDBCellFUN,
+               conn = conn,
+               tbl = tbl,
+               path = path,
+               indexcols = indexcols,
+               datacol = datacol,
+               grid_suffix = grid_suffix,
+               keycols = keycols,
+               grid = grid,
+               as.sparse = TRUE,
+               BPPARAM = BPPARAM,
+               verbose = NA)
+
+    invisible(NULL)
+}
+
+#' @export
+#' @importClassesFrom DuckDBArray DuckDBArray
+#' @importFrom DBI dbGetQuery
+#' @importFrom dbplyr sql_render
+#' @importFrom DelayedArray defaultAutoGrid getAutoBPPARAM
+#' @importFrom DuckDBArray dbconn tblconn
+#' @importFrom SparseArray COO_SparseArray
+#' @rdname writeParquet
+setMethod("writeParquet", "DuckDBArray",
+function(x,
+         path,
+         indexcols = NULL,
+         indexrefs = NULL,
+         datacol = "value",
+         grid = defaultAutoGrid(COO_SparseArray(dim(x))),
+         grid_suffix = "_group",
+         BPPARAM = getAutoBPPARAM(),
+         name = basename(path),
+         dimension = "crossed",
+         layout = "coord_array",
+         ...)
+{
+    seed <- x@seed
+    conn <- dbconn(seed)
+    tbl <- tblconn(seed)
+
+    # Auto-detect indexcols from table keycols if not provided
+    if (is.null(indexcols)) {
+        indexcols <- names(seed@table@keycols)
+    }
+
+    # Extract arrow types from DuckDB schema (skip inference)
+    schema_probe <- dbGetQuery(conn, sprintf(
+        "SELECT * FROM (%s) LIMIT 0",
+        sql_render(tbl)
+    ))
+
+    # Map DuckDB types to arrow types
+    arrowtype <- .duckdbTypeToArrow(class(schema_probe[[datacol]])[1L])
+    idxtypes <- lapply(indexcols, function(col) {
+        .duckdbTypeToArrow(class(schema_probe[[col]])[1L])
+    })
+
+    if (length(grid) == 1L) {
+        # Single-file write: Direct COPY TO
+        .writeDuckDBArraySingle(tbl,
+                                conn = conn,
+                                path = path,
+                                indexcols = indexcols,
+                                datacol = datacol,
+                                arrowtype = arrowtype,
+                                ...)
+    } else {
+        # Multi-partition write: blockApply with SQL-based writes
+        .writeDuckDBArrayPartitioned(x,
+                                     path = path,
+                                     indexcols = indexcols,
+                                     datacol = datacol,
+                                     grid = grid,
+                                     grid_suffix = grid_suffix,
+                                     idxtypes = idxtypes,
+                                     arrowtype = arrowtype,
+                                     BPPARAM = BPPARAM,
+                                     ...)
+    }
+
+    # Return schema metadata (same as ANY method)
+    fields <- c(lapply(seq_along(indexcols), function(i) {
+                    list(name = indexcols[i])
+                }),
                 list(list(name = datacol)))
 
     # Generate foreign key metadata

@@ -3,6 +3,7 @@
 \name{writeParquet}
 \alias{writeParquet}
 \alias{writeParquet,ANY-method}
+\alias{writeParquet,DuckDBArray-method}
 \alias{writeParquet,data.frame-method}
 \alias{writeParquet,DataFrame-method}
 \alias{writeParquet,TransposedDataFrame-method}
@@ -34,6 +35,21 @@ writeParquet(x, path, ...)
   BPPARAM = getAutoBPPARAM(),
   name = basename(path),
   dimension = c("crossed", "unbound"),
+  layout = "coord_array",
+  ...
+)
+
+\S4method{writeParquet}{DuckDBArray}(
+  x,
+  path,
+  indexcols = NULL,
+  indexrefs = NULL,
+  datacol = "value",
+  grid = defaultAutoGrid(COO_SparseArray(dim(x))),
+  grid_suffix = "_group",
+  BPPARAM = getAutoBPPARAM(),
+  name = basename(path),
+  dimension = "crossed",
   layout = "coord_array",
   ...
 )
