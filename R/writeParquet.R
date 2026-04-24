@@ -376,54 +376,124 @@ function(conn, cols)
     }, character(1L), USE.NAMES = FALSE)
 }
 
+#' @importFrom DBI dbQuoteIdentifier dbGetQuery
 #' @importFrom dbplyr sql_render
 .buildCopyToSQL <-
-function(tbl, indexcols, datacol, conn, target_path, where_clause = NULL)
+function(tbl, indexcols, datacol, target_path, where_clause = NULL,
+         mapping_tables = NULL, grid_group = NULL)
 {
-    # Quote all columns
-    quoted_cols <- .quoteColumns(conn, c(indexcols, datacol))
+    # Extract connection from tbl
+    conn <- tbl$src$con
 
-    # Order by reversed indexcols (column-major order)
-    quoted_order_cols <- .quoteColumns(conn, rev(indexcols))
+    # Quote datacol
+    quoted_datacol <- .quoteColumns(conn, datacol)
 
-    # Build SQL with optional WHERE clause
-    if (!is.null(where_clause) && nzchar(where_clause)) {
-        sprintf(
-            "COPY (SELECT %s FROM (%s) WHERE %s ORDER BY %s) TO '%s' (FORMAT 'parquet', COMPRESSION 'zstd', ROW_GROUP_SIZE 491520, COMPRESSION_LEVEL 3)",
-            paste(quoted_cols, collapse = ", "),
+    # Build SELECT clause and JOINs for remapped indices
+    if (!is.null(mapping_tables)) {
+        # With remapping: SELECT m1.new_idx AS __sample__, m2.new_idx AS __feature__, t.value
+        #                 FROM tbl t
+        #                 JOIN temp_idxmap_sample m1 ON t.__sample__ = m1.old_key AND m1.grid_group = ?
+        #                 JOIN temp_idxmap_feature m2 ON t.__feature__ = m2.old_key AND m2.grid_group = ?
+
+        select_parts <- character(length(indexcols) + 1L)
+        join_clauses <- character(length(indexcols))
+
+        for (j in seq_along(indexcols)) {
+            col <- indexcols[j]
+            map_alias <- sprintf("m%d", j)
+            map_table <- mapping_tables[[col]]
+            col_quoted <- as.character(dbQuoteIdentifier(conn, col))
+
+            select_parts[j] <- sprintf("%s.new_idx AS %s", map_alias, col_quoted)
+
+            # Add grid_group filter to JOIN condition if provided
+            if (!is.null(grid_group)) {
+                join_clauses[j] <- sprintf(
+                    "INNER JOIN %s %s ON t.%s = %s.old_key AND %s.grid_group = %d",
+                    map_table, map_alias, col_quoted, map_alias, map_alias, grid_group[j]
+                )
+            } else {
+                join_clauses[j] <- sprintf(
+                    "INNER JOIN %s %s ON t.%s = %s.old_key",
+                    map_table, map_alias, col_quoted, map_alias
+                )
+            }
+        }
+
+        select_parts[length(indexcols) + 1L] <- sprintf("t.%s", quoted_datacol)
+
+        # Order by remapped (new) indices in column-major order
+        order_cols <- rev(sprintf("m%d.new_idx", seq_along(indexcols)))
+
+        # Build query
+        base_query <- sprintf(
+            "SELECT %s FROM (%s) t %s",
+            paste(select_parts, collapse = ", "),
             sql_render(tbl),
-            where_clause,
-            paste(quoted_order_cols, collapse = ", "),
-            target_path
+            paste(join_clauses, collapse = " ")
         )
     } else {
-        sprintf(
-            "COPY (SELECT %s FROM (%s) ORDER BY %s) TO '%s' (FORMAT 'parquet', COMPRESSION 'zstd', ROW_GROUP_SIZE 491520, COMPRESSION_LEVEL 3)",
+        # No remapping: original behavior
+        quoted_cols <- .quoteColumns(conn, c(indexcols, datacol))
+        order_cols <- .quoteColumns(conn, rev(indexcols))
+        base_query <- sprintf(
+            "SELECT %s FROM (%s)",
             paste(quoted_cols, collapse = ", "),
-            sql_render(tbl),
-            paste(quoted_order_cols, collapse = ", "),
-            target_path
+            sql_render(tbl)
         )
     }
+
+    # Add WHERE clause if provided
+    if (!is.null(where_clause) && nzchar(where_clause)) {
+        base_query <- sprintf("%s WHERE %s", base_query, where_clause)
+    }
+
+    # Add ORDER BY and COPY TO
+    copy_sql <- sprintf(
+        "COPY (%s ORDER BY %s) TO '%s' (FORMAT 'parquet', COMPRESSION 'zstd', ROW_GROUP_SIZE 491520, COMPRESSION_LEVEL 3)",
+        base_query,
+        paste(order_cols, collapse = ", "),
+        target_path
+    )
+
+    copy_sql
 }
 
 #' @importFrom DBI dbExecute
+#' @importFrom DuckDBArray dbconn tblconn
 .writeDuckDBArraySingle <-
-function(tbl, conn, path, indexcols, datacol, arrowtype, ...)
+function(x, path, indexcols, datacol, arrowtype, ...)
 {
+    # Extract components from DuckDBArray
+    seed <- x@seed
+    conn <- dbconn(seed)
+    tbl <- tblconn(seed)
+    keycols <- seed@table@keycols
+
     dir.create(path, recursive = TRUE, showWarnings = FALSE)
     target <- file.path(path, "part-0.parquet")
 
-    sql <- .buildCopyToSQL(tbl, indexcols, datacol, conn, target)
+    # Create index mappings for remapping old keys to 1..N
+    viewport_coords <- keycols
+    mappings_result <- .buildIndexMappings(tbl, indexcols, viewport_coords)
+    mappings <- mappings_result[["mapping_tables"]]
+
+    on.exit({
+        for (sql in mappings_result$cleanup_sql) {
+            try(dbExecute(conn, sql), silent = TRUE)
+        }
+    })
+
+    sql <- .buildCopyToSQL(tbl, indexcols, datacol, target,
+                           where_clause = NULL, mappings)
     dbExecute(conn, sql)
+
     invisible(NULL)
 }
 
 #' @importFrom DBI dbExecute dbQuoteIdentifier
 #' @importFrom duckdb duckdb_register
-.buildTempTableFilter <-
-function(conn, col_name, values)
-{
+.buildTempTableFilter <- function(conn, col_name, values) {
     col_quoted <- as.character(dbQuoteIdentifier(conn, col_name))
 
     # Small lists: inline IN clause
@@ -456,14 +526,82 @@ function(conn, col_name, values)
     sprintf("%s IN (SELECT val FROM %s)", col_quoted, temp_name)
 }
 
+#' @importFrom S4Arrays mapToGrid
+.computeGridGroup <- function(n_keys, grid, dim_index) {
+    if (is.null(grid)) {
+        return(rep.int(1L, n_keys))
+    }
+
+    ndim <- length(grid@refdim)
+    coords <- matrix(1L, nrow = n_keys, ncol = ndim)
+    coords[, dim_index] <- seq_len(n_keys)
+    groups <- mapToGrid(coords, grid)[["major"]][, dim_index]
+
+    groups
+}
+
+#' @importFrom DBI dbAppendTable dbExecute dbGetQuery
+.buildIndexMappings <- function(tbl, indexcols, keycols, grid = NULL) {
+    # For each dimension, create temp table: old_key → new_idx → grid_group
+    # Returns list(mapping_tables = c(names), cleanup_sql = c(DROP statements))
+
+    # Extract connection from tbl
+    conn <- tbl$src$con
+
+    mapping_tables <- character(length(indexcols))
+    cleanup_sql <- character(length(indexcols))
+
+    for (j in seq_along(indexcols)) {
+        col <- indexcols[j]
+        old_keys <- keycols[[col]]
+        n_keys <- length(old_keys)
+        new_indices <- seq_len(n_keys)
+
+        # Compute which grid partition each index belongs to
+        grid_groups <- .computeGridGroup(n_keys, grid, j)
+
+        # Generate unique temp table name
+        temp_suffix <- basename(tempfile(pattern = ""))
+        temp_name <- sprintf("temp_idxmap_%s_%s", col, temp_suffix)
+        mapping_tables[j] <- temp_name
+
+        # Determine optimal integer types using existing helpers
+        old_key_type <- .arrowType(old_keys)
+        new_idx_type <- .arrowType(new_indices)
+        grid_group_type <- .arrowType(grid_groups)
+
+        # Convert Arrow types to DuckDB type names
+        old_key_duckdb <- .arrowToDuckDBTypeName(old_key_type)
+        new_idx_duckdb <- .arrowToDuckDBTypeName(new_idx_type)
+        grid_group_duckdb <- .arrowToDuckDBTypeName(grid_group_type)
+
+        # Create table with explicit types including grid_group column
+        create_sql <- sprintf(
+            "CREATE TEMP TABLE %s (old_key %s, new_idx %s, grid_group %s)",
+            temp_name, old_key_duckdb, new_idx_duckdb, grid_group_duckdb
+        )
+
+        dbExecute(conn, create_sql)
+        df <- data.frame(old_key = old_keys, new_idx = new_indices, grid_group = grid_groups)
+        dbAppendTable(conn, temp_name, df)
+
+        cleanup_sql[j] <- sprintf("DROP TABLE IF EXISTS %s", temp_name)
+    }
+
+    list(mapping_tables = setNames(mapping_tables, indexcols),
+         cleanup_sql = cleanup_sql)
+}
+
 #' @importFrom DBI dbExecute
 #' @importFrom DelayedArray currentViewport effectiveGrid
 #' @importFrom IRanges ranges start end
 #' @importFrom S4Arrays mapToGrid
 .writeDuckDBCellFUN <-
-function(block, conn, tbl, path, indexcols, datacol, grid_suffix,
-         keycols, ...)
+function(block, tbl, path, indexcols, datacol, grid_suffix, keycols, mappings, ...)
 {
+    # Extract connection from tbl
+    conn <- tbl$src$con
+
     # Get grid context from blockApply environment
     grid <- effectiveGrid()
     viewport <- currentViewport()
@@ -490,11 +628,13 @@ function(block, conn, tbl, path, indexcols, datacol, grid_suffix,
     }, indexcols, viewport_coords, SIMPLIFY = FALSE)
     where_clause <- paste(where_clauses, collapse = " AND ")
 
-    # Generate and execute COPY TO
+    # Generate and execute COPY TO with grid_group filtering
     target_path <- file.path(target_dir, "part-0.parquet")
-    sql <- .buildCopyToSQL(tbl, indexcols, datacol, conn, target_path, where_clause)
+    sql <- .buildCopyToSQL(tbl, indexcols, datacol, target_path,
+                           where_clause, mappings, grid_group = group)
 
     dbExecute(conn, sql)
+
     NULL
 }
 
@@ -511,19 +651,30 @@ function(x, path, indexcols, datacol, grid, grid_suffix, idxtypes,
     tbl <- tblconn(seed)
     keycols <- seed@table@keycols
 
+    # Create GLOBAL index mappings once for entire subset array with grid_group column
+    mappings_result <- .buildIndexMappings(tbl, indexcols, keycols, grid)
+    mappings <- mappings_result[["mapping_tables"]]
+
+    # Cleanup after all viewports complete
+    on.exit({
+        for (sql in mappings_result$cleanup_sql) {
+            try(dbExecute(conn, sql), silent = TRUE)
+        }
+    })
+
     # Create empty COO_SparseArray
     empty_array <- COO_SparseArray(dim(x), dimnames = dimnames(x))
 
     # Use blockApply to iterate viewports
     blockApply(empty_array,
                FUN = .writeDuckDBCellFUN,
-               conn = conn,
                tbl = tbl,
                path = path,
                indexcols = indexcols,
                datacol = datacol,
                grid_suffix = grid_suffix,
                keycols = keycols,
+               mappings = mappings,
                grid = grid,
                as.sparse = TRUE,
                BPPARAM = BPPARAM,
@@ -577,8 +728,7 @@ function(x,
 
     if (length(grid) == 1L) {
         # Single-file write: Direct COPY TO
-        .writeDuckDBArraySingle(tbl,
-                                conn = conn,
+        .writeDuckDBArraySingle(x,
                                 path = path,
                                 indexcols = indexcols,
                                 datacol = datacol,

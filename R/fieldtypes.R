@@ -219,6 +219,25 @@
            })
 }
 
+# Convert Arrow type to DuckDB type name for CREATE TABLE statements
+.arrowToDuckDBTypeName <- function(arrow_type) {
+    format_str <- .arrowTypeToFormat(arrow_type)
+    if (is.null(format_str)) {
+        return("INTEGER")  # fallback
+    }
+
+    switch(format_str,
+           "int8" = "TINYINT",
+           "int16" = "SMALLINT",
+           "int32" = "INTEGER",
+           "int64" = "BIGINT",
+           "uint8" = "UTINYINT",
+           "uint16" = "USMALLINT",
+           "uint32" = "UINTEGER",
+           "uint64" = "UBIGINT",
+           "INTEGER")  # fallback
+}
+
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Frictionless Format from Arrow Type
 ###
