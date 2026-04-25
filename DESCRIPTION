@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.9.9
-Date: 2026-04-24
+Version: 0.9.10
+Date: 2026-04-25
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -31,7 +31,6 @@ Imports:
     S4Vectors,
     IRanges,
     GenomicRanges,
-    S4Arrays,
     SparseArray,
     DelayedArray,
     MatrixGenerics,
