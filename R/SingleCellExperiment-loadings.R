@@ -173,23 +173,22 @@
 #' \code{\link[SingleCellExperiment]{int_elementMetadata}} for the internal row
 #' metadata storage.
 #'
-#' @aliases
-#' rowLoading
-#' rowLoading,SingleCellExperiment,missing-method
-#' rowLoading,SingleCellExperiment,numeric-method
-#' rowLoading,SingleCellExperiment,character-method
-#' rowLoadings
-#' rowLoadings,SingleCellExperiment-method
-#' rowLoadingNames
-#' rowLoadingNames,SingleCellExperiment-method
-#' rowLoading<-
-#' rowLoading<-,SingleCellExperiment,missing-method
-#' rowLoading<-,SingleCellExperiment,numeric-method
-#' rowLoading<-,SingleCellExperiment,character-method
-#' rowLoadings<-
-#' rowLoadings<-,SingleCellExperiment-method
-#' rowLoadingNames<-
-#' rowLoadingNames<-,SingleCellExperiment,character-method
+#' @aliases rowLoading
+#' @aliases rowLoading,SingleCellExperiment,missing-method
+#' @aliases rowLoading,SingleCellExperiment,numeric-method
+#' @aliases rowLoading,SingleCellExperiment,character-method
+#' @aliases rowLoadings
+#' @aliases rowLoadings,SingleCellExperiment-method
+#' @aliases rowLoadingNames
+#' @aliases rowLoadingNames,SingleCellExperiment-method
+#' @aliases rowLoading<-
+#' @aliases rowLoading<-,SingleCellExperiment,missing-method
+#' @aliases rowLoading<-,SingleCellExperiment,numeric-method
+#' @aliases rowLoading<-,SingleCellExperiment,character-method
+#' @aliases rowLoadings<-
+#' @aliases rowLoadings<-,SingleCellExperiment-method
+#' @aliases rowLoadingNames<-
+#' @aliases rowLoadingNames<-,SingleCellExperiment,character-method
 #'
 #' @include SingleCellExperiments-internals.R
 #'

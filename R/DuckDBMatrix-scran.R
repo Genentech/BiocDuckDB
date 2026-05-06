@@ -220,16 +220,15 @@
 #'   \item \code{\link[scran]{summaryMarkerStats}} for the scran generic
 #' }
 #'
-#' @aliases
-#' correlatePairs,DuckDBMatrix-method
-#' modelGeneVar,DuckDBMatrix-method
-#' modelGeneVarByPoisson,DuckDBMatrix-method
-#' modelGeneCV2,DuckDBMatrix-method
-#' pairwiseTTests,DuckDBMatrix-method
-#' pairwiseBinom,DuckDBMatrix-method
-#' findMarkers,DuckDBMatrix-method
-#' scoreMarkers,DuckDBMatrix-method
-#' summaryMarkerStats,DuckDBMatrix-method
+#' @aliases correlatePairs,DuckDBMatrix-method
+#' @aliases modelGeneVar,DuckDBMatrix-method
+#' @aliases modelGeneVarByPoisson,DuckDBMatrix-method
+#' @aliases modelGeneCV2,DuckDBMatrix-method
+#' @aliases pairwiseTTests,DuckDBMatrix-method
+#' @aliases pairwiseBinom,DuckDBMatrix-method
+#' @aliases findMarkers,DuckDBMatrix-method
+#' @aliases scoreMarkers,DuckDBMatrix-method
+#' @aliases summaryMarkerStats,DuckDBMatrix-method
 #'
 #' @keywords utilities methods
 #'
