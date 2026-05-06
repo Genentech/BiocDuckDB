@@ -32,9 +32,8 @@
 #'     generic and \code{DataFrame} method.
 #' }
 #'
-#' @aliases
-#' spatialOverlaps,DuckDBDataFrame-method
-#' spatialMatch,DuckDBDataFrame,DataFrame-method
+#' @aliases spatialOverlaps,DuckDBDataFrame-method
+#' @aliases spatialMatch,DuckDBDataFrame,DataFrame-method
 #'
 #' @keywords methods
 #'

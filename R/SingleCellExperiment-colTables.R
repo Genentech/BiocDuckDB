@@ -174,23 +174,22 @@
 #' \code{\link[SingleCellExperiment]{int_colData}} for the internal column
 #' metadata storage.
 #'
-#' @aliases
-#' colTable
-#' colTable,SingleCellExperiment,missing-method
-#' colTable,SingleCellExperiment,numeric-method
-#' colTable,SingleCellExperiment,character-method
-#' colTables
-#' colTables,SingleCellExperiment-method
-#' colTableNames
-#' colTableNames,SingleCellExperiment-method
-#' colTable<-
-#' colTable<-,SingleCellExperiment,missing-method
-#' colTable<-,SingleCellExperiment,numeric-method
-#' colTable<-,SingleCellExperiment,character-method
-#' colTables<-
-#' colTables<-,SingleCellExperiment-method
-#' colTableNames<-
-#' colTableNames<-,SingleCellExperiment,character-method
+#' @aliases colTable
+#' @aliases colTable,SingleCellExperiment,missing-method
+#' @aliases colTable,SingleCellExperiment,numeric-method
+#' @aliases colTable,SingleCellExperiment,character-method
+#' @aliases colTables
+#' @aliases colTables,SingleCellExperiment-method
+#' @aliases colTableNames
+#' @aliases colTableNames,SingleCellExperiment-method
+#' @aliases colTable<-
+#' @aliases colTable<-,SingleCellExperiment,missing-method
+#' @aliases colTable<-,SingleCellExperiment,numeric-method
+#' @aliases colTable<-,SingleCellExperiment,character-method
+#' @aliases colTables<-
+#' @aliases colTables<-,SingleCellExperiment-method
+#' @aliases colTableNames<-
+#' @aliases colTableNames<-,SingleCellExperiment,character-method
 #'
 #' @include SingleCellExperiments-internals.R
 #'

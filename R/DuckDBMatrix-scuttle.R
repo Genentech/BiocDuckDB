@@ -79,19 +79,32 @@
 #'       \item{\code{lengths}}{Numeric vector of gene lengths.}
 #'     }
 #'   }
+#'   \item{\code{calculateCPM(x, size.factors = NULL, subset.row = NULL, ...)}:}{
+#'     Calculates counts per million using DelayedArray-safe sweep operations.
+#'     \describe{
+#'       \item{\code{size.factors}}{numeric vector containing size factors to adjust
+#'         the library sizes. If NULL, library sizes are used directly.}
+#'       \item{\code{subset.row}}{vector specifying the subset of rows of x for
+#'         which to return normalized values}
+#'     }
+#'   }
+#'   \item{\code{calculateAverage(x, size.factors = NULL, subset.row = NULL, BPPARAM = SerialParam(), ...)}:}{
+#'     Calculates average counts per feature using DelayedArray-safe sweep operations.
+#'     \describe{
+#'       \item{\code{size.factors}}{numeric vector containing size factors. If NULL,
+#'         library size factors are computed automatically.}
+#'       \item{\code{subset.row}}{vector specifying the subset of rows of x for
+#'         which to return averages}
+#'       \item{\code{BPPARAM}}{BiocParallelParam object for parallel computation}
+#'     }
+#'   }
 #' }
 #'
 #' The following normalization methods will dispatch to optimized
 #' DuckDBMatrix implementations of \code{normalizeCounts},
-#' \code{librarySizeFactors}, and \code{calculateTPM}:
-#' \describe{
-#'   \item{\code{calculateAverage(x, ...)}:}{
-#'     Calculates average normalized expression per feature.
-#'   }
-#'   \item{\code{calculateCPM(x, ...)}:}{
-#'     Calculates counts per million.
-#'   }
-#' }
+#' \code{librarySizeFactors}, \code{calculateCPM}, \code{calculateAverage},
+#' and \code{calculateTPM}.
+#'
 #'
 #' @section Aggregation Methods:
 #' The following aggregation methods have optimized DuckDBMatrix implementations
@@ -136,22 +149,25 @@
 #'   \item \code{\link[scuttle]{perFeatureQCMetrics}} for the scuttle generic
 #'   \item \code{\link[scuttle]{librarySizeFactors}} for the scuttle generic
 #'   \item \code{\link[scuttle]{normalizeCounts}} for the scuttle generic
+#'   \item \code{\link[scuttle]{calculateCPM}} for the scuttle generic
+#'   \item \code{\link[scuttle]{calculateAverage}} for the scuttle generic
 #'   \item \code{\link[scuttle]{calculateTPM}} for the scuttle generic
 #'   \item \code{\link[scuttle]{numDetectedAcrossFeatures}} for the scuttle generic
 #'   \item \code{\link[scuttle]{sumCountsAcrossFeatures}} for the scuttle generic
 #'   \item \code{\link[scuttle]{summarizeAssayByGroup}} for the scuttle generic
 #' }
 #'
-#' @aliases
-#' librarySizeFactors,DuckDBMatrix-method
-#' geometricSizeFactors,DuckDBMatrix-method
-#' normalizeCounts,DuckDBMatrix-method
-#' calculateTPM,DuckDBMatrix-method
-#' perCellQCMetrics,DuckDBMatrix-method
-#' perFeatureQCMetrics,DuckDBMatrix-method
-#' numDetectedAcrossFeatures,DuckDBMatrix-method
-#' sumCountsAcrossFeatures,DuckDBMatrix-method
-#' summarizeAssayByGroup,DuckDBMatrix-method
+#' @aliases librarySizeFactors,DuckDBMatrix-method
+#' @aliases geometricSizeFactors,DuckDBMatrix-method
+#' @aliases normalizeCounts,DuckDBMatrix-method
+#' @aliases calculateCPM,DuckDBMatrix-method
+#' @aliases calculateAverage,DuckDBMatrix-method
+#' @aliases calculateTPM,DuckDBMatrix-method
+#' @aliases perCellQCMetrics,DuckDBMatrix-method
+#' @aliases perFeatureQCMetrics,DuckDBMatrix-method
+#' @aliases numDetectedAcrossFeatures,DuckDBMatrix-method
+#' @aliases sumCountsAcrossFeatures,DuckDBMatrix-method
+#' @aliases summarizeAssayByGroup,DuckDBMatrix-method
 #'
 #' @keywords utilities methods
 #'
@@ -738,13 +754,63 @@ function(x, size.factors = NULL, log = TRUE, transform = c("log", "none", "asinh
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### calculateCPM
+###
+
+#' @export
+#' @importClassesFrom DuckDBArray DuckDBMatrix
+#' @importFrom DelayedArray sweep
+#' @importFrom MatrixGenerics colSums
+#' @importFrom scuttle calculateCPM
+setMethod("calculateCPM", "DuckDBMatrix",
+function(x, size.factors = NULL, subset.row = NULL, ...) {
+    if (!is.null(subset.row)) {
+        x <- x[subset.row, , drop = FALSE]
+    }
+    lib.sizes <- colSums(x) / 1e6
+    if (!is.null(size.factors)) {
+        lib.sizes <- size.factors / mean(size.factors) * mean(lib.sizes)
+    }
+    sweep(x, 2L, lib.sizes, FUN = "/")
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### calculateAverage
+###
+
+#' @export
+#' @importClassesFrom DuckDBArray DuckDBMatrix
+#' @importFrom DelayedArray sweep
+#' @importFrom MatrixGenerics rowMeans
+#' @importFrom BiocParallel SerialParam
+#' @importFrom DelayedArray getAutoBPPARAM setAutoBPPARAM
+#' @importFrom scuttle calculateAverage
+setMethod("calculateAverage", "DuckDBMatrix",
+function(x, size.factors = NULL, subset.row = NULL, BPPARAM = SerialParam(), ...) {
+    if (!is.null(subset.row)) {
+        x <- x[subset.row, , drop = FALSE]
+    }
+    if (is.null(size.factors)) {
+        size.factors <- librarySizeFactors(x)
+    } else {
+        size.factors <- size.factors / mean(size.factors)
+    }
+    oldbp <- getAutoBPPARAM()
+    setAutoBPPARAM(BPPARAM)
+    on.exit(setAutoBPPARAM(oldbp))
+
+    x <- sweep(x, 2L, size.factors, FUN = "/")
+    rowMeans(x)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### calculateTPM
 ###
 
 #' @export
 #' @importClassesFrom DuckDBArray DuckDBMatrix
 #' @importFrom DelayedArray sweep
-#' @importFrom scuttle calculateCPM calculateTPM
+#' @importFrom scuttle calculateTPM
 setMethod("calculateTPM", "DuckDBMatrix",
 function(x, lengths = NULL, size.factors = NULL, subset.row = NULL, ...) {
     if (!is.null(subset.row)) {

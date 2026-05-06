@@ -5,6 +5,8 @@
 \alias{librarySizeFactors,DuckDBMatrix-method}
 \alias{geometricSizeFactors,DuckDBMatrix-method}
 \alias{normalizeCounts,DuckDBMatrix-method}
+\alias{calculateCPM,DuckDBMatrix-method}
+\alias{calculateAverage,DuckDBMatrix-method}
 \alias{calculateTPM,DuckDBMatrix-method}
 \alias{perCellQCMetrics,DuckDBMatrix-method}
 \alias{perFeatureQCMetrics,DuckDBMatrix-method}
@@ -94,19 +96,31 @@ The following normalization methods have optimized DuckDBMatrix implementations:
       \item{\code{lengths}}{Numeric vector of gene lengths.}
     }
   }
+  \item{\code{calculateCPM(x, size.factors = NULL, subset.row = NULL, ...)}:}{
+    Calculates counts per million using DelayedArray-safe sweep operations.
+    \describe{
+      \item{\code{size.factors}}{numeric vector containing size factors to adjust
+        the library sizes. If NULL, library sizes are used directly.}
+      \item{\code{subset.row}}{vector specifying the subset of rows of x for
+        which to return normalized values}
+    }
+  }
+  \item{\code{calculateAverage(x, size.factors = NULL, subset.row = NULL, BPPARAM = SerialParam(), ...)}:}{
+    Calculates average counts per feature using DelayedArray-safe sweep operations.
+    \describe{
+      \item{\code{size.factors}}{numeric vector containing size factors. If NULL,
+        library size factors are computed automatically.}
+      \item{\code{subset.row}}{vector specifying the subset of rows of x for
+        which to return averages}
+      \item{\code{BPPARAM}}{BiocParallelParam object for parallel computation}
+    }
+  }
 }
 
 The following normalization methods will dispatch to optimized
 DuckDBMatrix implementations of \code{normalizeCounts},
-\code{librarySizeFactors}, and \code{calculateTPM}:
-\describe{
-  \item{\code{calculateAverage(x, ...)}:}{
-    Calculates average normalized expression per feature.
-  }
-  \item{\code{calculateCPM(x, ...)}:}{
-    Calculates counts per million.
-  }
-}
+\code{librarySizeFactors}, \code{calculateCPM}, \code{calculateAverage},
+and \code{calculateTPM}.
 }
 
 \section{Aggregation Methods}{
@@ -152,6 +166,8 @@ that use SQL GROUP BY operations for efficient pseudo-bulk analysis:
   \item \code{\link[scuttle]{perFeatureQCMetrics}} for the scuttle generic
   \item \code{\link[scuttle]{librarySizeFactors}} for the scuttle generic
   \item \code{\link[scuttle]{normalizeCounts}} for the scuttle generic
+  \item \code{\link[scuttle]{calculateCPM}} for the scuttle generic
+  \item \code{\link[scuttle]{calculateAverage}} for the scuttle generic
   \item \code{\link[scuttle]{calculateTPM}} for the scuttle generic
   \item \code{\link[scuttle]{numDetectedAcrossFeatures}} for the scuttle generic
   \item \code{\link[scuttle]{sumCountsAcrossFeatures}} for the scuttle generic

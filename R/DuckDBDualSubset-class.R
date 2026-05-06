@@ -54,11 +54,10 @@
 #'
 #' @author Patrick Aboyoun
 #'
-#' @aliases
-#' [,DuckDBDualSubset,ANY,ANY,ANY-method
-#' [<-,DuckDBDualSubset,ANY,ANY,ANY-method
-#' c,DuckDBDualSubset-method
-#' length,DuckDBDualSubset-method
+#' @aliases [,DuckDBDualSubset,ANY,ANY,ANY-method
+#' @aliases [<-,DuckDBDualSubset,ANY,ANY,ANY-method
+#' @aliases c,DuckDBDualSubset-method
+#' @aliases length,DuckDBDualSubset-method
 #'
 #' @seealso
 #' \linkS4class{DuckDBSelfHits} for the underlying edge storage class.

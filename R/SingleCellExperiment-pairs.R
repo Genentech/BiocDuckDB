@@ -49,15 +49,14 @@
 #'
 #' @author Patrick Aboyoun
 #'
-#' @aliases
-#' colPair<-,SingleCellExperiment,character,DuckDBSelfHits-method
-#' colPair<-,SingleCellExperiment,missing,DuckDBSelfHits-method
-#' colPair<-,SingleCellExperiment,numeric,DuckDBSelfHits-method
-#' colPairs<-,SingleCellExperiment,DuckDBSelfHits-method
-#' rowPair<-,SingleCellExperiment,character,DuckDBSelfHits-method
-#' rowPair<-,SingleCellExperiment,missing,DuckDBSelfHits-method
-#' rowPair<-,SingleCellExperiment,numeric,DuckDBSelfHits-method
-#' rowPairs<-,SingleCellExperiment,DuckDBSelfHits-method
+#' @aliases colPair<-,SingleCellExperiment,character,DuckDBSelfHits-method
+#' @aliases colPair<-,SingleCellExperiment,missing,DuckDBSelfHits-method
+#' @aliases colPair<-,SingleCellExperiment,numeric,DuckDBSelfHits-method
+#' @aliases colPairs<-,SingleCellExperiment,DuckDBSelfHits-method
+#' @aliases rowPair<-,SingleCellExperiment,character,DuckDBSelfHits-method
+#' @aliases rowPair<-,SingleCellExperiment,missing,DuckDBSelfHits-method
+#' @aliases rowPair<-,SingleCellExperiment,numeric,DuckDBSelfHits-method
+#' @aliases rowPairs<-,SingleCellExperiment,DuckDBSelfHits-method
 #'
 #' @seealso
 #' \linkS4class{DuckDBSelfHits} for the lazy edge storage class.

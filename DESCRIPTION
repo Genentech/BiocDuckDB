@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.9.11
-Date: 2026-04-29
+Version: 0.9.12
+Date: 2026-05-06
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -73,7 +73,6 @@ biocViews:
     SingleCell,
     Software
 VignetteBuilder: knitr
-RoxygenNote: 7.3.3
 Encoding: UTF-8
 Collate:
     'DuckDBDataFrame-spatial.R'
@@ -88,3 +87,4 @@ Collate:
     'fieldtypes.R'
     'readParquet.R'
     'writeParquet.R'
+Config/roxygen2/version: 8.0.0

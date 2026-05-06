@@ -172,23 +172,22 @@
 #' \code{\link[SingleCellExperiment]{int_elementMetadata}} for the internal row
 #' metadata storage.
 #'
-#' @aliases
-#' rowTable
-#' rowTable,SingleCellExperiment,missing-method
-#' rowTable,SingleCellExperiment,numeric-method
-#' rowTable,SingleCellExperiment,character-method
-#' rowTables
-#' rowTables,SingleCellExperiment-method
-#' rowTableNames
-#' rowTableNames,SingleCellExperiment-method
-#' rowTable<-
-#' rowTable<-,SingleCellExperiment,missing-method
-#' rowTable<-,SingleCellExperiment,numeric-method
-#' rowTable<-,SingleCellExperiment,character-method
-#' rowTables<-
-#' rowTables<-,SingleCellExperiment-method
-#' rowTableNames<-
-#' rowTableNames<-,SingleCellExperiment,character-method
+#' @aliases rowTable
+#' @aliases rowTable,SingleCellExperiment,missing-method
+#' @aliases rowTable,SingleCellExperiment,numeric-method
+#' @aliases rowTable,SingleCellExperiment,character-method
+#' @aliases rowTables
+#' @aliases rowTables,SingleCellExperiment-method
+#' @aliases rowTableNames
+#' @aliases rowTableNames,SingleCellExperiment-method
+#' @aliases rowTable<-
+#' @aliases rowTable<-,SingleCellExperiment,missing-method
+#' @aliases rowTable<-,SingleCellExperiment,numeric-method
+#' @aliases rowTable<-,SingleCellExperiment,character-method
+#' @aliases rowTables<-
+#' @aliases rowTables<-,SingleCellExperiment-method
+#' @aliases rowTableNames<-
+#' @aliases rowTableNames<-,SingleCellExperiment,character-method
 #'
 #' @include SingleCellExperiments-internals.R
 #'
