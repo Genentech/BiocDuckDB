@@ -260,6 +260,9 @@ function(path,
          keycol = .schema_keycols(resource[["schema"]]),
          ...)
 {
+    if (length(keycol) > 1L) {
+        keycol <- keycol[1L]
+    }
     DuckDBDataFrame(path, datacols = datacols, keycol = keycol)
 }
 
@@ -275,6 +278,9 @@ function(path,
          keycol = .schema_keycols(resource[["schema"]]),
          ...)
 {
+    if (length(keycol) > 1L) {
+        keycol <- keycol[1L]
+    }
     t(DuckDBDataFrame(path, datacols = datacols, keycol = keycol))
 }
 
@@ -445,7 +451,7 @@ function(path,
                                     "transposed_data_frame"))
     assays <- lapply(assay_res, function(res) {
         # Assays are written transposed, so we need to transpose them back
-        t(.readParquetResource(path, res, keycols = rev(dimkeycols),
+        t(.readParquetResource(path, res, keycol = rev(dimkeycols),
                                dimtbls = dimtbls))
     })
     names(assays) <- sapply(assay_res, `[[`, "name")
