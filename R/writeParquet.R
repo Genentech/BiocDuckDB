@@ -337,7 +337,7 @@ function(x,
                                         lapply(seq_along(dimnames_x[[i]]),
                                                function(j) {
                                                    list(value = j,
-                                                        label = dimnames_x[[i]][[j]])
+                                                        label = I(dimnames_x[[i]][[j]]))
                                                }),
                                     categoriesOrdered = TRUE)
                            }

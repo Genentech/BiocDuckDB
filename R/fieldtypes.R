@@ -37,7 +37,7 @@
 
 .fieldtype.factor <- function(x) {
     list(type = "string",
-         categories = levels(x),
+         categories = I(levels(x)),
          categoriesOrdered = is.ordered(x))
 }
 
