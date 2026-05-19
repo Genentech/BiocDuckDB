@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.9.13
-Date: 2026-05-14
+Version: 0.9.14
+Date: 2026-05-19
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized

@@ -125,23 +125,6 @@
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-### Arrow Type Selection
-###
-
-#' @importFrom arrow infer_type
-.arrowType <- function(x) {
-    if (is.integer(x)) {
-        x <- x[!is.na(x)]
-    }
-
-    if (is.integer(x) && length(x) > 0L) {
-        DuckDBArray:::.arrowIntType(range(x))
-    } else {
-        infer_type(x)
-    }
-}
-
-### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### Frictionless Format from Arrow Type
 ###
 

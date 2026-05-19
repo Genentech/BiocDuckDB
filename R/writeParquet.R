@@ -81,8 +81,29 @@
 #' \code{"data_frame"}, \code{"coord_array"}, \code{"embedding_table"},
 #' \code{"genomic_ranges"}, \code{"graph_edges"}, \code{"nested_data_frame"},
 #' \code{"nested_experiment"}.
-#' @param package A list used by experiment-level methods to accumulate the
-#' \code{datapackage.json} contents before writing. Contains:
+#' @param append Logical. For \code{data.frame} and \code{DataFrame} methods:
+#' when \code{TRUE}, append a new flat \code{part-*.parquet} file under
+#' \code{path} (requires \code{part}). For array-like objects (\code{ANY} method):
+#' forwarded to \code{\link[DuckDBArray]{writeCoordArray}} for hive-partition
+#' append (requires \code{length(grid) > 1L}; see \code{along},
+#' \code{group_offset} there). Defaults to \code{FALSE}.
+#' @param offset Non-negative integer. For \code{data.frame} methods: added to
+#' the index column when \code{indexcol} is set
+#' (\code{offset + seq_len(nrow(x))}); ignored when \code{indexcol} is
+#' \code{NULL}. For array-like objects: forwarded to
+#' \code{\link[DuckDBArray]{writeCoordArray}} as the coordinate shift along
+#' \code{along}. Defaults to \code{0L}.
+#' @param part Optional non-negative integer; \code{data.frame} methods only.
+#' When set, write a single \code{part-<n>.parquet} file via
+#' \code{arrow::write_parquet} instead of \code{arrow::write_dataset}.
+#' Required when \code{append = TRUE} on table writes.
+#' @param part_digits Zero-padding width for \code{part} in the filename (e.g.
+#' \code{2L} yields \code{part-00.parquet}). \code{data.frame} methods only.
+#' @param package For experiment-level methods (\code{SummarizedExperiment},
+#' etc.), a list used to accumulate \code{datapackage.json} contents before
+#' writing. Primitive \code{data.frame} methods ignore this argument; capture
+#' the return value on the first flat part and append later parts with
+#' \code{append = TRUE}. Contains:
 #' \itemize{
 #'   \item \code{model} - Package-level schema identifier (e.g.
 #'     \code{"single_cell_experiment"}). Determines which \code{readParquet}
@@ -93,9 +114,34 @@
 #'     contributed by a primitive \code{writeParquet} method call.
 #' }
 #' Callers should not normally set this; the default is supplied by each
-#' experiment method.
-#' @param ... Additional arguments to pass to \code{arrow::write_dataset},
-#' such as \code{format} (e.g., "parquet", "csv"), \code{compression}, etc.
+#' experiment method. Experiment methods accumulate \code{package[["resources"]]}
+#' within a single call and write \code{datapackage.json} at the end. Primitive
+#' \code{data.frame} methods do not update a caller's \code{package} across
+#' separate invocations; capture the list returned from the first
+#' \code{writeParquet} call and merge manually (see \strong{Flat table append}
+#' below).
+#' @param ... Additional arguments. For \code{data.frame} methods with
+#' \code{part} set: passed to \code{\link[arrow]{write_parquet}}. Otherwise
+#' for tables: passed to \code{\link[arrow]{write_dataset}}. For array-like
+#' objects (\code{ANY} method): passed to
+#' \code{\link[DuckDBArray]{writeCoordArray}}, including:
+#' \describe{
+#'   \item{\code{append}}{Logical; hive-partition append when \code{TRUE}
+#'     (requires \code{length(grid) > 1L}). See \code{?writeCoordArray}.}
+#'   \item{\code{along}}{Integer; append dimension (required when
+#'     \code{append = TRUE}).}
+#'   \item{\code{group_offset}}{Non-negative integer; partition-group offset
+#'     along \code{along}; defaults to \code{0L}.}
+#'   \item{\code{arrowtype}}{Optional \code{\link[arrow]{DataType}} for the
+#'     value column; schema pinning on append is described in
+#'     \code{?writeCoordArray}.}
+#'   \item{\code{max_dim}}{Optional length-\code{ndim(x)} integer vector of
+#'     index upper bounds.}
+#'   \item{\code{existing_data_behavior}}{Passed through to
+#'     \code{\link[arrow]{write_dataset}} when applicable.}
+#' }
+#' Note: \code{offset} for array-like objects is documented above; table
+#' methods use \code{offset} as an explicit formal argument.
 #'
 #' @return
 #' For primitive methods (\code{ANY}, \code{data.frame}, \code{DataFrame},
@@ -110,6 +156,9 @@
 #' \code{MultiAssaySpatialExperiment}): invisibly returns \code{NULL}; the
 #' \code{datapackage.json} is written to \code{path} as a side effect.
 #'
+#' For flat multi-part table writes (\code{data.frame} with \code{append = TRUE}
+#' and \code{part > 0}): invisibly returns \code{NULL}.
+#'
 #' @details
 #' This function provides specialized handling for different object types:
 #'
@@ -118,7 +167,27 @@
 #' row with columns for each dimension and the value. For sparse arrays, only
 #' non-zero elements are written, making it efficient for sparse data. When a
 #' grid is provided with multiple cells, the array is partitioned and each
-#' partition is written to a separate subdirectory.
+#' partition is written to a separate subdirectory. Array writes delegate to
+#' \code{\link[DuckDBArray]{writeCoordArray}}; arguments
+#' \code{append}, \code{along}, \code{offset}, \code{group_offset},
+#' \code{arrowtype}, and \code{max_dim} are forwarded via \code{...} and
+#' documented on the \code{writeCoordArray} help page.
+#'
+#' \strong{Flat table append (\code{data.frame} / \code{DataFrame}):} Use
+#' \code{part}, \code{part_digits}, \code{append}, and \code{offset} to stream
+#' chunked sample or feature tables as \code{part-0.parquet}, \code{part-1.parquet},
+#' \ldots without temporary directories. The global index column (when
+#' \code{indexcol} is set) uses \code{offset + seq_len(nrow(x))} on each chunk.
+#' The first call returns a Frictionless resource list (one element); later
+#' append parts return \code{NULL}. Build \code{datapackage.json} from the first
+#' return, for example:
+#' \preformatted{
+#' res <- writeParquet(chunk1, samples_dir, indexcol = "__sample__",
+#'                     part = 0L, name = "samples", dimension = "sample")
+#' pkg <- list(resources = res)
+#' writeParquet(chunk2, samples_dir, indexcol = "__sample__",
+#'              offset = nrow(chunk1), part = 1L, append = TRUE, ...)
+#' }
 #'
 #' \strong{\code{data.frame} objects}: Writes data frames directly with optional
 #' row names and dimension lookup tables for partitioning information.
@@ -214,8 +283,13 @@
 #' @seealso
 #' \itemize{
 #'   \item \code{\link{readParquet}} for reading Bioconductor objects from parquet
+#'   \item \code{\link[DuckDBArray]{writeCoordArray}} for coord-array layout,
+#'     hive partitioning, and array append (\code{append}, \code{along},
+#'     \code{offset}, \code{group_offset})
+#'   \item \code{\link[DuckDBDataFrame]{parquet-io}} for flat table append
+#'     validation (\code{checkAppendPart}, \code{validateAppendOffset})
 #'   \item \code{\link{createDimTables}} for creating dimension lookup tables
-#'   \item \code{\link[arrow]{write_dataset}} for the underlying Arrow functionality
+#'   \item \code{\link[arrow]{write_dataset}} and \code{\link[arrow]{write_parquet}}
 #'   \item \code{\link[S4Arrays]{ArrayGrid}} for grid partitioning
 #'   \item \code{\link[BiocParallel]{BiocParallelParam}} for parallel processing options
 #' }
@@ -385,20 +459,58 @@ function(x,
     NULL
 }
 
-#' @importFrom arrow Array write_dataset
+.parquetPartPath <- function(path, part, part_digits = 0L) {
+    fmt <- if (part_digits > 0L) {
+        paste0("part-%0", as.integer(part_digits), "d.parquet")
+    } else {
+        "part-%d.parquet"
+    }
+    file.path(path, sprintf(fmt, as.integer(part)))
+}
+
+#' @importFrom S4Vectors isSingleNumber
+.validateWriteParquetPart <- function(part) {
+    if (is.null(part)) {
+        return(NULL)
+    }
+    if (!isSingleNumber(part) || part != as.integer(part) || part < 0L) {
+        stop("'part' must be NULL or a single non-negative integer")
+    }
+    as.integer(part)
+}
+
+.isSubsequentFlatPart <- function(append, part) {
+    isTRUE(append) && !is.null(part) && as.integer(part) > 0L
+}
+
+#' @importFrom arrow Array write_dataset write_parquet
+#' @importFrom DuckDBDataFrame arrowType checkAppendPart reconcileParquetSchema
+#' @importFrom DuckDBDataFrame validateAppendOffset
 #' @importFrom S4Vectors I
 #' @importFrom stats setNames
 .writeDataFrameParquet <-
-function(x, path, indexcol, keycol, dimtbl, name, dimension, layout, ...)
+function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
+         append = FALSE, offset = 0L, part = NULL, part_digits = 0L, ...)
 {
     if (!dir.exists(path)) {
         dir.create(path, recursive = TRUE)
     }
 
-   if (is.null(indexcol)) {
+    part <- .validateWriteParquetPart(part)
+    if (isTRUE(append) && is.null(part)) {
+        stop("'append = TRUE' requires 'part'")
+    }
+    if (!is.null(part) && isTRUE(append)) {
+        checkAppendPart(path, part, part_digits)
+    }
+
+    flat_part <- !is.null(part)
+
+    if (is.null(indexcol)) {
         index <- NULL
     } else {
-        index <- setNames(list(seq_len(nrow(x))), indexcol)
+        offset <- validateAppendOffset(offset)
+        index <- setNames(list(offset + seq_len(nrow(x))), indexcol)
     }
 
     rnms <- attr(x, "row.names")
@@ -410,6 +522,9 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout, ...)
 
     is_sf <- inherits(x, "sf")
     if (is_sf) {
+        if (isTRUE(append) || flat_part) {
+            stop("flat append ('append', 'part') is not supported for sf objects")
+        }
         if (!requireNamespace("DuckDBSpatial", quietly = TRUE)) {
             stop("DuckDBSpatial package required for GeoParquet support; ",
                  "install with BiocManager::install('DuckDBSpatial')")
@@ -434,15 +549,35 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout, ...)
         x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
         colnames(x) <- make.unique(colnames(x), sep = "_")
 
-        # Optimize integer column storage
-        for (j in seq_along(x)) {
-            if (is.integer(x[[j]]) && length(x[[j]]) > 0L) {
-                x[[j]] <- Array$create(x[[j]], type = .arrowType(x[[j]]))
+        # Per-slab integer narrowing breaks append schemas; use defaults for
+        # flat multi-part writes (see marson2025_combined.R samples tables).
+        if (!flat_part && !isTRUE(append)) {
+            for (j in seq_along(x)) {
+                if (is.integer(x[[j]]) && length(x[[j]]) > 0L) {
+                    x[[j]] <- Array$create(x[[j]], type = arrowType(x[[j]]))
+                }
             }
         }
 
-        write_dataset(x, path, format = "parquet", compression = "zstd",
-                      compression_level = 3L, ...)
+        if (isTRUE(append)) {
+            int_cols <- colnames(x)[vapply(x, is.integer, logical(1L))]
+            if (length(int_cols) > 0L) {
+                arrowtypes <- setNames(
+                    rep(list(NULL), length(int_cols)),
+                    int_cols
+                )
+                reconcileParquetSchema(path, int_cols, arrowtypes)
+            }
+        }
+
+        if (flat_part) {
+            pq_path <- .parquetPartPath(path, part, part_digits)
+            write_parquet(x, pq_path, compression = "zstd",
+                          compression_level = 3L, ...)
+        } else {
+            write_dataset(x, path, format = "parquet", compression = "zstd",
+                          compression_level = 3L, ...)
+        }
     }
 
     schema <- list(fields = lapply(colnames(x), function(j) {
@@ -489,6 +624,10 @@ function(x,
          indexcol = "__index__",
          keycol = "__name__",
          dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
          name = basename(path),
          dimension = c("unbound", "sample", "feature", "crossed"),
          layout = "data_frame",
@@ -498,7 +637,12 @@ function(x,
     resources <- .writeDataFrameParquet(x, path = path, indexcol = indexcol,
                                         keycol = keycol, dimtbl = dimtbl,
                                         name = name, dimension = dimension,
-                                        layout = layout, ...)
+                                        layout = layout, append = append,
+                                        offset = offset, part = part,
+                                        part_digits = part_digits, ...)
+    if (.isSubsequentFlatPart(append, part)) {
+        return(invisible(NULL))
+    }
     invisible(resources)
 })
 
@@ -515,6 +659,10 @@ function(x,
          indexcol = "__index__",
          keycol = "__name__",
          dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
          name = basename(path),
          dimension = c("unbound", "sample", "feature", "crossed"),
          layout = "data_frame",
@@ -524,15 +672,19 @@ function(x,
     df <- as.data.frame(x, optional = TRUE)
 
     geom <- .geometryCol(df)
-    is_sf <- !is.null(geom)
-    if (is_sf) {
+    if (!is.null(geom)) {
         df <- sf::st_as_sf(df, sf_column_name = geom)
     }
 
     resources <- .writeDataFrameParquet(df, path = path, indexcol = indexcol,
                                         keycol = keycol, dimtbl = dimtbl,
                                         name = name, dimension = dimension,
-                                        layout = layout, ...)
+                                        layout = layout, append = append,
+                                        offset = offset, part = part,
+                                        part_digits = part_digits, ...)
+    if (.isSubsequentFlatPart(append, part)) {
+        return(invisible(NULL))
+    }
     invisible(resources)
 })
 

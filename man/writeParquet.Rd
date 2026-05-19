@@ -44,6 +44,10 @@ writeParquet(x, path, ...)
   indexcol = "__index__",
   keycol = "__name__",
   dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
   name = basename(path),
   dimension = c("unbound", "sample", "feature", "crossed"),
   layout = "data_frame",
@@ -56,6 +60,10 @@ writeParquet(x, path, ...)
   indexcol = "__index__",
   keycol = "__name__",
   dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
   name = basename(path),
   dimension = c("unbound", "sample", "feature", "crossed"),
   layout = "data_frame",
@@ -209,8 +217,28 @@ writeParquet(x, path, ...)
 \item{path}{A character string specifying the path where the data will be
 written. The path will be created if it doesn't exist.}
 
-\item{...}{Additional arguments to pass to \code{arrow::write_dataset},
-such as \code{format} (e.g., "parquet", "csv"), \code{compression}, etc.}
+\item{...}{Additional arguments. For \code{data.frame} methods with
+\code{part} set: passed to \code{\link[arrow]{write_parquet}}. Otherwise
+for tables: passed to \code{\link[arrow]{write_dataset}}. For array-like
+objects (\code{ANY} method): passed to
+\code{\link[DuckDBArray]{writeCoordArray}}, including:
+\describe{
+  \item{\code{append}}{Logical; hive-partition append when \code{TRUE}
+    (requires \code{length(grid) > 1L}). See \code{?writeCoordArray}.}
+  \item{\code{along}}{Integer; append dimension (required when
+    \code{append = TRUE}).}
+  \item{\code{group_offset}}{Non-negative integer; partition-group offset
+    along \code{along}; defaults to \code{0L}.}
+  \item{\code{arrowtype}}{Optional \code{\link[arrow]{DataType}} for the
+    value column; schema pinning on append is described in
+    \code{?writeCoordArray}.}
+  \item{\code{max_dim}}{Optional length-\code{ndim(x)} integer vector of
+    index upper bounds.}
+  \item{\code{existing_data_behavior}}{Passed through to
+    \code{\link[arrow]{write_dataset}} when applicable.}
+}
+Note: \code{offset} for array-like objects is documented above; table
+methods use \code{offset} as an explicit formal argument.}
 
 \item{indexcols}{For array-like objects, a character vector of column names
 for the integer index columns in the resulting table. Defaults to the
@@ -266,8 +294,33 @@ Set to \code{NULL} to omit this column.}
 \item{dimtbl}{For \code{data.frame} and \code{Vector} objects, an optional
 \code{data.frame} containing a dimension table with partitioning information.}
 
-\item{package}{A list used by experiment-level methods to accumulate the
-\code{datapackage.json} contents before writing. Contains:
+\item{append}{Logical. For \code{data.frame} and \code{DataFrame} methods:
+when \code{TRUE}, append a new flat \code{part-*.parquet} file under
+\code{path} (requires \code{part}). For array-like objects (\code{ANY} method):
+forwarded to \code{\link[DuckDBArray]{writeCoordArray}} for hive-partition
+append (requires \code{length(grid) > 1L}; see \code{along},
+\code{group_offset} there). Defaults to \code{FALSE}.}
+
+\item{offset}{Non-negative integer. For \code{data.frame} methods: added to
+the index column when \code{indexcol} is set
+(\code{offset + seq_len(nrow(x))}); ignored when \code{indexcol} is
+\code{NULL}. For array-like objects: forwarded to
+\code{\link[DuckDBArray]{writeCoordArray}} as the coordinate shift along
+\code{along}. Defaults to \code{0L}.}
+
+\item{part}{Optional non-negative integer; \code{data.frame} methods only.
+When set, write a single \code{part-<n>.parquet} file via
+\code{arrow::write_parquet} instead of \code{arrow::write_dataset}.
+Required when \code{append = TRUE} on table writes.}
+
+\item{part_digits}{Zero-padding width for \code{part} in the filename (e.g.
+\code{2L} yields \code{part-00.parquet}). \code{data.frame} methods only.}
+
+\item{package}{For experiment-level methods (\code{SummarizedExperiment},
+etc.), a list used to accumulate \code{datapackage.json} contents before
+writing. Primitive \code{data.frame} methods ignore this argument; capture
+the return value on the first flat part and append later parts with
+\code{append = TRUE}. Contains:
 \itemize{
   \item \code{model} - Package-level schema identifier (e.g.
     \code{"single_cell_experiment"}). Determines which \code{readParquet}
@@ -278,7 +331,12 @@ Set to \code{NULL} to omit this column.}
     contributed by a primitive \code{writeParquet} method call.
 }
 Callers should not normally set this; the default is supplied by each
-experiment method.}
+experiment method. Experiment methods accumulate \code{package[["resources"]]}
+within a single call and write \code{datapackage.json} at the end. Primitive
+\code{data.frame} methods do not update a caller's \code{package} across
+separate invocations; capture the list returned from the first
+\code{writeParquet} call and merge manually (see \strong{Flat table append}
+below).}
 }
 \value{
 For primitive methods (\code{ANY}, \code{data.frame}, \code{DataFrame},
@@ -292,6 +350,9 @@ For experiment methods (\code{SummarizedExperiment},
 \code{SingleCellExperiment}, \code{MultiAssayExperiment},
 \code{MultiAssaySpatialExperiment}): invisibly returns \code{NULL}; the
 \code{datapackage.json} is written to \code{path} as a side effect.
+
+For flat multi-part table writes (\code{data.frame} with \code{append = TRUE}
+and \code{part > 0}): invisibly returns \code{NULL}.
 }
 \description{
 An \code{arrow::write_dataset} wrapper function to write the Parquet
@@ -309,7 +370,27 @@ coordinate (long) format where each non-zero element is represented as a
 row with columns for each dimension and the value. For sparse arrays, only
 non-zero elements are written, making it efficient for sparse data. When a
 grid is provided with multiple cells, the array is partitioned and each
-partition is written to a separate subdirectory.
+partition is written to a separate subdirectory. Array writes delegate to
+\code{\link[DuckDBArray]{writeCoordArray}}; arguments
+\code{append}, \code{along}, \code{offset}, \code{group_offset},
+\code{arrowtype}, and \code{max_dim} are forwarded via \code{...} and
+documented on the \code{writeCoordArray} help page.
+
+\strong{Flat table append (\code{data.frame} / \code{DataFrame}):} Use
+\code{part}, \code{part_digits}, \code{append}, and \code{offset} to stream
+chunked sample or feature tables as \code{part-0.parquet}, \code{part-1.parquet},
+\ldots without temporary directories. The global index column (when
+\code{indexcol} is set) uses \code{offset + seq_len(nrow(x))} on each chunk.
+The first call returns a Frictionless resource list (one element); later
+append parts return \code{NULL}. Build \code{datapackage.json} from the first
+return, for example:
+\preformatted{
+res <- writeParquet(chunk1, samples_dir, indexcol = "__sample__",
+                    part = 0L, name = "samples", dimension = "sample")
+pkg <- list(resources = res)
+writeParquet(chunk2, samples_dir, indexcol = "__sample__",
+             offset = nrow(chunk1), part = 1L, append = TRUE, ...)
+}
 
 \strong{\code{data.frame} objects}: Writes data frames directly with optional
 row names and dimension lookup tables for partitioning information.
@@ -419,8 +500,13 @@ list.files(tf3, full.names = TRUE, recursive = TRUE)
 \seealso{
 \itemize{
   \item \code{\link{readParquet}} for reading Bioconductor objects from parquet
+  \item \code{\link[DuckDBArray]{writeCoordArray}} for coord-array layout,
+    hive partitioning, and array append (\code{append}, \code{along},
+    \code{offset}, \code{group_offset})
+  \item \code{\link[DuckDBDataFrame]{parquet-io}} for flat table append
+    validation (\code{checkAppendPart}, \code{validateAppendOffset})
   \item \code{\link{createDimTables}} for creating dimension lookup tables
-  \item \code{\link[arrow]{write_dataset}} for the underlying Arrow functionality
+  \item \code{\link[arrow]{write_dataset}} and \code{\link[arrow]{write_parquet}}
   \item \code{\link[S4Arrays]{ArrayGrid}} for grid partitioning
   \item \code{\link[BiocParallel]{BiocParallelParam}} for parallel processing options
 }
