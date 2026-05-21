@@ -70,11 +70,14 @@
 }
 
 .fieldtype.list <- function(x) {
-    type <- ifelse(length(x), .fieldtype(x[[1L]])[["type"]], "any")
-
+    if (length(x) == 0L) {
+        x_i <- c()
+    } else {
+        x_i <- x[[1L]]
+    }
     field <- list(type = "array",
                   format = "variable",
-                  arrayItem = list(type = type))
+                  arrayItem = .fieldtype(x_i))
 
     lengths_x <- as.vector(unique(lengths(x)))
     if (length(lengths_x) == 1L) {
