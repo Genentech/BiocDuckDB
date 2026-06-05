@@ -1,0 +1,32 @@
+BiocDuckDB bundles third-party JSON Schema files in inst/schema/ that are not
+covered by the package's Apache License 2.0. Their copyright and licensing are
+recorded below.
+
+-------------------------------------------------------------------------------
+Frictionless Data Package specification schemas
+-------------------------------------------------------------------------------
+
+Files:
+    inst/schema/datapackage.json
+    inst/schema/dataresource.json
+    inst/schema/tableschema.json
+    inst/schema/tabledialect.json
+
+These are the Frictionless Data Package v2.0 specification JSON Schemas,
+published by the Open Knowledge Foundation / Frictionless Data project at
+https://datapackage.org (source: https://github.com/frictionlessdata/datapackage).
+
+They are released under The Unlicense (https://unlicense.org), a public-domain
+dedication, and are redistributed here unmodified as a local, offline-resolvable
+copy so that datapackage.json validation works without network access.
+
+-------------------------------------------------------------------------------
+BiocDuckDB profile
+-------------------------------------------------------------------------------
+
+File:
+    inst/schema/biocduckdb-profile.json
+
+Authored by the BiocDuckDB package authors; copyright Genentech, Inc., and
+licensed under Apache License 2.0 with the rest of the package. It references
+the Frictionless base profile above as an additive extension.

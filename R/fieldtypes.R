@@ -24,7 +24,7 @@
 }
 
 .fieldtype.integer64 <- function(x) {
-    list(type = "integer", format = "int64")
+    list(type = "integer", arrowType = "int64")
 }
 
 .fieldtype.numeric <- function(x) {
@@ -76,12 +76,10 @@
         x_i <- x[[1L]]
     }
     field <- list(type = "array",
-                  format = "variable",
                   arrayItem = .fieldtype(x_i))
 
     lengths_x <- as.vector(unique(lengths(x)))
     if (length(lengths_x) == 1L) {
-        field[["format"]] <- "fixed"
         field[["constraints"]] <- list(minLength = lengths_x,
                                        maxLength = lengths_x)
     }
@@ -119,9 +117,9 @@
 
     result <- list(type = type)
 
-    format <- .arrowTypeToFormat(arrow_type)
-    if (!is.null(format)) {
-        result[["format"]] <- format
+    arrow_width <- .arrowTypeToFormat(arrow_type)
+    if (!is.null(arrow_width)) {
+        result[["arrowType"]] <- arrow_width
     }
 
     result
@@ -197,9 +195,10 @@ function(name, x, arrow_type = NULL, description = NULL, role = NULL, ...) {
     field <- c(field, type_spec)
 
     if (!is.null(arrow_type)) {
-        format_str <- .arrowTypeToFormat(arrow_type)
-        if (!is.null(format_str) && is.null(field[["format"]])) {
-            field[["format"]] <- format_str
+        arrow_width <- .arrowTypeToFormat(arrow_type)
+        if (!is.null(arrow_width) && arrow_width != "binary" &&
+            is.null(field[["arrowType"]])) {
+            field[["arrowType"]] <- arrow_width
         }
     }
 
@@ -293,10 +292,10 @@ function(schema, nnode, from = "from", to = "to")
         return(list(is_int = FALSE))
     }
 
-    format_str <- field[["format"]] %||% "int32"
+    arrow_type <- field[["arrowType"]] %||% "int32"
 
-    unsigned <- grepl("^uint", format_str)
-    width <- as.integer(gsub("^u?int", "", format_str))
+    unsigned <- grepl("^uint", arrow_type)
+    width <- as.integer(gsub("^u?int", "", arrow_type))
     constraints <- field[["constraints"]] %||% list()
 
     list(is_int = TRUE,
@@ -310,8 +309,10 @@ function(schema, nnode, from = "from", to = "to")
     field_name <- field[["name"]]
     field_type <- field[["type"]]
 
-    if (field_type == "array" && isTRUE(field[["format"]] == "fixed")) {
-        array_size <- field[["constraints"]][["minLength"]]
+    if (field_type == "array") {
+        min_len <- field[["constraints"]][["minLength"]]
+        max_len <- field[["constraints"]][["maxLength"]]
+        array_size <- if (!is.null(min_len) && isTRUE(min_len == max_len)) min_len else NULL
         if (!is.null(array_size)) {
             item_type <- field[["arrayItem"]][["type"]]
             duckdb_type <- switch(item_type,
@@ -325,9 +326,9 @@ function(schema, nnode, from = "from", to = "to")
     }
 
     if (field_type == "integer") {
-        format_str <- field[["format"]]
-        if (!is.null(format_str) && format_str != "int32") {
-            duckdb_type <- switch(format_str,
+        arrow_type <- field[["arrowType"]]
+        if (!is.null(arrow_type) && arrow_type != "int32") {
+            duckdb_type <- switch(arrow_type,
                                   "int8" = "TINYINT",
                                   "int16" = "SMALLINT",
                                   "int32" = "INTEGER",

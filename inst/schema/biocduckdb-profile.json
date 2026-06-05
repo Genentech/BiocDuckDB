@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://bioconductor.org/packages/BiocDuckDB/profiles/2.0/biocduckdb.json",
+  "title": "BiocDuckDB Data Package Profile",
+  "description": "A Frictionless Data Package profile for BiocDuckDB datasets. Extends the base Data Package spec v2.0 with Bioconductor-specific properties for single-cell and spatial genomics. Design principle: extensions are ADDITIVE ONLY — every BiocDuckDB-specific keyword (model, main_exp_name, annotations, dimension, layout, genomicCoords, graphEdges, sortOrder, arrayItem) is a NEW property the base spec ignores. No base Frictionless keyword is overridden with a value the base spec forbids, so writeParquet() output validates against the unmodified base Data Package profile. The conformance test (tests/testthat) enforces this by validating real output against the base spec.",
+  "type": "object",
+  "allOf": [
+    {
+      "$comment": "Frictionless Data Package v2.0 base profile, canonical URI https://datapackage.org/profiles/2.0/datapackage.json. Referenced as a sibling file so JSON Schema validators (e.g. jsonvalidate/AJV) resolve it offline without network access.",
+      "$ref": "datapackage.json"
+    }
+  ],
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "Overall schema of the data package — determines which container class is reconstructed by readParquet(). Optional: when absent, resources are returned as a SimpleList with no imposed schema.",
+      "enum": [
+        "summarized_experiment",
+        "ranged_summarized_experiment",
+        "single_cell_experiment",
+        "experiment_list",
+        "multi_assay_experiment",
+        "multi_assay_spatial_experiment"
+      ]
+    },
+    "main_exp_name": {
+      "type": "string",
+      "description": "Main experiment name for SingleCellExperiment objects"
+    },
+    "annotations": {
+      "type": ["object", "null"],
+      "description": "Scalar metadata from metadata() slot (unstructured)"
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/biocduckdb_resource"
+      }
+    }
+  },
+  "required": ["resources"],
+  "$defs": {
+    "biocduckdb_resource": {
+      "type": "object",
+      "required": ["name", "path"],
+      "properties": {
+        "dimension": {
+          "type": "string",
+          "enum": ["feature", "sample", "crossed", "unbound"],
+          "description": "Biological axis this resource is indexed by. feature=rownames, sample=colnames, crossed=feature×sample (Cartesian product), unbound=not tied to either axis. Combined with layout, uniquely determines the R accessor and AnnData slot."
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "coord_array",
+            "data_frame",
+            "transposed_data_frame",
+            "embedding_table",
+            "genomic_ranges",
+            "genomic_ranges_list",
+            "graph_edges",
+            "spatial_points",
+            "spatial_shapes",
+            "nested_data_frame",
+            "nested_experiment"
+          ],
+          "description": "Physical storage pattern. Together with 'dimension', uniquely determines the R accessor and AnnData slot. See dispatch table in storage patterns documentation."
+        },
+        "schema": {
+          "$ref": "#/$defs/biocduckdb_table_schema"
+        }
+      }
+    },
+    "biocduckdb_table_schema": {
+      "type": "object",
+      "description": "BiocDuckDB extensions to the Frictionless Table Schema. The base properties (fields, primaryKey, foreignKeys, missingValues) are defined by the Frictionless spec and are not repeated here.",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "description": "Extends Frictionless fields with the BiocDuckDB-specific 'arrayItem' property for array-typed fields.",
+          "items": {
+            "$ref": "#/$defs/biocduckdb_field"
+          }
+        },
+        "sortOrder": {
+          "type": "array",
+          "description": "Physical row ordering (BiocDuckDB extension for optimized range queries)",
+          "items": {
+            "type": "object",
+            "required": ["field", "direction"],
+            "properties": {
+              "field": {"type": "string"},
+              "direction": {"type": "string", "enum": ["ascending", "descending"]}
+            }
+          }
+        },
+        "genomicCoords": {
+          "type": "object",
+          "description": "Maps column names to genomic coordinate roles. Present when layout is 'genomic_ranges'.",
+          "required": ["seqname", "start", "end", "strand"],
+          "properties": {
+            "seqname": {"type": "string", "description": "Chromosome/sequence name column"},
+            "start":   {"type": "string", "description": "Start position column (1-based, inclusive)"},
+            "end":     {"type": "string", "description": "End position column (1-based, inclusive)"},
+            "strand":  {"type": "string", "description": "Strand column (+, -, *)"}
+          }
+        },
+        "graphEdges": {
+          "type": "object",
+          "description": "Graph topology metadata. Present when layout is 'graph_edges'.",
+          "required": ["from", "to", "nnode"],
+          "properties": {
+            "from":  {"type": "string",  "description": "Source node field name"},
+            "to":    {"type": "string",  "description": "Target node field name"},
+            "nnode": {"type": "integer", "description": "Total node count", "minimum": 0}
+          }
+        }
+      }
+    },
+    "biocduckdb_field": {
+      "type": "object",
+      "description": "BiocDuckDB extensions to a Frictionless field: 'arrayItem' (scalar element type of an array-typed DuckDB LIST[] column) and 'arrowType' (physical Arrow/DuckDB integer width, e.g. int8..uint64, used to reconstruct narrow integer columns). All other field properties (name, type, format, constraints, categories, ...) are defined by the Frictionless Table Schema spec and are not overridden here. Frictionless reserves integer 'format' to 'default', so writeParquet() records the width on 'arrowType' rather than overloading 'format'. For array fields, writeParquet() emits the Frictionless-legal type='array' plus 'arrayItem'; fixed-length arrays additionally carry the standard constraints.minLength == constraints.maxLength.",
+      "properties": {
+        "arrowType": {
+          "type": "string",
+          "description": "Physical Arrow/DuckDB integer width for an integer-typed field. Frictionless does not model integer width (its integer 'format' allows only 'default'), so BiocDuckDB carries it here to reconstruct narrow/unsigned integer columns.",
+          "enum": [
+            "int8",
+            "int16",
+            "int32",
+            "int64",
+            "uint8",
+            "uint16",
+            "uint32",
+            "uint64"
+          ]
+        },
+        "arrayItem": {
+          "type": "object",
+          "description": "Scalar type of the elements in a LIST[] column.",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "boolean",
+                "integer",
+                "number",
+                "string"
+              ],
+              "description": "Frictionless type of each array element (e.g., 'number', 'integer', 'string')"
+            }
+          }
+        }
+      }
+    }
+  }
+}
