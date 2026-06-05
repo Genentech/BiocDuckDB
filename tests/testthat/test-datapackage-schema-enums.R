@@ -1,10 +1,10 @@
-# DRY guard: the controlled vocabularies in the bundled profile
+# DRY guard: the CLOSED vocabularies in the bundled profile
 # (inst/schema/biocduckdb-profile.json) must stay in sync with what writeParquet()
-# can emit. The reference sets below are the authoritative vocabularies; if a new
-# layout/dimension/model is added to writeParquet() (or removed), update both the
-# profile enum and the matching reference set here, and this test keeps them
-# locked together. Cross-checked against the layout/dimension defaults and
-# package=list(model=) values in R/writeParquet.R.
+# can emit. 'layout' and 'dimension' are closed enums and are checked setequal
+# against the reference sets below; if a new value is added to writeParquet(),
+# update both the profile enum and the matching reference set here. 'model' is an
+# OPEN string (general galaxy-schema framework), so it is checked for openness and
+# its documented reader values, not pinned to an enum.
 # Run: library(BiocDuckDB); library(testthat); source("test-datapackage-schema-enums.R")
 
 # Resource layouts writeParquet() can record (one per primitive / experiment method).
@@ -25,9 +25,11 @@
 # Biological axes (match.arg dimension defaults across the methods).
 .KNOWN_DIMENSIONS <- c("feature", "sample", "crossed", "unbound")
 
-# Package-level container models (package=list(model=) plus the RangedSE ifelse;
-# experiment_list is built internally and writes no top-level datapackage.json).
-.KNOWN_MODELS <- c(
+# Reader values BiocDuckDB ships dedicated container methods for. 'model' is an
+# OPEN string (BiocDuckDB is a general galaxy-schema framework: any reconstruction
+# key is permitted, unknown/absent yields a SimpleList), so these are documented
+# in the profile description, NOT enforced as an enum.
+.DOCUMENTED_MODELS <- c(
     "summarized_experiment",
     "ranged_summarized_experiment",
     "single_cell_experiment",
@@ -45,7 +47,7 @@
     spec <- jsonlite::fromJSON(profile, simplifyVector = FALSE)
     resource <- spec[["$defs"]][["biocduckdb_resource"]][["properties"]]
     list(
-        model = unlist(spec[["properties"]][["model"]][["enum"]]),
+        model = spec[["properties"]][["model"]],
         layout = unlist(resource[["layout"]][["enum"]]),
         dimension = unlist(resource[["dimension"]][["enum"]])
     )
@@ -61,7 +63,17 @@ test_that("profile dimension enum matches the biological axes", {
     expect_setequal(enums$dimension, .KNOWN_DIMENSIONS)
 })
 
-test_that("profile model enum matches the documented container models", {
+test_that("profile model is an open string documenting the known readers", {
     enums <- .profileEnums()
-    expect_setequal(enums$model, .KNOWN_MODELS)
+    # model must NOT be a closed enum (general galaxy-schema framework).
+    expect_identical(enums$model[["type"]], "string")
+    expect_null(enums$model[["enum"]])
+    # The known reader values should be documented in the description so the
+    # vocabulary stays discoverable even though it is not enforced.
+    desc <- enums$model[["description"]]
+    expect_true(is.character(desc) && nzchar(desc))
+    for (m in .DOCUMENTED_MODELS) {
+        expect_true(grepl(m, desc, fixed = TRUE),
+                    info = paste("model description should mention", m))
+    }
 })

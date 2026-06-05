@@ -13,15 +13,7 @@
   "properties": {
     "model": {
       "type": "string",
-      "description": "Overall schema of the data package — determines which container class is reconstructed by readParquet(). Optional: when absent, resources are returned as a SimpleList with no imposed schema.",
-      "enum": [
-        "summarized_experiment",
-        "ranged_summarized_experiment",
-        "single_cell_experiment",
-        "experiment_list",
-        "multi_assay_experiment",
-        "multi_assay_spatial_experiment"
-      ]
+      "description": "Overall schema of the data package — the reconstruction key that determines how readParquet() rebuilds the object. BiocDuckDB is a general Fact Constellation / Galaxy Schema framework, so 'model' is an OPEN string, not a closed enum: any galaxy schema may declare its own reconstruction key, and an unknown or absent 'model' yields a SimpleList of resources with no imposed schema. The reader values BiocDuckDB ships dedicated container methods for are: summarized_experiment, ranged_summarized_experiment, single_cell_experiment, experiment_list, multi_assay_experiment, multi_assay_spatial_experiment."
     },
     "main_exp_name": {
       "type": "string",
