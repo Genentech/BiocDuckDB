@@ -461,8 +461,12 @@ metadata:
     (e.g. \code{"single_cell_experiment"}, \code{"multi_assay_experiment"}).
     When absent, \code{readParquet} returns a \code{SimpleList} of resources
     with no imposed schema.
-  \item \code{annotations} - Scalar/vector elements from \code{metadata(x)};
-    complex objects are written as \code{unbound} resources instead.
+  \item \code{annotations} - Non-relational elements from \code{metadata(x)}
+    (scalars, vectors, 1-D arrays, JSON-safe nested lists). Tabular /
+    relational items (\code{DataFrame}, \code{matrix}, 2-D arrays) are
+    written as \code{unbound} Parquet sidecars and referenced here via
+    \code{parquet_ref} stubs; mixed nested lists use a
+    \code{nested_mapping} wrapper.
 }
 
 \strong{Per-resource fields} (each entry in the \code{resources} array):

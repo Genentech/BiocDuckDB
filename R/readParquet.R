@@ -122,8 +122,10 @@
 #' \itemize{
 #'   \item \code{model} — which container class to reconstruct; absent means
 #'     \code{SimpleList} fallback.
-#'   \item \code{annotations} — scalar / vector metadata attached to
-#'     \code{metadata()} of the returned object.
+#'   \item \code{annotations} — non-relational metadata from \code{metadata(x)}
+#'     (scalars, vectors, 1-D arrays, JSON-safe nested lists). Tabular items
+#'     are referenced via \code{parquet_ref} stubs pointing at \code{unbound}
+#'     Parquet sidecars; mixed nested lists use a \code{nested_mapping} wrapper.
 #' }
 #'
 #' \strong{Resource level} (entries in \code{resources} array):
@@ -210,6 +212,83 @@ function(path,
 
 .schema_partitions <- function(schema) {
     schema[["partitioning"]]
+}
+
+.isMetadataStub <- function(x) {
+    is.list(x) && !is.null(x[["__type__"]]) && is.character(x[["__type__"]])
+}
+
+.referencedMetadataResources <- function(annotations) {
+    refs <- character(0L)
+    walk <- function(x) {
+        if (!.isMetadataStub(x)) {
+            if (is.list(x) && !is.data.frame(x)) {
+                for (v in x)
+                    walk(v)
+            }
+            return(invisible(NULL))
+        }
+        if (identical(x[["__type__"]], "parquet_ref")) {
+            refs <<- c(refs, x[["resource"]])
+        } else if (identical(x[["__type__"]], "nested_mapping")) {
+            for (nm in names(x)) {
+                if (!identical(nm, "__type__"))
+                    walk(x[[nm]])
+            }
+        }
+        invisible(NULL)
+    }
+    for (v in annotations)
+        walk(v)
+    unique(refs)
+}
+
+.deserializeMetadataValue <- function(value, resources_by_name, path, ...) {
+    if (!.isMetadataStub(value)) {
+        if (is.list(value) && !is.data.frame(value)) {
+            if (any(vapply(value, .isMetadataStub, logical(1L)))) {
+                return(lapply(value, .deserializeMetadataValue,
+                              resources_by_name = resources_by_name,
+                              path = path, ...))
+            }
+        }
+        return(value)
+    }
+    switch(value[["__type__"]],
+           parquet_ref = {
+               res <- resources_by_name[[value[["resource"]]]]
+               if (is.null(res)) {
+                   stop("Metadata resource '", value[["resource"]],
+                        "' not found in datapackage.json")
+               }
+               .readParquetResource(path, res, ...)
+           },
+           nested_mapping = {
+               children <- value[setdiff(names(value), "__type__")]
+               lapply(children, .deserializeMetadataValue,
+                      resources_by_name = resources_by_name,
+                      path = path, ...)
+           },
+           value)
+}
+
+.deserializeMetadata <- function(annotations, resources, path, ...) {
+    annotations <- annotations %||% list()
+    resources_by_name <- setNames(resources,
+                                  vapply(resources, `[[`, character(1L), "name"))
+    metadata <- lapply(annotations, .deserializeMetadataValue,
+                       resources_by_name = resources_by_name,
+                       path = path, ...)
+    referenced <- .referencedMetadataResources(annotations)
+    for (res in .filterResources(resources, "unbound")) {
+        nm <- res[["name"]]
+        path_nm <- res[["path"]]
+        if (is.null(metadata[[nm]]) && !(nm %in% referenced) &&
+            startsWith(path_nm, "unbound_")) {
+            metadata[[nm]] <- .readParquetResource(path, res, ...)
+        }
+    }
+    metadata
 }
 
 .filterResources <- function(resources, dimension, layout = NULL) {
@@ -457,10 +536,7 @@ function(path,
     names(assays) <- sapply(assay_res, `[[`, "name")
 
     # Metadata
-    metadata <- package[["annotations"]] %||% list()
-    for (res in .filterResources(resources, "unbound")) {
-        metadata[[res[["name"]]]] <- .readParquetResource(path, res, ...)
-    }
+    metadata <- .deserializeMetadata(package[["annotations"]], resources, path, ...)
 
     # SummarizedExperiment
     if (isTRUE(package[["model"]] %in% c("ranged_summarized_experiment", "summarized_experiment"))) {
@@ -584,7 +660,7 @@ function(path,
     sample_map[[1L]] <- factor(sample_map[[1L]], levels = names(experiments))
 
     # Metadata
-    metadata <- package[["annotations"]] %||% list()
+    metadata <- .deserializeMetadata(package[["annotations"]], resources, path, ...)
 
     # MultiAssayExperiment
     MultiAssayExperiment(experiments,

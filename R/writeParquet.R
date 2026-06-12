@@ -257,8 +257,12 @@
 #'     (e.g. \code{"single_cell_experiment"}, \code{"multi_assay_experiment"}).
 #'     When absent, \code{readParquet} returns a \code{SimpleList} of resources
 #'     with no imposed schema.
-#'   \item \code{annotations} - Scalar/vector elements from \code{metadata(x)};
-#'     complex objects are written as \code{unbound} resources instead.
+#'   \item \code{annotations} - Non-relational elements from \code{metadata(x)}
+#'     (scalars, vectors, 1-D arrays, JSON-safe nested lists). Tabular /
+#'     relational items (\code{DataFrame}, \code{matrix}, 2-D arrays) are
+#'     written as \code{unbound} Parquet sidecars and referenced here via
+#'     \code{parquet_ref} stubs; mixed nested lists use a
+#'     \code{nested_mapping} wrapper.
 #' }
 #'
 #' \strong{Per-resource fields} (each entry in the \code{resources} array):
@@ -328,24 +332,160 @@ function(x, path, ...)
     sprintf(paste0(prefix, "%0", floor(log10(n)) + 1L, "d"), seq_len(n))
 }
 
-#' @importFrom S4Vectors metadata
-.vectorMetadata <- function(x) {
-    md <- metadata(x)
-    md <- md[vapply(md, is.vector, logical(1L))]
-    if (length(md) == 0L)
-        md <- NULL
-    md
+### Metadata serialization policy (relational vs non-relational):
+###   JSON  — scalar-like values and 1-D sequences that jsonlite can encode,
+###           plus plain nested lists whose children are all JSON-safe.
+###   Parquet — data.frame, DFrame, matrix, arrays with dim >= 2, and other
+###           types supported by writeParquet methods.
+###   Skip  — unsupported S4 objects (warning issued).
+###
+### R's type predicates are a poor match for this policy: Date, POSIXt, and
+### factor are not is.atomic(); package_version is is.list() but is a
+### list-shaped scalar (length-1, self-referential), not a nested mapping.
+### We therefore classify by structure (tabular / plain list / else) and
+### use jsonlite to decide whether the remainder is a JSON leaf.
+
+#' @importClassesFrom S4Vectors DFrame List
+.isMetadataTabular <- function(x) {
+    is.data.frame(x) || is(x, "DFrame") || is.matrix(x) ||
+        (is.array(x) && !is.null(dim(x)) && length(dim(x)) >= 2L)
 }
 
-#' @importClassesFrom S4Vectors List
+.isListShapedScalar <- function(x) {
+    is.list(x) && length(x) == 1L && identical(x[[1L]], x)
+}
+
+.isPlainMetadataList <- function(x) {
+    (is.list(x) || is(x, "List")) && !is.data.frame(x) && !is(x, "DFrame") &&
+        !isS4(x) && !.isListShapedScalar(x)
+}
+
+.metadataJsonValue <- function(x) {
+    if (is.null(x))
+        return(NULL)
+    if (is.array(x) && length(dim(x)) <= 1L)
+        return(as.vector(x))
+    if (is.atomic(x) && is.null(dim(x)) && !is.object(x))
+        return(x)
+    if (.isListShapedScalar(x))
+        return(as.character(x))
+    if (is.object(x) && !isS4(x) && !.isPlainMetadataList(x)) {
+        ch <- tryCatch(as.character(x), error = function(e) NULL)
+        if (!is.null(ch))
+            return(ch)
+    }
+    x
+}
+
+.isMetadataJsonLeaf <- function(x) {
+    if (is.null(x) || .isMetadataTabular(x) || .isPlainMetadataList(x) || isS4(x))
+        return(is.null(x))
+    tryCatch({
+        jsonlite::toJSON(.metadataJsonValue(x), auto_unbox = TRUE, null = "null")
+        TRUE
+    }, error = function(e) FALSE)
+}
+
+.metadataTabularValue <- function(x) {
+    if (is.matrix(x)) {
+        df <- as.data.frame(x, stringsAsFactors = FALSE)
+        if (!is.null(colnames(x)))
+            colnames(df) <- colnames(x)
+        df
+    } else if (is.array(x) && length(dim(x)) >= 2L) {
+        .metadataTabularValue(as.matrix(x))
+    } else {
+        x
+    }
+}
+
 #' @importFrom S4Vectors metadata
-.unboundMetadata <- function(x) {
+.serializeMetadataValue <- function(x, path, name, resources, ...) {
+    if (.isMetadataJsonLeaf(x)) {
+        return(list(value = .metadataJsonValue(x), resources = resources,
+                    has_parquet = FALSE))
+    }
+    if (.isMetadataTabular(x)) {
+        path_k <- file.path(path, sprintf("unbound_%s", name))
+        res <- try(writeParquet(.metadataTabularValue(x), path = path_k,
+                                name = name, dimension = "unbound",
+                                layout = "data_frame", ...),
+                   silent = TRUE)
+        if (inherits(res, "try-error")) {
+            warning("Skipping metadata item '", name, "': ", res,
+                    call. = FALSE)
+            return(list(value = NULL, resources = resources,
+                        has_parquet = FALSE, skip = TRUE))
+        }
+        stub <- list("__type__" = "parquet_ref", resource = name)
+        return(list(value = stub, resources = c(resources, res),
+                    has_parquet = TRUE))
+    }
+    if (.isPlainMetadataList(x)) {
+        children <- list()
+        child_has_parquet <- FALSE
+        for (k in seq_along(x)) {
+            sub_nm <- names(x)[k] %||% sprintf("item-%d", k)
+            qualified <- sprintf("%s__%s", name, sub_nm)
+            elt <- x[[k]]
+            child <- if (identical(elt, x) || .isListShapedScalar(elt)) {
+                list(value = .metadataJsonValue(x), resources = resources,
+                     has_parquet = FALSE)
+            } else {
+                .serializeMetadataValue(elt, path = path, name = qualified,
+                                        resources = resources, ...)
+            }
+            if (!isTRUE(child$skip)) {
+                children[[sub_nm]] <- child$value
+            }
+            resources <- child$resources
+            child_has_parquet <- child_has_parquet || isTRUE(child$has_parquet)
+        }
+        if (length(children) == 0L) {
+            return(list(value = NULL, resources = resources,
+                        has_parquet = FALSE, skip = TRUE))
+        }
+        value <- if (child_has_parquet) {
+            c(list("__type__" = "nested_mapping"), children)
+        } else {
+            children
+        }
+        return(list(value = value, resources = resources,
+                    has_parquet = child_has_parquet))
+    }
+    path_k <- file.path(path, sprintf("unbound_%s", name))
+    res <- try(writeParquet(x, path = path_k, name = name,
+                            dimension = "unbound", ...),
+               silent = TRUE)
+    if (inherits(res, "try-error")) {
+        warning("Skipping unsupported metadata item '", name, "': ", res,
+                call. = FALSE)
+        return(list(value = NULL, resources = resources,
+                    has_parquet = FALSE, skip = TRUE))
+    }
+    stub <- list("__type__" = "parquet_ref", resource = name)
+    list(value = stub, resources = c(resources, res), has_parquet = TRUE)
+}
+
+#' @importFrom S4Vectors metadata
+.serializeMetadata <- function(x, path, resources = list(), ...) {
     md <- metadata(x)
-    md <- md[vapply(md, function(x) is(x, "List") || !is.null(dim(x)),
-                    logical(1L))]
     if (length(md) == 0L)
-        md <- NULL
-    md
+        return(list(annotations = NULL, resources = resources))
+    annotations <- list()
+    for (k in seq_along(md)) {
+        nm <- names(md)[k] %||% sprintf("item-%d", k)
+        if (!nzchar(nm))
+            nm <- sprintf("item-%d", k)
+        ser <- .serializeMetadataValue(md[[k]], path = path, name = nm,
+                                       resources = resources, ...)
+        if (!isTRUE(ser$skip))
+            annotations[[nm]] <- ser$value
+        resources <- ser$resources
+    }
+    if (length(annotations) == 0L)
+        annotations <- NULL
+    list(annotations = annotations, resources = resources)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1062,23 +1202,10 @@ function(x,
                              dimension = "crossed", ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
-    # Metadata / unstructured data - guard against unsupported object types
-    unbound <- .unboundMetadata(x)
-    for (k in seq_along(unbound)) {
-        uns_k <- unbound[[k]]
-        nms_k <- names(unbound)[k] %||% sprintf("item-%d", k)
-        path_k <- sprintf("unbound_%s", nms_k)
-        resources <- try(callGeneric(uns_k,
-                                     path = file.path(path, path_k),
-                                     name = nms_k,
-                                     dimension = "unbound", ...),
-                         silent = TRUE)
-        if (!inherits(resources, "try-error")) {
-            package[["resources"]] <- c(package[["resources"]], resources)
-        }
-    }
-
-    package[["annotations"]] <- .vectorMetadata(x)
+    # Metadata — recursive JSON vs Parquet dispatch
+    ser <- .serializeMetadata(x, path = path, ...)
+    package[["resources"]] <- c(package[["resources"]], ser$resources)
+    package[["annotations"]] <- ser[["annotations"]]
 
     write_json(package, path = file.path(path, "datapackage.json"),
                auto_unbox = TRUE, pretty = TRUE)
@@ -1327,7 +1454,9 @@ function(x,
                              ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
-    package[["annotations"]] <- .vectorMetadata(x)
+    ser <- .serializeMetadata(x, path = path, ...)
+    package[["resources"]] <- c(package[["resources"]], ser$resources)
+    package[["annotations"]] <- ser[["annotations"]]
 
     write_json(package, path = file.path(path, "datapackage.json"),
                auto_unbox = TRUE, pretty = TRUE)

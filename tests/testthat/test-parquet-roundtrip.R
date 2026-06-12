@@ -457,7 +457,100 @@ test_that("Unbound metadata with serializable S4 objects works", {
     unlink(tmpdir, recursive = TRUE)
 })
 
-test_that("Unbound metadata with non-serializable objects is silently skipped", {
+test_that("Nested metadata serializes JSON leaves and tabular sidecars", {
+    set.seed(110)
+    ncells <- 20L
+    ngenes <- 30L
+
+    counts <- matrix(rpois(ngenes * ncells, 5), nrow = ngenes, ncol = ncells)
+    rownames(counts) <- paste0("Gene", seq_len(ngenes))
+    colnames(counts) <- paste0("Cell", seq_len(ncells))
+
+    se <- SummarizedExperiment(
+        assays = list(counts = counts),
+        colData = DataFrame(cluster = sample(1:2, ncells, replace = TRUE)),
+        metadata = list(
+            bulk_labels_colors = array(rep("#FF0000", 10L)),
+            louvain = list(params = list(resolution = 1.0)),
+            pca = list(variance = rnorm(50L), variance_ratio = rnorm(50L)),
+            rank_genes_groups = list(
+                names = matrix(letters[1:20], 10L, 2L),
+                scores = matrix(rnorm(20L), 10L, 2L),
+                params = list(groupby = "bulk_labels")
+            ),
+            qc_stats = DataFrame(metric = "n_genes", threshold = 200L)
+        )
+    )
+
+    tmpdir <- tempfile()
+    writeParquet(se, tmpdir)
+    pkg <- jsonlite::fromJSON(file.path(tmpdir, "datapackage.json"),
+                              simplifyVector = FALSE)
+
+    expect_type(pkg$annotations$bulk_labels_colors, "list")
+    expect_null(pkg$annotations$bulk_labels_colors$`__type__`)
+    expect_equal(pkg$annotations$louvain$params$resolution, 1.0)
+    expect_length(pkg$annotations$pca$variance, 50L)
+    expect_identical(pkg$annotations$rank_genes_groups$`__type__`,
+                     "nested_mapping")
+    expect_identical(pkg$annotations$rank_genes_groups$names$`__type__`,
+                     "parquet_ref")
+    expect_identical(pkg$annotations$rank_genes_groups$params$groupby,
+                     "bulk_labels")
+    expect_identical(pkg$annotations$qc_stats$`__type__`, "parquet_ref")
+
+    unbound_names <- vapply(
+        Filter(function(r) identical(r$dimension, "unbound"), pkg$resources),
+        function(r) r$name,
+        character(1L)
+    )
+    expect_true("rank_genes_groups__names" %in% unbound_names)
+    expect_true("rank_genes_groups__scores" %in% unbound_names)
+    expect_true("qc_stats" %in% unbound_names)
+    expect_false("bulk_labels_colors" %in% unbound_names)
+    expect_true(file.exists(file.path(tmpdir, "unbound_rank_genes_groups__names",
+                                      "part-0.parquet")))
+
+    se2 <- readParquet(tmpdir)
+    expect_equal(metadata(se2)$bulk_labels_colors,
+                 as.vector(metadata(se)$bulk_labels_colors))
+    expect_equal(metadata(se2)$louvain, metadata(se)$louvain)
+    expect_equal(as.numeric(metadata(se2)$pca$variance),
+                 as.numeric(metadata(se)$pca$variance), tolerance = 1e-4)
+    expect_identical(metadata(se2)$rank_genes_groups$params,
+                     metadata(se)$rank_genes_groups$params)
+    expect_s4_class(metadata(se2)$rank_genes_groups$names, "DuckDBDataFrame")
+    checkDuckDBDataFrame(metadata(se2)$rank_genes_groups$names,
+                         as.data.frame(metadata(se)$rank_genes_groups$names))
+    checkDuckDBDataFrame(metadata(se2)$rank_genes_groups$scores,
+                         as.data.frame(metadata(se)$rank_genes_groups$scores))
+    expect_s4_class(metadata(se2)$qc_stats, "DuckDBDataFrame")
+    checkDuckDBDataFrame(metadata(se2)$qc_stats,
+                         as.data.frame(metadata(se)$qc_stats))
+
+    unlink(tmpdir, recursive = TRUE)
+})
+
+test_that("Metadata with package_version and POSIXt serializes to JSON", {
+    set.seed(111)
+    se <- SummarizedExperiment(
+        assays = list(counts = matrix(1:12, 3, 4)),
+        metadata = list(
+            package_version = packageVersion("BiocDuckDB"),
+            creation_date = as.POSIXct("2026-01-01 12:00:00", tz = "UTC")
+        )
+    )
+    tmpdir <- tempfile()
+    expect_silent(writeParquet(se, tmpdir))
+    pkg <- jsonlite::fromJSON(file.path(tmpdir, "datapackage.json"))
+    expect_type(pkg$annotations$package_version, "character")
+    expect_type(pkg$annotations$creation_date, "character")
+    se2 <- readParquet(tmpdir)
+    expect_equal(metadata(se2)$package_version, as.character(packageVersion("BiocDuckDB")))
+    unlink(tmpdir, recursive = TRUE)
+})
+
+test_that("Unbound metadata with non-serializable objects is skipped with warning", {
     # Load airway which has MIAME metadata
     data(airway, package = "airway")
 
@@ -466,7 +559,7 @@ test_that("Unbound metadata with non-serializable objects is silently skipped", 
 
     # Round-trip should succeed (not error) but MIAME is skipped
     tmpdir <- tempfile()
-    expect_silent(writeParquet(airway, tmpdir))
+    expect_warning(writeParquet(airway, tmpdir), "Skipping unsupported metadata")
 
     airway2 <- readParquet(tmpdir)
 
