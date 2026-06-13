@@ -54,6 +54,8 @@
             "graph_edges",
             "spatial_points",
             "spatial_shapes",
+            "spatial_raster_ref",
+            "spatial_label_coord",
             "nested_data_frame",
             "nested_experiment"
           ],
@@ -106,6 +108,17 @@
             "from":  {"type": "string",  "description": "Source node field name"},
             "to":    {"type": "string",  "description": "Target node field name"},
             "nnode": {"type": "integer", "description": "Total node count", "minimum": 0}
+          }
+        },
+        "spatialCoords": {
+          "type": "object",
+          "description": "Maps column names to spatial coordinate roles. Present when layout is 'spatial_points' or 'spatial_shapes'.",
+          "properties": {
+            "x":           {"type": "string", "description": "X coordinate column"},
+            "y":           {"type": "string", "description": "Y coordinate column"},
+            "z":           {"type": "string", "description": "Z coordinate column (optional)"},
+            "instance_id": {"type": "string", "description": "Instance identifier column"},
+            "geometry":    {"type": "string", "description": "Geometry column (GeoParquet / WKB)"}
           }
         }
       }

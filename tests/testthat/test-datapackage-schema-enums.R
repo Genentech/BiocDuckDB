@@ -18,6 +18,8 @@
     "graph_edges",
     "spatial_points",
     "spatial_shapes",
+    "spatial_raster_ref",
+    "spatial_label_coord",
     "nested_data_frame",
     "nested_experiment"
 )

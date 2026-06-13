@@ -4,40 +4,36 @@
 \alias{DuckDBDataFrame-spatial}
 \alias{spatialOverlaps,DuckDBDataFrame-method}
 \alias{spatialMatch,DuckDBDataFrame,DataFrame-method}
-\title{Spatial methods for DuckDBDataFrame}
+\alias{spatialMatch,DuckDBDataFrame,DuckDBDataFrame-method}
+\alias{spatialJoin,DuckDBDataFrame,DuckDBDataFrame-method}
+\title{DuckDBDataFrame spatial methods}
 \description{
-Methods for \code{spatialOverlaps} and \code{spatialMatch} generics defined
-in \pkg{MultiAssaySpatialExperiment}, specialised for
-\linkS4class{DuckDBDataFrame} objects.  These push spatial predicates
-down to DuckDB SQL so that filtering and matching happen in the database.
+\linkS4class{DuckDBDataFrame} methods for \pkg{MultiAssaySpatialExperiment}
+spatial generics. Lazy layers delegate to \pkg{DuckDBSpatial} for
+SQL-backed spatial operations.
 }
 \section{Methods}{
 
 \describe{
-  \item{\code{spatialOverlaps(x, y, coords = NULL, geom = "geometry", ...)}:}{
-    When \code{coords} is provided, constructs point geometries via
-    \code{ST_Point} and tests intersection with \code{y} in SQL.
-    When \code{coords} is \code{NULL}, uses the geometry column named by
-    \code{geom}.  Returns a logical vector.
+  \item{\code{spatialOverlaps(x, y, coords = NULL, geom = "geometry")}:}{
+    Test spatial overlap between lazy spatial layers via
+    \code{\link[DuckDBSpatial]{layerSpatialOverlaps}}.
   }
-  \item{\code{spatialMatch(x, table, coords, geom = "geometry", join = NULL, ...)}:}{
-    For each row in \code{x}, finds the first row in \code{table} whose
-    geometry spatially matches.  Materialises coordinate and geometry
-    columns and delegates to \pkg{sf} for the spatial join.  Returns an
-    integer vector of positions in \code{table}.
+  \item{\code{spatialMatch(x, table, coords, geom = "geometry", join = NULL)}:}{
+    Match points or geometries to a table via
+    \code{\link[DuckDBSpatial]{layerSpatialMatch}}.
+  }
+  \item{\code{spatialJoin(x, y, join = st_intersects, sparse = TRUE)}:}{
+    Spatial join between lazy layers. When \code{sparse = TRUE}, returns a
+    sparse pair table via \code{\link[DuckDBSpatial]{st_intersects_table}};
+    otherwise uses \code{\link[sf:st_join]{st_join}}.
   }
 }
 }
 
 \seealso{
-\itemize{
-  \item \code{\link[MultiAssaySpatialExperiment]{spatialOverlaps}} for the
-    generic and \code{DataFrame} method.
-  \item \code{\link[MultiAssaySpatialExperiment]{spatialMatch}} for the
-    generic and \code{DataFrame} method.
+\code{\link[MultiAssaySpatialExperiment]{spatialOverlaps}},
+\code{\link[MultiAssaySpatialExperiment]{spatialMatch}}, and
+\code{\link[MultiAssaySpatialExperiment]{spatialJoin}} for generic
+documentation.
 }
-}
-\author{
-Patrick Aboyoun
-}
-\keyword{methods}

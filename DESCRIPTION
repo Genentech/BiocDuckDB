@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.9.18
-Date: 2026-06-11
+Version: 0.9.19
+Date: 2026-06-12
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -62,10 +62,12 @@ Suggests:
     nanoparquet,
     png,
     sf,
+    sfarrow,
     SpatialExperiment,
     DuckDBSpatial,
     ExperimentHub,
     HDF5Array,
+    ZarrArray,
     scater,
     airway,
     scRNAseq
@@ -80,10 +82,12 @@ biocViews:
 VignetteBuilder: knitr
 Encoding: UTF-8
 Collate:
+    'MultiAssaySpatialExperiments-internals.R'
     'DuckDBDataFrame-spatial.R'
     'DuckDBDualSubset-class.R'
     'DuckDBMatrix-scran.R'
     'DuckDBMatrix-scuttle.R'
+    'MultiAssaySpatialExperiment-spatial.R'
     'SingleCellExperiments-internals.R'
     'SingleCellExperiment-colTables.R'
     'SingleCellExperiment-loadings.R'

@@ -5,6 +5,12 @@
 \alias{writeParquet,ANY-method}
 \alias{writeParquet,data.frame-method}
 \alias{writeParquet,DataFrame-method}
+\alias{writeParquet,DuckDBTable-method}
+\alias{writeParquet,DuckDBDataFrame-method}
+\alias{writeParquet,DuckDBTransposedDataFrame-method}
+\alias{writeParquet,DuckDBSelfHits-method}
+\alias{writeParquet,DuckDBGRanges-method}
+\alias{writeParquet,DuckDBGRangesList-method}
 \alias{writeParquet,TransposedDataFrame-method}
 \alias{writeParquet,list-method}
 \alias{writeParquet,List-method}
@@ -67,6 +73,102 @@ writeParquet(x, path, ...)
   name = basename(path),
   dimension = c("unbound", "sample", "feature", "crossed"),
   layout = "data_frame",
+  ...
+)
+
+\S4method{writeParquet}{DuckDBTable}(
+  x,
+  path,
+  indexcol = "__index__",
+  keycol = "__name__",
+  dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
+  name = basename(path),
+  dimension = c("unbound", "sample", "feature", "crossed"),
+  layout = "data_frame",
+  ...
+)
+
+\S4method{writeParquet}{DuckDBDataFrame}(
+  x,
+  path,
+  indexcol = "__index__",
+  keycol = "__name__",
+  dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
+  name = basename(path),
+  dimension = c("unbound", "sample", "feature", "crossed"),
+  layout = "data_frame",
+  ...
+)
+
+\S4method{writeParquet}{DuckDBTransposedDataFrame}(
+  x,
+  path,
+  indexcol = "__index__",
+  keycol = "__name__",
+  dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
+  name = basename(path),
+  dimension = "crossed",
+  layout = "transposed_data_frame",
+  ...
+)
+
+\S4method{writeParquet}{DuckDBSelfHits}(
+  x,
+  path,
+  indexcol = "__index__",
+  keycol = "__name__",
+  dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
+  name = basename(path),
+  dimension = c("unbound", "sample", "feature"),
+  layout = "graph_edges",
+  ...
+)
+
+\S4method{writeParquet}{DuckDBGRanges}(
+  x,
+  path,
+  indexcol = "__index__",
+  keycol = "__name__",
+  dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
+  name = basename(path),
+  dimension = c("feature", "unbound"),
+  layout = "genomic_ranges",
+  ...
+)
+
+\S4method{writeParquet}{DuckDBGRangesList}(
+  x,
+  path,
+  indexcol = "__index__",
+  keycol = "__name__",
+  dimtbl = NULL,
+  append = FALSE,
+  offset = 0L,
+  part = NULL,
+  part_digits = 0L,
+  name = basename(path),
+  dimension = c("feature", "unbound"),
+  layout = "genomic_ranges_list",
   ...
 )
 
@@ -188,6 +290,13 @@ writeParquet(x, path, ...)
 \itemize{
   \item Array-like objects - converted to coordinate (long) format
   \item \code{data.frame} / \code{DataFrame} objects - written with field type metadata
+  \item \code{DuckDBTable} / \code{DuckDBDataFrame} objects - lazy SQL
+    \code{COPY TO} export via \code{\link[DuckDBDataFrame]{writeDuckDBTableParquet}}
+    in \code{\link[DuckDBDataFrame]{parquet-io}} (same \code{append}, \code{offset},
+    \code{part} contract as in-memory tables)
+  \item \code{DuckDBTransposedDataFrame}, \code{DuckDBSelfHits},
+    \code{DuckDBGRanges}, \code{DuckDBGRangesList} - delegate to the underlying
+    lazy table without materializing
   \item \code{TransposedDataFrame} objects - transposed before writing
   \item \code{list} / \code{List} objects - each element dispatched individually;
     requires \code{dimension}; \code{layout} defaults to \code{NULL} (each
@@ -294,27 +403,30 @@ Set to \code{NULL} to omit this column.}
 \item{dimtbl}{For \code{data.frame} and \code{Vector} objects, an optional
 \code{data.frame} containing a dimension table with partitioning information.}
 
-\item{append}{Logical. For \code{data.frame} and \code{DataFrame} methods:
-when \code{TRUE}, append a new flat \code{part-*.parquet} file under
-\code{path} (requires \code{part}). For array-like objects (\code{ANY} method):
-forwarded to \code{\link[DuckDBArray]{writeCoordArray}} for hive-partition
-append (requires \code{length(grid) > 1L}; see \code{along},
-\code{group_offset} there). Defaults to \code{FALSE}.}
+\item{append}{Logical. For \code{data.frame}, \code{DataFrame}, and
+\code{DuckDBTable} methods: when \code{TRUE}, append a new flat
+\code{part-*.parquet} file under \code{path} (requires \code{part}). For
+array-like objects (\code{ANY} method): forwarded to
+\code{\link[DuckDBArray]{writeCoordArray}} for hive-partition append
+(requires \code{length(grid) > 1L}; see \code{along}, \code{group_offset}
+there). Defaults to \code{FALSE}.}
 
-\item{offset}{Non-negative integer. For \code{data.frame} methods: added to
-the index column when \code{indexcol} is set
-(\code{offset + seq_len(nrow(x))}); ignored when \code{indexcol} is
-\code{NULL}. For array-like objects: forwarded to
+\item{offset}{Non-negative integer. For \code{data.frame} and
+\code{DuckDBTable} methods: added to the index column when \code{indexcol}
+is set (\code{offset + seq_len(nrow(x))} in memory;
+\code{offset + row_number()} in SQL for lazy tables); ignored when
+\code{indexcol} is \code{NULL}. For array-like objects: forwarded to
 \code{\link[DuckDBArray]{writeCoordArray}} as the coordinate shift along
 \code{along}. Defaults to \code{0L}.}
 
-\item{part}{Optional non-negative integer; \code{data.frame} methods only.
-When set, write a single \code{part-<n>.parquet} file via
-\code{arrow::write_parquet} instead of \code{arrow::write_dataset}.
-Required when \code{append = TRUE} on table writes.}
+\item{part}{Optional non-negative integer; \code{data.frame} and
+\code{DuckDBTable} methods. When set, write a single \code{part-<n>.parquet}
+file (via \code{arrow::write_parquet} for in-memory tables, or DuckDB
+\code{COPY TO} for lazy tables). Required when \code{append = TRUE} on table
+writes.}
 
 \item{part_digits}{Zero-padding width for \code{part} in the filename (e.g.
-\code{2L} yields \code{part-00.parquet}). \code{data.frame} methods only.}
+\code{2L} yields \code{part-00.parquet}). Table methods (in-memory and lazy).}
 
 \item{package}{For experiment-level methods (\code{SummarizedExperiment},
 etc.), a list used to accumulate \code{datapackage.json} contents before
@@ -507,8 +619,11 @@ list.files(tf3, full.names = TRUE, recursive = TRUE)
   \item \code{\link[DuckDBArray]{writeCoordArray}} for coord-array layout,
     hive partitioning, and array append (\code{append}, \code{along},
     \code{offset}, \code{group_offset})
-  \item \code{\link[DuckDBDataFrame]{parquet-io}} for flat table append
-    validation (\code{checkAppendPart}, \code{validateAppendOffset})
+  \item \code{\link[DuckDBDataFrame]{parquet-io}} for shared Parquet I/O:
+    flat append validation (\code{setupFlatParquetWrite}, \code{checkAppendPart},
+    \code{validateAppendOffset}), SQL \code{COPY TO} helpers
+    (\code{buildParquetCopySQL}), and lazy table export
+    (\code{writeDuckDBTableParquet})
   \item \code{\link{createDimTables}} for creating dimension lookup tables
   \item \code{\link[arrow]{write_dataset}} and \code{\link[arrow]{write_parquet}}
   \item \code{\link[S4Arrays]{ArrayGrid}} for grid partitioning

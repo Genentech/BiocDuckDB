@@ -318,11 +318,13 @@ function(path,
            "embedding_table"       =,
            "nested_data_frame"     =,
            "spatial_points"        =,
-           "spatial_shapes"        = .readParquetDataFrame(fullpath, resource, ...),
+           "spatial_shapes"        = .readParquetSpatialDataFrame(fullpath, resource, ...),
            "transposed_data_frame" = .readParquetTransposedDataFrame(fullpath, resource, ...),
            "coord_array"           = .readParquetArray(fullpath, resource, ...),
            "genomic_ranges"        = .readParquetGenomicRanges(fullpath, resource, ...),
            "genomic_ranges_list"   = .readParquetGenomicRangesList(fullpath, resource, ...),
+           "spatial_raster_ref"    = .readParquetRasterRef(fullpath, resource, ...),
+           "spatial_label_coord"   = .readParquetArray(fullpath, resource, ...),
            "graph_edges"           = .readParquetGraphEdges(fullpath, resource, ...),
            stop("unsupported layout: ", resource[["layout"]]))
 }
@@ -342,6 +344,23 @@ function(path,
     if (length(keycol) > 1L) {
         keycol <- keycol[1L]
     }
+    DuckDBDataFrame(path, datacols = datacols, keycol = keycol)
+}
+
+#' @importFrom DuckDBDataFrame DuckDBDataFrame acquireDuckDBConn
+.readParquetSpatialDataFrame <-
+function(path,
+         resource,
+         datacols = .schema_datacols(resource[["schema"]]),
+         keycol = .schema_keycols(resource[["schema"]]),
+         ...)
+{
+    if (resource[["layout"]] == "spatial_shapes" &&
+        requireNamespace("DuckDBSpatial", quietly = TRUE)) {
+        DuckDBSpatial::enableGeoParquetConversion(acquireDuckDBConn())
+    }
+    if (length(keycol) > 1L)
+        keycol <- keycol[1L]
     DuckDBDataFrame(path, datacols = datacols, keycol = keycol)
 }
 
@@ -674,6 +693,7 @@ function(path,
 ### -------------------------------------------------------------------------
 
 #' @importFrom jsonlite read_json
+#' @importFrom S4Vectors DataFrame
 .readParquetMASE <- function(path, package, ...) {
     if (!requireNamespace("MultiAssaySpatialExperiment", quietly = TRUE)) {
         stop("package 'MultiAssaySpatialExperiment' is required to read ",
@@ -686,65 +706,76 @@ function(path,
     # Base MAE object
     mae <- .readParquetMAE(path, package, ...)
 
-    # Points (optional) - materialize for MASE validation
+    # Points (optional) - keep lazy DuckDBDataFrame
     points_res <- .filterResources(resources, "sample", "spatial_points")
     if (length(points_res)) {
         points_list <- lapply(points_res, function(r) {
-            as(.readParquetResource(path, r, ...), "DataFrame")
+            .readParquetResource(path, r, ...)
         })
-        names(points_list) <- sapply(points_res, `[[`, "name")
+        names(points_list) <- sub("^sample_points_", "",
+            sapply(points_res, `[[`, "name"))
         points <- MultiAssaySpatialExperiment::PointsLayerList(points_list)
     } else {
         points <- MultiAssaySpatialExperiment::PointsLayerList()
     }
 
-    # Shapes (optional) - materialize for MASE validation
+    # Shapes (optional) - keep lazy DuckDBDataFrame
     shapes_res <- .filterResources(resources, "sample", "spatial_shapes")
     if (length(shapes_res)) {
         shapes_list <- lapply(shapes_res, function(r) {
-            as(.readParquetResource(path, r, ...), "DataFrame")
+            .readParquetResource(path, r, ...)
         })
-        names(shapes_list) <- sapply(shapes_res, `[[`, "name")
+        names(shapes_list) <- sub("^sample_shapes_", "",
+            sapply(shapes_res, `[[`, "name"))
         shapes <- MultiAssaySpatialExperiment::ShapesLayerList(shapes_list)
     } else {
         shapes <- MultiAssaySpatialExperiment::ShapesLayerList()
     }
 
-    # Images (optional) - path references
+    # Images (optional) - raster path references
     images <- MultiAssaySpatialExperiment::RasterLayerList()
-    if (!is.null(resources[["images"]])) {
+    img_res <- .filterResources(resources, "sample", "spatial_raster_ref")
+    if (length(img_res)) {
+        images_list <- lapply(img_res, function(r) {
+            .readParquetRasterRef(file.path(path, r[["path"]]), r, ...)
+        })
+        names(images_list) <- sub("^sample_images_", "", sapply(img_res, `[[`, "name"))
+        images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
+    } else if (!is.null(resources[["images"]])) {
         fullpath <- file.path(path, resources[["images"]][["path"]])
         if (dir.exists(fullpath)) {
-            json_files <- list.files(fullpath, pattern = "\\.json$", full.names = TRUE)
-            if (length(json_files) > 0L) {
-                images_list <- lapply(json_files, function(jf) {
-                    meta <- read_json(jf, simplifyVector = TRUE)
-                    ## TODO: construct StoredSpatialImage or similar from path ref
-                    ## For now, store metadata as-is
-                    meta
+            subdirs <- list.dirs(fullpath, recursive = FALSE, full.names = TRUE)
+            if (length(subdirs)) {
+                images_list <- lapply(subdirs, function(d) {
+                    .readParquetRasterRef(d, list(path = basename(d)), ...)
                 })
-                names(images_list) <- sub("\\.json$", "", basename(json_files))
+                names(images_list) <- basename(subdirs)
                 images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
             }
         }
     }
 
-    # Labels (optional) - path references
+    # Labels (optional) - raster refs or COO coord arrays
     labels <- MultiAssaySpatialExperiment::RasterLayerList()
-    if (!is.null(resources[["labels"]])) {
-        fullpath <- file.path(path, resources[["labels"]][["path"]])
-        if (dir.exists(fullpath)) {
-            json_files <- list.files(fullpath, pattern = "\\.json$", full.names = TRUE)
-            if (length(json_files) > 0L) {
-                labels_list <- lapply(json_files, function(jf) {
-                    meta <- read_json(jf, simplifyVector = TRUE)
-                    ## TODO: construct appropriate label/mask object from path ref
-                    meta
-                })
-                names(labels_list) <- sub("\\.json$", "", basename(json_files))
-                labels <- MultiAssaySpatialExperiment::RasterLayerList(labels_list)
-            }
-        }
+    lab_coord <- .filterResources(resources, "sample", "spatial_label_coord")
+    lab_ref <- .filterResources(resources, "sample", "spatial_raster_ref")
+    lab_ref <- lab_ref[grep("^sample_labels_", sapply(lab_ref, `[[`, "name"))]
+    if (length(lab_coord)) {
+        labels_list <- lapply(lab_coord, function(r) {
+            .readParquetArray(file.path(path, r[["path"]]), r, ...)
+        })
+        names(labels_list) <- sub("^sample_labels_", "", sapply(lab_coord, `[[`, "name"))
+        labels <- MultiAssaySpatialExperiment::RasterLayerList(labels_list)
+    }
+    if (length(lab_ref)) {
+        ref_list <- lapply(lab_ref, function(r) {
+            .readParquetRasterRef(file.path(path, r[["path"]]), r, ...)
+        })
+        names(ref_list) <- sub("^sample_labels_", "", sapply(lab_ref, `[[`, "name"))
+        if (length(labels))
+            labels[names(ref_list)] <- ref_list
+        else
+            labels <- MultiAssaySpatialExperiment::RasterLayerList(ref_list)
     }
 
     # imgData (optional) - must materialize
@@ -803,7 +834,7 @@ function(path,
         x <- .readParquetDataFrame(fullpath, resource = spatial_map_res,
                                    keycol = index, ...)
         spatial_map <- as.data.frame(x, optional = TRUE)
-        spatial_map <- S4Vectors::DataFrame(spatial_map)
+        spatial_map <- DataFrame(spatial_map, check.names = FALSE)
     }
 
     MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(

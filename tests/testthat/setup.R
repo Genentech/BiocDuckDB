@@ -243,3 +243,48 @@ checkDuckDBGRangesList <- function(object, expected) {
         expect_identical(as(mcols(object), "DFrame"), mcols(expected))
     }
 }
+
+checkDuckDBDataFrameSpatial <- function(object, expected, coords = c("x", "y")) {
+    checkDuckDBDataFrame(object, expected)
+    for (cn in coords) {
+        if (cn %in% colnames(expected))
+            expect_true(cn %in% colnames(object))
+    }
+}
+
+makeSpatialMASEFixture <- function() {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+    skip_if_not_installed("sf")
+    pts <- S4Vectors::DataFrame(
+        x = c(1.5, 2.5, 3.5),
+        y = c(1.5, 2.5, 3.5),
+        instance_id = c("A", "B", "C"))
+    shp_df <- S4Vectors::DataFrame(
+        instance_id = c("cell1", "cell2", "cell3"),
+        geometry = sf::st_sfc(
+            sf::st_polygon(list(matrix(c(1,1,2,1,2,2,1,2,1,1), ncol=2, byrow=TRUE))),
+            sf::st_polygon(list(matrix(c(2,1,3,1,3,2,2,2,2,1), ncol=2, byrow=TRUE))),
+            sf::st_polygon(list(matrix(c(2,2,3,2,3,3,2,3,2,2), ncol=2, byrow=TRUE)))))
+    MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
+        experiments = MultiAssayExperiment::ExperimentList(
+            assay1 = matrix(c(1:9), 3, 3,
+                dimnames = list(paste0("G", 1:3), c("A", "B", "C")))),
+        colData = S4Vectors::DataFrame(row.names = "s1"),
+        sampleMap = S4Vectors::DataFrame(
+            assay = "assay1", primary = "s1", colname = c("A", "B", "C")),
+        points = MultiAssaySpatialExperiment::PointsLayerList(centroids = pts),
+        shapes = MultiAssaySpatialExperiment::ShapesLayerList(cells = shp_df),
+        spatialMap = S4Vectors::DataFrame(
+            assay = "assay1", colname = c("A", "B", "C"),
+            element_type = "points", region = "centroids",
+            instance_id = c("A", "B", "C")))
+}
+
+makeLazySpatialMASE <- function(path = NULL) {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+    mase <- makeSpatialMASEFixture()
+    if (is.null(path))
+        path <- file.path(tempdir(), paste0("mase_lazy_", sample.int(1e6, 1L)))
+    BiocDuckDB::writeParquet(mase, path)
+    BiocDuckDB::readParquet(path)
+}

@@ -12,6 +12,13 @@
 #' \itemize{
 #'   \item Array-like objects - converted to coordinate (long) format
 #'   \item \code{data.frame} / \code{DataFrame} objects - written with field type metadata
+#'   \item \code{DuckDBTable} / \code{DuckDBDataFrame} objects - lazy SQL
+#'     \code{COPY TO} export via \code{\link[DuckDBDataFrame]{writeDuckDBTableParquet}}
+#'     in \code{\link[DuckDBDataFrame]{parquet-io}} (same \code{append}, \code{offset},
+#'     \code{part} contract as in-memory tables)
+#'   \item \code{DuckDBTransposedDataFrame}, \code{DuckDBSelfHits},
+#'     \code{DuckDBGRanges}, \code{DuckDBGRangesList} - delegate to the underlying
+#'     lazy table without materializing
 #'   \item \code{TransposedDataFrame} objects - transposed before writing
 #'   \item \code{list} / \code{List} objects - each element dispatched individually;
 #'     requires \code{dimension}; \code{layout} defaults to \code{NULL} (each
@@ -81,24 +88,27 @@
 #' \code{"data_frame"}, \code{"coord_array"}, \code{"embedding_table"},
 #' \code{"genomic_ranges"}, \code{"graph_edges"}, \code{"nested_data_frame"},
 #' \code{"nested_experiment"}.
-#' @param append Logical. For \code{data.frame} and \code{DataFrame} methods:
-#' when \code{TRUE}, append a new flat \code{part-*.parquet} file under
-#' \code{path} (requires \code{part}). For array-like objects (\code{ANY} method):
-#' forwarded to \code{\link[DuckDBArray]{writeCoordArray}} for hive-partition
-#' append (requires \code{length(grid) > 1L}; see \code{along},
-#' \code{group_offset} there). Defaults to \code{FALSE}.
-#' @param offset Non-negative integer. For \code{data.frame} methods: added to
-#' the index column when \code{indexcol} is set
-#' (\code{offset + seq_len(nrow(x))}); ignored when \code{indexcol} is
-#' \code{NULL}. For array-like objects: forwarded to
+#' @param append Logical. For \code{data.frame}, \code{DataFrame}, and
+#' \code{DuckDBTable} methods: when \code{TRUE}, append a new flat
+#' \code{part-*.parquet} file under \code{path} (requires \code{part}). For
+#' array-like objects (\code{ANY} method): forwarded to
+#' \code{\link[DuckDBArray]{writeCoordArray}} for hive-partition append
+#' (requires \code{length(grid) > 1L}; see \code{along}, \code{group_offset}
+#' there). Defaults to \code{FALSE}.
+#' @param offset Non-negative integer. For \code{data.frame} and
+#' \code{DuckDBTable} methods: added to the index column when \code{indexcol}
+#' is set (\code{offset + seq_len(nrow(x))} in memory;
+#' \code{offset + row_number()} in SQL for lazy tables); ignored when
+#' \code{indexcol} is \code{NULL}. For array-like objects: forwarded to
 #' \code{\link[DuckDBArray]{writeCoordArray}} as the coordinate shift along
 #' \code{along}. Defaults to \code{0L}.
-#' @param part Optional non-negative integer; \code{data.frame} methods only.
-#' When set, write a single \code{part-<n>.parquet} file via
-#' \code{arrow::write_parquet} instead of \code{arrow::write_dataset}.
-#' Required when \code{append = TRUE} on table writes.
+#' @param part Optional non-negative integer; \code{data.frame} and
+#' \code{DuckDBTable} methods. When set, write a single \code{part-<n>.parquet}
+#' file (via \code{arrow::write_parquet} for in-memory tables, or DuckDB
+#' \code{COPY TO} for lazy tables). Required when \code{append = TRUE} on table
+#' writes.
 #' @param part_digits Zero-padding width for \code{part} in the filename (e.g.
-#' \code{2L} yields \code{part-00.parquet}). \code{data.frame} methods only.
+#' \code{2L} yields \code{part-00.parquet}). Table methods (in-memory and lazy).
 #' @param package For experiment-level methods (\code{SummarizedExperiment},
 #' etc.), a list used to accumulate \code{datapackage.json} contents before
 #' writing. Primitive \code{data.frame} methods ignore this argument; capture
@@ -290,8 +300,11 @@
 #'   \item \code{\link[DuckDBArray]{writeCoordArray}} for coord-array layout,
 #'     hive partitioning, and array append (\code{append}, \code{along},
 #'     \code{offset}, \code{group_offset})
-#'   \item \code{\link[DuckDBDataFrame]{parquet-io}} for flat table append
-#'     validation (\code{checkAppendPart}, \code{validateAppendOffset})
+#'   \item \code{\link[DuckDBDataFrame]{parquet-io}} for shared Parquet I/O:
+#'     flat append validation (\code{setupFlatParquetWrite}, \code{checkAppendPart},
+#'     \code{validateAppendOffset}), SQL \code{COPY TO} helpers
+#'     (\code{buildParquetCopySQL}), and lazy table export
+#'     (\code{writeDuckDBTableParquet})
 #'   \item \code{\link{createDimTables}} for creating dimension lookup tables
 #'   \item \code{\link[arrow]{write_dataset}} and \code{\link[arrow]{write_parquet}}
 #'   \item \code{\link[S4Arrays]{ArrayGrid}} for grid partitioning
@@ -589,7 +602,7 @@ function(x,
     for (nm in c("geometry", "geom", "wkb")) {
         if (nm %in% nms) {
             col <- x[[nm]]
-            if (inherits(col, "sfc"))
+            if (inherits(col, "sfc") || is(col, "DuckDBColumn"))
                 return(nm)
             if (is.list(col) && length(col) > 0L &&
                 all(vapply(col, function(r) is.null(r) || is.raw(r), NA)))
@@ -599,57 +612,115 @@ function(x,
     NULL
 }
 
-.parquetPartPath <- function(path, part, part_digits = 0L) {
-    fmt <- if (part_digits > 0L) {
-        paste0("part-%0", as.integer(part_digits), "d.parquet")
-    } else {
-        "part-%d.parquet"
+.spatialCoordsSchema <- function(x, layout) {
+    if (!layout %in% c("spatial_points", "spatial_shapes"))
+        return(NULL)
+    nms <- colnames(x)
+    out <- list()
+    for (role in c("x", "y", "z", "instance_id", "geometry")) {
+        if (role %in% nms)
+            out[[role]] <- role
     }
-    file.path(path, sprintf(fmt, as.integer(part)))
+    geom <- .geometryCol(x)
+    if (!is.null(geom))
+        out[["geometry"]] <- geom
+    if (length(out))
+        out
+    else
+        NULL
 }
 
-#' @importFrom S4Vectors isSingleNumber
-.validateWriteParquetPart <- function(part) {
-    if (is.null(part)) {
-        return(NULL)
+.buildTableResourceMetadata <-
+function(x, path, name, dimension, layout, indexcol, keycol, dimtbl)
+{
+    has_key <- !is.null(keycol) && keycol %in% colnames(x)
+
+    schema <- list(fields = lapply(colnames(x), function(j) {
+        .buildFieldSpec(name = j, x = x[[j]])
+    }))
+
+    if (!is.null(indexcol)) {
+        schema[["sortOrder"]] <- list(
+            list(field = indexcol, direction = "ascending")
+        )
     }
-    if (!isSingleNumber(part) || part != as.integer(part) || part < 0L) {
-        stop("'part' must be NULL or a single non-negative integer")
+
+    if (has_key && keycol %in% colnames(x)) {
+        schema[["primaryKey"]] <- keycol
+    } else if (!is.null(indexcol)) {
+        schema[["primaryKey"]] <- indexcol
     }
-    as.integer(part)
+
+    if (!is.null(dimtbl) && ncol(dimtbl) > 0L)
+        schema[["partitioning"]] <- colnames(dimtbl)
+
+    spatial_coords <- .spatialCoordsSchema(x, layout)
+    if (!is.null(spatial_coords))
+        schema[["spatialCoords"]] <- spatial_coords
+
+    list(list(name = name,
+              path = basename(path),
+              dimension = dimension,
+              layout = layout,
+              format = "parquet",
+              mediatype = "application/vnd.apache.parquet",
+              schema = schema))
 }
 
 .isSubsequentFlatPart <- function(append, part) {
     isTRUE(append) && !is.null(part) && as.integer(part) > 0L
 }
 
+.hasLazyGeometryColumn <- function(x) {
+    ct <- tryCatch(DuckDBDataFrame::coltypes(x), error = function(e) character())
+    any(ct == "geometry") || "geometry" %in% colnames(x)
+}
+
+#' @importFrom DuckDBDataFrame dbconn writeDuckDBTableParquet
+.writeDuckDBParquet <-
+function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
+         append = FALSE, offset = 0L, part = NULL, part_digits = 0L, ...)
+{
+    geom_write <- identical(layout, "spatial_shapes") || .hasLazyGeometryColumn(x)
+    if (geom_write) {
+        if (isTRUE(append) || (!is.null(part) && as.integer(part) > 0L))
+            stop("flat append ('append', 'part') is not supported for geometry tables")
+        if (requireNamespace("DuckDBSpatial", quietly = TRUE)) {
+            DuckDBSpatial::enableGeoParquetConversion(dbconn(x))
+        }
+    }
+
+    result <- writeDuckDBTableParquet(
+        x, path = path, indexcol = indexcol, keycol = keycol, dimtbl = dimtbl,
+        append = append, offset = offset, part = part, part_digits = part_digits,
+        ...)
+    if (isTRUE(result$subsequent_part))
+        return(invisible(NULL))
+    resources <- .buildTableResourceMetadata(
+        result$sample_df, path = result$dir, name = name, dimension = dimension,
+        layout = layout, indexcol = indexcol, keycol = keycol, dimtbl = dimtbl)
+    invisible(resources)
+}
+
 #' @importFrom arrow Array write_dataset write_parquet
-#' @importFrom DuckDBDataFrame arrowType checkAppendPart reconcileParquetSchema
-#' @importFrom DuckDBDataFrame validateAppendOffset
+#' @importFrom DuckDBDataFrame arrowType reconcileParquetSchema setupFlatParquetWrite
 #' @importFrom S4Vectors I
 #' @importFrom stats setNames
 .writeDataFrameParquet <-
 function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
          append = FALSE, offset = 0L, part = NULL, part_digits = 0L, ...)
 {
-    if (!dir.exists(path)) {
-        dir.create(path, recursive = TRUE)
-    }
-
-    part <- .validateWriteParquetPart(part)
-    if (isTRUE(append) && is.null(part)) {
-        stop("'append = TRUE' requires 'part'")
-    }
-    if (!is.null(part) && isTRUE(append)) {
-        checkAppendPart(path, part, part_digits)
-    }
-
-    flat_part <- !is.null(part)
+    prep <- setupFlatParquetWrite(
+        path, append = append, offset = offset, part = part,
+        part_digits = part_digits, indexcol = indexcol,
+        reconcile_columns = NULL, create = TRUE)
+    part <- prep$part
+    offset <- prep$offset
+    flat_part <- prep$flat_part
 
     if (is.null(indexcol)) {
         index <- NULL
     } else {
-        offset <- validateAppendOffset(offset)
         index <- setNames(list(offset + seq_len(nrow(x))), indexcol)
     }
 
@@ -669,28 +740,20 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
             stop("DuckDBSpatial package required for GeoParquet support; ",
                  "install with BiocManager::install('DuckDBSpatial')")
         }
-        # Combine the columns into a single data.frame
         x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
         colnames(x) <- make.unique(colnames(x), sep = "_")
         x <- sf::st_sf(x)
-
-        # defaults to compression = "zstd" and compression_level = 3L
-        DuckDBSpatial::writeGeoParquet(x, file.path(path, "part-0.parquet"),
+        DuckDBSpatial::writeGeoParquet(x, prep$pq_path,
                          geom = attr(x, "sf_column"), ...)
     } else {
-        # Protect the list columns from being coerced to atomic vectors
         for (j in seq_along(x)) {
             if (is.list(x[[j]])) {
                 x[[j]] <- I(x[[j]])
             }
         }
-
-        # Combine the columns into a single data.frame
         x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
         colnames(x) <- make.unique(colnames(x), sep = "_")
 
-        # Per-slab integer narrowing breaks append schemas; use defaults for
-        # flat multi-part writes (see marson2025_combined.R samples tables).
         if (!flat_part && !isTRUE(append)) {
             for (j in seq_along(x)) {
                 if (is.integer(x[[j]]) && length(x[[j]]) > 0L) {
@@ -702,17 +765,14 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
         if (isTRUE(append)) {
             int_cols <- colnames(x)[vapply(x, is.integer, logical(1L))]
             if (length(int_cols) > 0L) {
-                arrowtypes <- setNames(
-                    rep(list(NULL), length(int_cols)),
-                    int_cols
-                )
+                arrowtypes <- setNames(rep(list(NULL), length(int_cols)),
+                                       int_cols)
                 reconcileParquetSchema(path, int_cols, arrowtypes)
             }
         }
 
         if (flat_part) {
-            pq_path <- .parquetPartPath(path, part, part_digits)
-            write_parquet(x, pq_path, compression = "zstd",
+            write_parquet(x, prep$pq_path, compression = "zstd",
                           compression_level = 3L, ...)
         } else {
             write_dataset(x, path, format = "parquet", compression = "zstd",
@@ -720,36 +780,9 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
         }
     }
 
-    schema <- list(fields = lapply(colnames(x), function(j) {
-                       .buildFieldSpec(name = j, x = x[[j]])
-                   }))
-
-    # sortOrder represents physical organization (row index)
-    if (!is.null(indexcol)) {
-        schema[["sortOrder"]] <- list(
-            list(field = indexcol, direction = "ascending")
-        )
-    }
-
-    # primaryKey represents logical identity (row names if present, else row index)
-    if (!is.null(key)) {
-        schema[["primaryKey"]] <- keycol
-    } else if (!is.null(indexcol)) {
-        schema[["primaryKey"]] <- indexcol
-    }
-
-    # Add partitioning columns (if dimtbl provided)
-    if (!is.null(dimtbl) && ncol(dimtbl) > 0L) {
-        schema[["partitioning"]] <- colnames(dimtbl)
-    }
-
-    list(list(name = name,
-              path = basename(path),
-              dimension = dimension,
-              layout = layout,
-              format = "parquet",
-              mediatype = "application/vnd.apache.parquet",
-              schema = schema))
+    .buildTableResourceMetadata(
+        x, path = path, name = name, dimension = dimension, layout = layout,
+        indexcol = indexcol, keycol = keycol, dimtbl = dimtbl)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -825,6 +858,197 @@ function(x,
     if (.isSubsequentFlatPart(append, part)) {
         return(invisible(NULL))
     }
+    invisible(resources)
+})
+
+### DuckDBTable objects (lazy SQL COPY TO)
+###
+
+#' @export
+#' @importClassesFrom DuckDBDataFrame DuckDBTable
+#' @rdname writeParquet
+setMethod("writeParquet", "DuckDBTable",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
+         name = basename(path),
+         dimension = c("unbound", "sample", "feature", "crossed"),
+         layout = "data_frame",
+         ...)
+{
+    dimension <- match.arg(dimension)
+    .writeDuckDBParquet(x, path = path, indexcol = indexcol, keycol = keycol,
+                        dimtbl = dimtbl, name = name, dimension = dimension,
+                        layout = layout, append = append, offset = offset,
+                        part = part, part_digits = part_digits, ...)
+})
+
+### DuckDBDataFrame objects (lazy write without materialization)
+###
+
+#' @export
+#' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
+#' @rdname writeParquet
+setMethod("writeParquet", "DuckDBDataFrame",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
+         name = basename(path),
+         dimension = c("unbound", "sample", "feature", "crossed"),
+         layout = "data_frame",
+         ...)
+{
+    dimension <- match.arg(dimension)
+    .writeDuckDBParquet(x, path = path, indexcol = indexcol, keycol = keycol,
+                        dimtbl = dimtbl, name = name, dimension = dimension,
+                        layout = layout, append = append, offset = offset,
+                        part = part, part_digits = part_digits, ...)
+})
+
+### DuckDBTransposedDataFrame objects
+###
+
+#' @export
+#' @importClassesFrom DuckDBDataFrame DuckDBTransposedDataFrame
+#' @rdname writeParquet
+setMethod("writeParquet", "DuckDBTransposedDataFrame",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
+         name = basename(path),
+         dimension = "crossed",
+         layout = "transposed_data_frame",
+         ...)
+{
+    resources <- callGeneric(t(x), path = path, indexcol = indexcol,
+                             keycol = keycol, dimtbl = dimtbl,
+                             append = append, offset = offset, part = part,
+                             part_digits = part_digits, name = name,
+                             dimension = dimension, layout = layout, ...)
+    invisible(resources)
+})
+
+### DuckDBSelfHits objects
+###
+
+#' @export
+#' @importClassesFrom DuckDBDataFrame DuckDBSelfHits
+#' @importFrom S4Vectors nnode
+#' @rdname writeParquet
+setMethod("writeParquet", "DuckDBSelfHits",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
+         name = basename(path),
+         dimension = c("unbound", "sample", "feature"),
+         layout = "graph_edges",
+         ...)
+{
+    dimension <- match.arg(dimension)
+    resources <- callGeneric(x@frame, path = path, indexcol = indexcol,
+                             keycol = keycol, dimtbl = dimtbl,
+                             append = append, offset = offset, part = part,
+                             part_digits = part_digits, name = name,
+                             dimension = dimension, layout = layout, ...)
+    if (is.null(resources))
+        return(invisible(NULL))
+    schema <- resources[[length(resources)]][["schema"]]
+    schema <- .addGraphMetadata(schema, nnode(x))
+    resources[[length(resources)]][["schema"]] <- schema
+    invisible(resources)
+})
+
+### DuckDBGRanges objects
+###
+
+#' @export
+#' @importClassesFrom DuckDBGRanges DuckDBGRanges
+#' @rdname writeParquet
+setMethod("writeParquet", "DuckDBGRanges",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
+         name = basename(path),
+         dimension = c("feature", "unbound"),
+         layout = "genomic_ranges",
+         ...)
+{
+    dimension <- match.arg(dimension)
+    resources <- callGeneric(x@frame, path = path, indexcol = indexcol,
+                             keycol = keycol, dimtbl = dimtbl,
+                             append = append, offset = offset, part = part,
+                             part_digits = part_digits, name = name,
+                             dimension = dimension, layout = layout, ...)
+    if (is.null(resources))
+        return(invisible(NULL))
+    schema <- resources[[length(resources)]][["schema"]]
+    schema <- .addGenomicMetadata(schema)
+    resources[[length(resources)]][["schema"]] <- schema
+    invisible(resources)
+})
+
+### DuckDBGRangesList objects
+###
+
+#' @export
+#' @importClassesFrom DuckDBGRanges DuckDBGRangesList
+#' @rdname writeParquet
+setMethod("writeParquet", "DuckDBGRangesList",
+function(x,
+         path,
+         indexcol = "__index__",
+         keycol = "__name__",
+         dimtbl = NULL,
+         append = FALSE,
+         offset = 0L,
+         part = NULL,
+         part_digits = 0L,
+         name = basename(path),
+         dimension = c("feature", "unbound"),
+         layout = "genomic_ranges_list",
+         ...)
+{
+    dimension <- match.arg(dimension)
+    resources <- callGeneric(x@frame, path = path, indexcol = indexcol,
+                             keycol = keycol, dimtbl = dimtbl,
+                             append = append, offset = offset, part = part,
+                             part_digits = part_digits, name = name,
+                             dimension = dimension, layout = layout, ...)
+    if (is.null(resources))
+        return(invisible(NULL))
+    schema <- resources[[length(resources)]][["schema"]]
+    schema <- .addGenomicMetadata(schema)
+    resources[[length(resources)]][["schema"]] <- schema
     invisible(resources)
 })
 
@@ -1527,13 +1751,20 @@ function(x,
     if (length(imgs) > 0L) {
         imgs_dir <- file.path(path, "images")
         dir.create(imgs_dir, showWarnings = FALSE, recursive = TRUE)
+        img_resources <- list()
         for (i in seq_along(imgs)) {
             nm <- names(imgs)[i]
-            img_meta <- list(name = nm, type = "image", path = NA_character_)
-            write_json(img_meta, file.path(imgs_dir, paste0(nm, ".json")),
-                       auto_unbox = TRUE, pretty = TRUE)
+            el_path <- file.path(imgs_dir, nm)
+            .writeRasterRef(imgs[[i]], el_path, nm, type = "image")
+            img_resources <- c(img_resources, list(list(
+                name = paste0("sample_images_", nm),
+                path = file.path("images", nm),
+                dimension = "sample",
+                layout = "spatial_raster_ref",
+                format = "json",
+                mediatype = "application/json")))
         }
-        package[["resources"]] <- c(package[["resources"]],
+        package[["resources"]] <- c(package[["resources"]], img_resources,
                                     list(list(name = "images",
                                               path = "images")))
     }
@@ -1543,13 +1774,33 @@ function(x,
     if (length(lbls) > 0L) {
         lbls_dir <- file.path(path, "labels")
         dir.create(lbls_dir, showWarnings = FALSE, recursive = TRUE)
+        lab_resources <- list()
         for (i in seq_along(lbls)) {
             nm <- names(lbls)[i]
-            lbl_meta <- list(name = nm, type = "label", path = NA_character_)
-            write_json(lbl_meta, file.path(lbls_dir, paste0(nm, ".json")),
-                       auto_unbox = TRUE, pretty = TRUE)
+            el <- lbls[[i]]
+            el_path <- file.path(lbls_dir, nm)
+            if (is.matrix(el) || is.array(el)) {
+                coo_path <- file.path(el_path, "coord")
+                .matrixToCoordLabel(el, coo_path)
+                lab_resources <- c(lab_resources, list(list(
+                    name = paste0("sample_labels_", nm),
+                    path = file.path("labels", nm, "coord"),
+                    dimension = "sample",
+                    layout = "spatial_label_coord",
+                    format = "parquet",
+                    mediatype = "application/vnd.apache.parquet")))
+            } else {
+                .writeRasterRef(el, el_path, nm, type = "label")
+                lab_resources <- c(lab_resources, list(list(
+                    name = paste0("sample_labels_", nm),
+                    path = file.path("labels", nm),
+                    dimension = "sample",
+                    layout = "spatial_raster_ref",
+                    format = "json",
+                    mediatype = "application/json")))
+            }
         }
-        package[["resources"]] <- c(package[["resources"]],
+        package[["resources"]] <- c(package[["resources"]], lab_resources,
                                     list(list(name = "labels",
                                               path = "labels")))
     }

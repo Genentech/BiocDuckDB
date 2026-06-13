@@ -60,3 +60,44 @@ test_that("writeParquet append requires part", {
         "requires 'part'"
     )
 })
+
+test_that("writeParquet DuckDBDataFrame flat parts use offset for index column", {
+    tf1 <- tempfile(fileext = ".parquet")
+    tf2 <- tempfile(fileext = ".parquet")
+    on.exit(unlink(c(tf1, tf2)), add = TRUE)
+    arrow::write_parquet(data.frame(value = 1:3), tf1)
+    arrow::write_parquet(data.frame(value = 4:5), tf2)
+    x1 <- DuckDBDataFrame::DuckDBDataFrame(tf1)
+    x2 <- DuckDBDataFrame::DuckDBDataFrame(tf2)
+
+    path <- tempfile()
+    dir.create(path)
+    on.exit(unlink(path, recursive = TRUE), add = TRUE)
+
+    res1 <- writeParquet(x1, path, indexcol = "__sample__", keycol = NULL,
+                         part = 0L, name = "samples", dimension = "sample")
+    expect_length(res1, 1L)
+    res2 <- writeParquet(x2, path, indexcol = "__sample__", keycol = NULL,
+                         offset = 3L, part = 1L, append = TRUE,
+                         name = "samples", dimension = "sample")
+    expect_null(res2)
+
+    pq1 <- arrow::read_parquet(file.path(path, "part-0.parquet"))
+    pq2 <- arrow::read_parquet(file.path(path, "part-1.parquet"))
+    expect_equal(pq1$`__sample__`, 1:3)
+    expect_equal(pq2$`__sample__`, 4:5)
+})
+
+test_that("writeParquet DuckDBDataFrame round-trip stays lazy", {
+    tf <- tempfile(fileext = ".parquet")
+    on.exit(unlink(tf), add = TRUE)
+    arrow::write_parquet(data.frame(x = 1:5, y = letters[1:5]), tf)
+    x <- DuckDBDataFrame::DuckDBDataFrame(tf)
+    path <- tempfile()
+    dir.create(path)
+    on.exit(unlink(path, recursive = TRUE), add = TRUE)
+    writeParquet(x, path, indexcol = NULL, keycol = NULL)
+    x2 <- DuckDBDataFrame::DuckDBDataFrame(file.path(path, "part-0.parquet"))
+    expect_s4_class(x2, "DuckDBDataFrame")
+    expect_equal(as.data.frame(x2), as.data.frame(x))
+})
