@@ -42,6 +42,27 @@ MASE defaults are used when no lazy layers are present.
 }
 }
 
+\examples{
+if (requireNamespace("MultiAssaySpatialExperiment", quietly = TRUE) &&
+    requireNamespace("sf", quietly = TRUE)) {
+    pts <- S4Vectors::DataFrame(
+        x = 1:3, y = 1:3, instance_id = c("A", "B", "C"))
+    mat <- matrix(1:9, 3, 3,
+        dimnames = list(paste0("G", 1:3), c("A", "B", "C")))
+    mase <- MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
+        experiments = MultiAssayExperiment::ExperimentList(rna = mat),
+        colData = S4Vectors::DataFrame(row.names = "s1"),
+        sampleMap = S4Vectors::DataFrame(
+            assay = "rna", primary = "s1", colname = c("A", "B", "C")),
+        points = MultiAssaySpatialExperiment::PointsLayerList(centroids = pts))
+    tmp <- tempfile()
+    writeParquet(mase, tmp)
+    mase2 <- readParquet(tmp)
+    subsetByBoundingBox(mase2, xmin = 1, xmax = 3, ymin = 1, ymax = 3)
+    unlink(tmp, recursive = TRUE)
+}
+
+}
 \seealso{
 \code{\link[MultiAssaySpatialExperiment]{readParquetForMASE}},
 \code{\link[MultiAssaySpatialExperiment]{readGeoParquetForMASE}},

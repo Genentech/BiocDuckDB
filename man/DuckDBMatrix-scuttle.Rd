@@ -158,6 +158,18 @@ that use SQL GROUP BY operations for efficient pseudo-bulk analysis:
 }
 }
 
+\examples{
+mat <- matrix(rpois(500, 5), 25, 20)
+dimnames(mat) <- list(paste0("G", 1:25), paste0("C", 1:20))
+names(dimnames(mat)) <- c("index1", "index2")
+tmp <- tempfile()
+writeParquet(mat, tmp)
+pqmat <- DuckDBMatrix(tmp, datacol = "value",
+    keycols = lapply(dimnames(mat), function(x) setNames(seq_along(x), x)))
+head(librarySizeFactors(pqmat))
+unlink(tmp, recursive = TRUE)
+
+}
 \seealso{
 \itemize{
   \item \code{\link{DuckDBMatrix-class}} for the main class

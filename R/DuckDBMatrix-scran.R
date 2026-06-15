@@ -232,6 +232,17 @@
 #'
 #' @keywords utilities methods
 #'
+#' @examples
+#' mat <- matrix(rpois(500, 5), 25, 20)
+#' dimnames(mat) <- list(paste0("G", 1:25), paste0("C", 1:20))
+#' names(dimnames(mat)) <- c("index1", "index2")
+#' tmp <- tempfile()
+#' writeParquet(mat, tmp)
+#' pqmat <- DuckDBMatrix(tmp, datacol = "value",
+#'     keycols = lapply(dimnames(mat), function(x) setNames(seq_along(x), x)))
+#' head(scran::modelGeneVarByPoisson(pqmat))
+#' unlink(tmp, recursive = TRUE)
+#'
 #' @name DuckDBMatrix-scran
 NULL
 

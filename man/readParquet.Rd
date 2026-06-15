@@ -160,6 +160,18 @@ specification (extended by the BiocDuckDB profile), parsing the
 }
 }
 
+\examples{
+se <- SummarizedExperiment::SummarizedExperiment(
+    assays = list(counts = matrix(rpois(500, 5), 25, 20)),
+    colData = S4Vectors::DataFrame(sample = rep(c("A", "B"), each = 10)))
+tmpdir <- tempfile()
+writeParquet(se, tmpdir)
+se2 <- readParquet(tmpdir)
+class(se2)
+dim(se2)
+unlink(tmpdir, recursive = TRUE)
+
+}
 \seealso{
 \itemize{
   \item \code{\link{writeParquet}} for writing Bioconductor objects to parquet

@@ -152,6 +152,17 @@
 #'   \item \code{\linkS4class{DuckDBSelfHits}} for graph edge lists
 #' }
 #'
+#' @examples
+#' se <- SummarizedExperiment::SummarizedExperiment(
+#'     assays = list(counts = matrix(rpois(500, 5), 25, 20)),
+#'     colData = S4Vectors::DataFrame(sample = rep(c("A", "B"), each = 10)))
+#' tmpdir <- tempfile()
+#' writeParquet(se, tmpdir)
+#' se2 <- readParquet(tmpdir)
+#' class(se2)
+#' dim(se2)
+#' unlink(tmpdir, recursive = TRUE)
+#'
 #' @include fieldtypes.R
 #'
 #' @export
@@ -219,28 +230,21 @@ function(path,
 }
 
 .referencedMetadataResources <- function(annotations) {
-    refs <- character(0L)
-    walk <- function(x) {
+    .collectRefs <- function(x) {
         if (!.isMetadataStub(x)) {
-            if (is.list(x) && !is.data.frame(x)) {
-                for (v in x)
-                    walk(v)
-            }
-            return(invisible(NULL))
+            if (is.list(x) && !is.data.frame(x))
+                return(unlist(lapply(x, .collectRefs), use.names = FALSE))
+            return(character(0L))
         }
-        if (identical(x[["__type__"]], "parquet_ref")) {
-            refs <<- c(refs, x[["resource"]])
-        } else if (identical(x[["__type__"]], "nested_mapping")) {
-            for (nm in names(x)) {
-                if (!identical(nm, "__type__"))
-                    walk(x[[nm]])
-            }
+        if (identical(x[["__type__"]], "parquet_ref"))
+            return(x[["resource"]])
+        if (identical(x[["__type__"]], "nested_mapping")) {
+            nms <- setdiff(names(x), "__type__")
+            return(unlist(lapply(x[nms], .collectRefs), use.names = FALSE))
         }
-        invisible(NULL)
+        character(0L)
     }
-    for (v in annotations)
-        walk(v)
-    unique(refs)
+    unique(unlist(lapply(annotations, .collectRefs), use.names = FALSE))
 }
 
 .deserializeMetadataValue <- function(value, resources_by_name, path, ...) {

@@ -64,6 +64,19 @@
 #'
 #' \code{\link[DuckDBDataFrame]{extractNODES}} for the node-based subsetting method.
 #'
+#' @examples
+#' library(SingleCellExperiment)
+#' sce <- SingleCellExperiment(assays = list(counts = matrix(1:50, 10, 5)))
+#' hits <- S4Vectors::SelfHits(from = 1:3, to = 2:4, nnode = 5L)
+#' tmp <- tempfile()
+#' writeParquet(hits, tmp)
+#' ddb_hits <- DuckDBSelfHits(tmp, from = "from", to = "to", nnode = 5L)
+#' colPair(sce, "knn") <- ddb_hits
+#' ds <- colPair(sce, "knn")
+#' length(ds)
+#' ds[1:3]
+#' unlink(tmp, recursive = TRUE)
+#'
 #' @name DuckDBDualSubset-class
 NULL
 

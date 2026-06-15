@@ -31,6 +31,18 @@ SQL-backed spatial operations.
 }
 }
 
+\examples{
+if (requireNamespace("DuckDBSpatial", quietly = TRUE)) {
+    df <- data.frame(id = 1:3, x = 1:3, y = 1:3)
+    path <- tempfile(fileext = ".parquet")
+    arrow::write_parquet(df, path)
+    ddb <- DuckDBDataFrame(path, datacols = c("x", "y"), keycol = "id")
+    polygon <- "POLYGON((0 0, 6 0, 6 6, 0 6, 0 0))"
+    spatialOverlaps(ddb, polygon, coords = c("x", "y"))
+    unlink(path)
+}
+
+}
 \seealso{
 \code{\link[MultiAssaySpatialExperiment]{spatialOverlaps}},
 \code{\link[MultiAssaySpatialExperiment]{spatialMatch}}, and

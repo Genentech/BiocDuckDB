@@ -66,6 +66,20 @@
 #' \code{\link[SingleCellExperiment]{colPairs}} and
 #' \code{\link[SingleCellExperiment]{rowPairs}} for the base SingleCellExperiment methods.
 #'
+#' @examples
+#' library(SingleCellExperiment)
+#' sce <- SingleCellExperiment(assays = list(counts = matrix(1:50, 10, 5)))
+#' hits <- S4Vectors::SelfHits(
+#'     from = rep(1:5, each = 2),
+#'     to = sample(1:5, 10, replace = TRUE),
+#'     nnode = 5L)
+#' tmp <- tempfile()
+#' writeParquet(hits, tmp)
+#' ddb_hits <- DuckDBSelfHits(tmp, from = "from", to = "to", nnode = 5L)
+#' colPair(sce, "knn") <- ddb_hits
+#' class(colPair(sce, "knn"))
+#' unlink(tmp, recursive = TRUE)
+#'
 #' @name SingleCellExperiment-pairs
 NULL
 
