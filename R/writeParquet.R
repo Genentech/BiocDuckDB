@@ -341,6 +341,14 @@ function(x, path, ...)
 ### Helper functions
 ###
 
+### Frictionless profile that the emitted datapackage.json declares conformance
+### to via its top-level "$schema". Pre-release we point at the canonical,
+### resolvable base Data Package v2 profile: BiocDuckDB's extensions are
+### additive and base-conformant by design, so this is a true, dereferenceable
+### claim. Switch to the published BiocDuckDB profile $id at Bioconductor release
+### (a one-line change here).
+.BIOCDUCKDB_PROFILE <- "https://datapackage.org/profiles/2.0/datapackage.json"
+
 .prefixSeq <- function(prefix, n) {
     sprintf(paste0(prefix, "%0", floor(log10(n)) + 1L, "d"), seq_len(n))
 }
@@ -506,7 +514,7 @@ function(x, path, ...)
 ###
 
 #' @export
-#' @importFrom DelayedArray defaultAutoGrid getAutoBPPARAM
+#' @importFrom DelayedArray defaultAutoGrid getAutoBPPARAM type
 #' @importFrom DuckDBArray writeCoordArray
 #' @importFrom S4Vectors head tail
 #' @importFrom SparseArray COO_SparseArray
@@ -557,7 +565,7 @@ function(x,
     fields <- c(lapply(seq_along(indexcols),
                        function(i) {
                            if (is.null(dimnames_x[[i]])) {
-                               list(name = indexcols[i])
+                               list(name = indexcols[i], type = "integer")
                            } else {
                                list(name = indexcols[i], type = "integer",
                                     categories =
@@ -569,7 +577,7 @@ function(x,
                                     categoriesOrdered = TRUE)
                            }
                        }),
-                list(list(name = datacol)))
+                list(.buildFieldSpec(name = datacol, x = vector(type(x)))))
 
     # Generate foreign key metadata
     if (is.null(indexrefs)) {
@@ -1431,6 +1439,9 @@ function(x,
     package[["resources"]] <- c(package[["resources"]], ser$resources)
     package[["annotations"]] <- ser[["annotations"]]
 
+    # Declare the Frictionless profile
+    package <- c(list("$schema" = .BIOCDUCKDB_PROFILE), package)
+
     write_json(package, path = file.path(path, "datapackage.json"),
                auto_unbox = TRUE, pretty = TRUE)
 
@@ -1681,6 +1692,9 @@ function(x,
     ser <- .serializeMetadata(x, path = path, ...)
     package[["resources"]] <- c(package[["resources"]], ser$resources)
     package[["annotations"]] <- ser[["annotations"]]
+
+    # Declare the Frictionless profile
+    package <- c(list("$schema" = .BIOCDUCKDB_PROFILE), package)
 
     write_json(package, path = file.path(path, "datapackage.json"),
                auto_unbox = TRUE, pretty = TRUE)
