@@ -50,6 +50,7 @@ writeParquet(x, path, ...)
   indexcol = "__index__",
   keycol = "__name__",
   dimtbl = NULL,
+  refs = NULL,
   append = FALSE,
   offset = 0L,
   part = NULL,
@@ -66,6 +67,7 @@ writeParquet(x, path, ...)
   indexcol = "__index__",
   keycol = "__name__",
   dimtbl = NULL,
+  refs = NULL,
   append = FALSE,
   offset = 0L,
   part = NULL,
@@ -402,6 +404,13 @@ Set to \code{NULL} to omit this column.}
 
 \item{dimtbl}{For \code{data.frame} and \code{Vector} objects, an optional
 \code{data.frame} containing a dimension table with partitioning information.}
+
+\item{refs}{For flat (\code{data.frame} / \code{DataFrame}) tables, an
+optional list of foreign key references to emit in the schema, the flat
+analog of \code{indexrefs}. Each entry is
+\code{list(fields = <local>, reference = list(fields = <target>, resource = <res>))}.
+Used, for example, to declare the \code{MultiAssayExperiment} sample_map
+\code{primary} -> \code{subjects} correspondence. Defaults to \code{NULL}.}
 
 \item{append}{Logical. For \code{data.frame}, \code{DataFrame}, and
 \code{DuckDBTable} methods: when \code{TRUE}, append a new flat

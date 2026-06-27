@@ -87,3 +87,35 @@ test_that("MultiAssayExperiment datapackage.json conforms to the profile", {
     expect_true(.validateDataPackage(validator, tmpdir))
     unlink(tmpdir, recursive = TRUE)
 })
+
+test_that("MultiAssayExperiment sample_map declares the primary -> subjects foreign key (ADR-053)", {
+    set.seed(203)
+    ngenes <- 10L
+    ncells <- 6L
+    counts <- matrix(rpois(ngenes * ncells, 5), nrow = ngenes, ncol = ncells)
+    rownames(counts) <- paste0("Gene", seq_len(ngenes))
+    colnames(counts) <- paste0("Cell", seq_len(ncells))
+    se <- SummarizedExperiment(assays = list(counts = counts))
+    mae <- MultiAssayExperiment(experiments = ExperimentList(rna = se))
+
+    tmpdir <- tempfile()
+    writeParquet(mae, tmpdir)
+    dp <- jsonlite::fromJSON(file.path(tmpdir, "datapackage.json"),
+                             simplifyVector = FALSE)
+    get_res <- function(nm) Find(function(r) identical(r[["name"]], nm),
+                                 dp[["resources"]])
+    sm <- get_res("sample_map")
+    subj <- get_res("subjects")
+    expect_false(is.null(sm))
+    expect_false(is.null(subj))
+
+    fks <- sm[["schema"]][["foreignKeys"]]
+    expect_equal(length(fks), 1L)
+    expect_identical(fks[[1L]][["fields"]], "primary")
+    expect_identical(fks[[1L]][["reference"]][["resource"]], "subjects")
+    # the FK targets whatever key column 'subjects' actually emitted
+    expect_identical(fks[[1L]][["reference"]][["fields"]],
+                     subj[["schema"]][["primaryKey"]])
+
+    unlink(tmpdir, recursive = TRUE)
+})

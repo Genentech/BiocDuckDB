@@ -62,6 +62,12 @@
 #' if dimension names are not available.
 #' @param indexrefs For array-like objects, an optional list of foreign key
 #' references for the index columns in the schema. Defaults to \code{NULL}.
+#' @param refs For flat (\code{data.frame} / \code{DataFrame}) tables, an
+#' optional list of foreign key references to emit in the schema, the flat
+#' analog of \code{indexrefs}. Each entry is
+#' \code{list(fields = <local>, reference = list(fields = <target>, resource = <res>))}.
+#' Used, for example, to declare the \code{MultiAssayExperiment} sample_map
+#' \code{primary} -> \code{subjects} correspondence. Defaults to \code{NULL}.
 #' @param datacol For array-like objects, a character string specifying the
 #' column name containing the array values in the resulting table. Defaults to
 #' "value".
@@ -639,7 +645,8 @@ function(x,
 }
 
 .buildTableResourceMetadata <-
-function(x, path, name, dimension, layout, indexcol, keycol, dimtbl)
+function(x, path, name, dimension, layout, indexcol, keycol, dimtbl,
+         refs = NULL)
 {
     has_key <- !is.null(keycol) && keycol %in% colnames(x)
 
@@ -658,6 +665,9 @@ function(x, path, name, dimension, layout, indexcol, keycol, dimtbl)
     } else if (!is.null(indexcol)) {
         schema[["primaryKey"]] <- indexcol
     }
+
+    if (!is.null(refs))
+        schema[["foreignKeys"]] <- refs
 
     if (!is.null(dimtbl) && ncol(dimtbl) > 0L)
         schema[["partitioning"]] <- colnames(dimtbl)
@@ -687,7 +697,8 @@ function(x, path, name, dimension, layout, indexcol, keycol, dimtbl)
 #' @importFrom DuckDBDataFrame dbconn writeDuckDBTableParquet
 .writeDuckDBParquet <-
 function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
-         append = FALSE, offset = 0L, part = NULL, part_digits = 0L, ...)
+         refs = NULL, append = FALSE, offset = 0L, part = NULL,
+         part_digits = 0L, ...)
 {
     geom_write <- identical(layout, "spatial_shapes") || .hasLazyGeometryColumn(x)
     if (geom_write) {
@@ -706,7 +717,8 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
         return(invisible(NULL))
     resources <- .buildTableResourceMetadata(
         result$sample_df, path = result$dir, name = name, dimension = dimension,
-        layout = layout, indexcol = indexcol, keycol = keycol, dimtbl = dimtbl)
+        layout = layout, indexcol = indexcol, keycol = keycol, dimtbl = dimtbl,
+        refs = refs)
     invisible(resources)
 }
 
@@ -716,7 +728,8 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
 #' @importFrom stats setNames
 .writeDataFrameParquet <-
 function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
-         append = FALSE, offset = 0L, part = NULL, part_digits = 0L, ...)
+         refs = NULL, append = FALSE, offset = 0L, part = NULL,
+         part_digits = 0L, ...)
 {
     prep <- setupFlatParquetWrite(
         path, append = append, offset = offset, part = part,
@@ -790,7 +803,7 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
 
     .buildTableResourceMetadata(
         x, path = path, name = name, dimension = dimension, layout = layout,
-        indexcol = indexcol, keycol = keycol, dimtbl = dimtbl)
+        indexcol = indexcol, keycol = keycol, dimtbl = dimtbl, refs = refs)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -805,6 +818,7 @@ function(x,
          indexcol = "__index__",
          keycol = "__name__",
          dimtbl = NULL,
+         refs = NULL,
          append = FALSE,
          offset = 0L,
          part = NULL,
@@ -817,10 +831,11 @@ function(x,
     dimension <- match.arg(dimension)
     resources <- .writeDataFrameParquet(x, path = path, indexcol = indexcol,
                                         keycol = keycol, dimtbl = dimtbl,
-                                        name = name, dimension = dimension,
-                                        layout = layout, append = append,
-                                        offset = offset, part = part,
-                                        part_digits = part_digits, ...)
+                                        refs = refs, name = name,
+                                        dimension = dimension, layout = layout,
+                                        append = append, offset = offset,
+                                        part = part, part_digits = part_digits,
+                                        ...)
     if (.isSubsequentFlatPart(append, part)) {
         return(invisible(NULL))
     }
@@ -840,6 +855,7 @@ function(x,
          indexcol = "__index__",
          keycol = "__name__",
          dimtbl = NULL,
+         refs = NULL,
          append = FALSE,
          offset = 0L,
          part = NULL,
@@ -859,10 +875,11 @@ function(x,
 
     resources <- .writeDataFrameParquet(df, path = path, indexcol = indexcol,
                                         keycol = keycol, dimtbl = dimtbl,
-                                        name = name, dimension = dimension,
-                                        layout = layout, append = append,
-                                        offset = offset, part = part,
-                                        part_digits = part_digits, ...)
+                                        refs = refs, name = name,
+                                        dimension = dimension, layout = layout,
+                                        append = append, offset = offset,
+                                        part = part, part_digits = part_digits,
+                                        ...)
     if (.isSubsequentFlatPart(append, part)) {
         return(invisible(NULL))
     }
@@ -1675,13 +1692,23 @@ function(x,
          ...)
 {
     # Subject Data
-    resources <- callGeneric(colData(x), path = file.path(path, "subjects"),
-                             dimension = "sample", ...)
-    package[["resources"]] <- c(package[["resources"]], resources)
+    subj_res <- callGeneric(colData(x), path = file.path(path, "subjects"),
+                            dimension = "sample", ...)
+    package[["resources"]] <- c(package[["resources"]], subj_res)
 
     # Sample Map
-    resources <- callGeneric(sampleMap(x), path = file.path(path, "sample_map"),
-                             dimension = "unbound", ...)
+    sm <- sampleMap(x)
+    refs <- NULL
+    subj <- Find(function(r) identical(r[["name"]], "subjects"), subj_res)
+    if (!is.null(subj) && !is.null(rownames(colData(x))) &&
+        "primary" %in% colnames(sm)) {
+        refs <- list(list(fields = "primary",
+                          reference = list(
+                              fields = subj[["schema"]][["primaryKey"]],
+                              resource = "subjects")))
+    }
+    resources <- callGeneric(sm, path = file.path(path, "sample_map"),
+                             dimension = "unbound", refs = refs, ...)
     package[["resources"]] <- c(package[["resources"]], resources)
 
     # Experiment Data

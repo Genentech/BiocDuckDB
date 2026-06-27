@@ -194,11 +194,11 @@ function(path,
 ###
 
 .schema_keycols <- function(schema) {
-    if (is.null(schema[["foreignKeys"]])) {
-        schema[["sortOrder"]][[1L]][["field"]] %||% schema[["primaryKey"]]
-    } else {
-        unlist(lapply(schema[["foreignKeys"]], `[[`, "fields"))
+    keycol <- schema[["sortOrder"]][[1L]][["field"]] %||% schema[["primaryKey"]]
+    if (is.null(keycol)) {
+        keycol <- unlist(lapply(schema[["foreignKeys"]], `[[`, "fields"))
     }
+    keycol
 }
 
 .schema_datacols <- function(schema) {
