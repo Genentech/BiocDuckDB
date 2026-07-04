@@ -1,0 +1,16 @@
+---
+# BiocDuckDB CI — MODL shared R-check (base template). Its intra-suite dependencies
+# (DuckDBDataFrame, DuckDBArray, DuckDBGRanges + MultiAssaySpatialExperiment) resolve from
+# Kite at check time, so no cloning is needed for release CI. See modl/modl-ci.
+# (For dev-integration against UNPUBLISHED sibling HEADs, switch to .modl_r_check_with_deps
+#  and set MODL_R_INTERNAL_DEPS in build order:
+#    modl/BiocDuckDB/DuckDBDataFrame modl/BiocDuckDB/DuckDBArray
+#    modl/BiocDuckDB/DuckDBGRanges  modl/BiocDuckDB/MultiAssaySpatialExperiment)
+
+include:
+  - project: 'modl/modl-ci'
+    ref: main
+    file: 'r-check.yml'
+
+check:
+  extends: .modl_r_check
