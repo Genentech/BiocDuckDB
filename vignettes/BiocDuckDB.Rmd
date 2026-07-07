@@ -1,0 +1,230 @@
+---
+title: "Introduction to BiocDuckDB"
+author:
+- name: Patrick Aboyoun
+  email: aboyounp@gene.com
+  affiliation: Genentech, Inc.
+date: "Compiled: `r BiocStyle::doc_date()`; Modified: 6 July 2026"
+package: BiocDuckDB
+vignette: >
+  %\VignetteIndexEntry{1. Introduction to BiocDuckDB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
+                      error = FALSE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+Bioconductor's experiment containers --- `SummarizedExperiment`,
+`SingleCellExperiment`, `MultiAssayExperiment` --- hold their assays, annotations,
+and reduced dimensions in memory. For modern datasets that is increasingly
+impractical: a million-cell single-cell experiment is tens of gigabytes, and a
+multi-omics study multiplies that across assays.
+
+`r Biocpkg("BiocDuckDB")` is the integration layer of the **BiocDuckDB** suite. It
+provides two high-level functions ---
+
+- **`writeParquet()`** serializes a Bioconductor experiment object to a structured
+  directory of columnar **Parquet** files, and
+- **`readParquet()`** reads that directory back as a **DuckDB-backed** experiment
+  object
+
+--- so an experiment keeps its assays on disk while presenting the *same*
+Bioconductor API. Assays become `r Biocpkg("DuckDBArray")` matrices, `rowData` and
+`colData` become `r Biocpkg("DuckDBDataFrame")`s, and `rowRanges` becomes a
+`r Biocpkg("DuckDBGRanges")` list --- and operations on them run as SQL against the
+Parquet files. The on-disk format is a self-describing
+[Frictionless Data Package](https://frictionlessdata.io/), readable by other tools
+and languages, not just R.
+
+This vignette covers the round-trip workflow and the operations it enables. For the
+SQL-optimized `r Biocpkg("scran")`/`r Biocpkg("scuttle")` analysis methods and how
+they perform at scale, see *Benchmarking BiocDuckDB*.
+
+## Installation
+
+```{r install, eval=FALSE}
+if (!require("BiocManager"))
+    install.packages("BiocManager")
+BiocManager::install("BiocDuckDB")
+```
+
+```{r load}
+library(BiocDuckDB)
+library(SummarizedExperiment)
+```
+
+# The round-trip
+
+We write a `SummarizedExperiment` to Parquet and read it back as a DuckDB-backed
+object. The `r CRANpkg("airway")` bulk RNA-seq dataset is a `RangedSummarizedExperiment`,
+so it also exercises the genomic-coordinate path.
+
+```{r roundtrip}
+data(airway, package = "airway")
+
+se_path <- file.path(tempdir(), "airway_se")
+writeParquet(airway, se_path)
+
+airway_ddb <- readParquet(se_path)
+class(airway_ddb)
+dim(airway_ddb)
+```
+
+## The storage layout
+
+`writeParquet()` lays out each component as its own Parquet under a
+Frictionless-style directory, described by a `datapackage.json`:
+
+```{r layout}
+head(list.files(se_path, recursive = TRUE), 10)
+```
+
+Assays are stored in **coordinate (COO) form** --- one row per stored entry with
+`__feature__`/`__sample__` index columns and a `value` --- which is compact for the
+sparse matrices typical of single-cell data, and lets DuckDB scan only what a query
+touches.
+
+## Operations run as SQL
+
+The DuckDB-backed object supports the standard API; component access, subsetting,
+and summaries are pushed to DuckDB:
+
+```{r operations}
+assay(airway_ddb, "counts")
+colData(airway_ddb)[, 1:3]
+
+## subset on disk, then summarize
+sub <- airway_ddb[1:1000, 1:4]
+colSums(assay(sub, "counts"))
+```
+
+Because only stored values and the touched columns are read, the in-memory
+footprint of the object stays small relative to the full data:
+
+```{r memory}
+c(in_memory = object.size(airway),
+  duckdb    = object.size(airway_ddb)) |> format(units = "MB")
+```
+
+## Genomic coordinates are preserved
+
+`writeParquet()` stores a `RangedSummarizedExperiment`'s `rowRanges` as Parquet
+`LIST[]` columns, so they come back as a `r Biocpkg("DuckDBGRanges")` list with the
+genomic API intact:
+
+```{r ranges}
+rr <- rowRanges(airway_ddb)
+class(rr)
+elementNROWS(rr)[1:8]      # exons per gene, queried from disk
+```
+
+# Single-cell data
+
+Single-cell experiments are where the on-disk representation pays off most: the
+matrices are large and sparse, so COO storage compresses well and the DuckDB-backed
+object holds essentially only metadata. A small sparse `SingleCellExperiment`
+illustrates the round-trip:
+
+```{r sce}
+library(SingleCellExperiment)
+library(Matrix)
+
+set.seed(1L)
+counts <- Matrix(rpois(2000 * 500, lambda = 0.3), nrow = 2000, ncol = 500,
+                 sparse = TRUE)
+rownames(counts) <- paste0("Gene", seq_len(nrow(counts)))
+colnames(counts) <- paste0("Cell", seq_len(ncol(counts)))
+sce <- SingleCellExperiment(assays = list(counts = counts))
+
+sce_path <- file.path(tempdir(), "demo_sce")
+writeParquet(sce, sce_path)
+sce_ddb <- readParquet(sce_path)
+
+## QC filtering stays on disk (SQL), then summarize
+totals <- colSums(assay(sce_ddb, "counts"))
+keep <- sce_ddb[, totals > median(totals)]
+dim(keep)
+```
+
+# The filter, realize, analyze pattern
+
+For data larger than memory, the idiomatic workflow uses DuckDB for the parts it
+does well --- filtering and summarizing on disk --- and only then realizes the
+manageable subset into memory for the standard analysis pipeline:
+
+```{r pattern, eval=FALSE}
+library(scran)
+library(scater)
+
+sce_ddb <- readParquet("data/raw_counts")          # DuckDB-backed, low RAM
+
+## 1. filter on disk (SQL-optimized)
+keep <- colSums(assay(sce_ddb, "counts")) > 1000
+sce_ddb <- sce_ddb[, keep]
+detected <- rowSums(assay(sce_ddb, "counts") > 0)
+sce_ddb <- sce_ddb[detected >= 10, ]
+
+## 2. realize the filtered subset into memory
+sce <- as(sce_ddb, "SingleCellExperiment")
+
+## 3. standard in-memory pipeline
+sce <- logNormCounts(sce)
+dec <- modelGeneVar(sce)
+sce <- runPCA(sce[getTopHVGs(dec, n = 2000), ])
+
+## 4. persist results back to Parquet
+writeParquet(sce, "data/processed")
+```
+
+Many `r Biocpkg("scran")`/`r Biocpkg("scuttle")` steps can run *directly* on the
+DuckDB-backed object as SQL, before any realization --- that is the subject of
+*Benchmarking BiocDuckDB*.
+
+# Multi-omics
+
+For a `MultiAssayExperiment`, write each experiment to its own directory and read
+them back as DuckDB-backed experiments:
+
+```{r mae, eval=FALSE}
+library(MultiAssayExperiment)
+
+writeParquet(rna_sce,     file.path(mae_path, "rna"))
+writeParquet(protein_se,  file.path(mae_path, "protein"))
+
+mae <- MultiAssayExperiment(experiments = list(
+    rna     = readParquet(file.path(mae_path, "rna")),
+    protein = readParquet(file.path(mae_path, "protein"))))
+```
+
+Each modality stays on disk until accessed. Spatial experiments
+(`MultiAssaySpatialExperiment`) are supported too, with their geometry written as
+GeoParquet via `r Biocpkg("DuckDBSpatial")`.
+
+# When to use BiocDuckDB
+
+A good fit for experiments **larger than memory**, for **exploration, QC, and
+filtering** of large datasets, and for a **self-describing, cross-language** on-disk
+format (the Parquet files are readable by Python, Julia, and DuckDB directly).
+Parquet is also a compact archival format --- typically several-fold smaller than
+`.rds` for sparse data, and self-describing.
+
+Realize a subset to an ordinary in-memory object for iterative algorithms with
+random access patterns or dense linear algebra; and small datasets that fit
+comfortably in memory need no backend at all.
+
+# Session information
+
+```{r sessioninfo}
+sessionInfo()
+```
