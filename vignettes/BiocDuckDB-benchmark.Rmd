@@ -1,0 +1,188 @@
+---
+title: "Benchmarking BiocDuckDB"
+author:
+- name: Patrick Aboyoun
+  email: aboyounp@gene.com
+  affiliation: Genentech, Inc.
+date: "Compiled: `r BiocStyle::doc_date()`; Modified: 6 July 2026"
+package: BiocDuckDB
+vignette: >
+  %\VignetteIndexEntry{2. Benchmarking BiocDuckDB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+library(BiocStyle)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
+                      error = FALSE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+The *Introduction to BiocDuckDB* vignette shows how an experiment can keep its
+assays on disk while presenting the standard Bioconductor API. This vignette asks
+the follow-up question: **can the standard single-cell analysis methods run
+directly on that on-disk representation, and how fast?**
+
+`r Biocpkg("BiocDuckDB")` implements the common `r Biocpkg("scuttle")` and
+`r Biocpkg("scran")` generics for `DuckDBMatrix` as SQL-optimized queries, so QC,
+normalization, variance modelling, and marker detection run on the Parquet-backed
+matrix without realizing it into memory. We compare those against the same generics
+on an in-memory `dgCMatrix` and on `r Biocpkg("HDF5Array")`.
+
+The headline results below were produced **offline** on the 10x Genomics 1.3
+million brain-cell dataset (see [Benchmark setup]) and are rendered here from a
+bundled results file, so this vignette builds quickly. The [A small, live
+comparison] section runs a miniature version at build time.
+
+# What BiocDuckDB optimizes
+
+Each method is implemented as per-gene / per-group SQL aggregation on the
+`DuckDBMatrix`, so the scan and the arithmetic happen in DuckDB and only the
+(small) result crosses back into R.
+
+**`r Biocpkg("scuttle")` --- QC, normalization, pseudo-bulk:**
+
+| Function | Description |
+|----------|-------------|
+| `perCellQCMetrics` / `perFeatureQCMetrics` | library size, detected genes / mean, detection rate |
+| `librarySizeFactors` / `normalizeCounts` | size factors and normalization |
+| `summarizeAssayByGroup` | pseudo-bulk aggregation (`GROUP BY`) |
+
+**`r Biocpkg("scran")` --- variance modelling and markers:**
+
+| Function | Description |
+|----------|-------------|
+| `modelGeneVar` / `modelGeneVarByPoisson` | decompose technical vs biological variance |
+| `correlatePairs` | pairwise gene correlations |
+| `pairwiseTTests` / `findMarkers` | pairwise DE and candidate markers |
+
+# A small, live comparison
+
+To show the mechanics without a large download, we build a small sparse matrix and
+run one QC metric on both an in-memory `dgCMatrix` and a `DuckDBMatrix`, confirming
+the results agree.
+
+```{r live-demo}
+library(BiocDuckDB)
+library(DuckDBArray)
+library(Matrix)
+library(scuttle)
+
+set.seed(1L)
+m <- as(Matrix(rpois(2000 * 400, lambda = 0.3), nrow = 2000, ncol = 400,
+               sparse = TRUE), "dgCMatrix")
+rownames(m) <- paste0("Gene", seq_len(nrow(m)))
+colnames(m) <- paste0("Cell", seq_len(ncol(m)))
+
+path <- tempfile()
+writeParquet(t(m), path)
+mt <- t(m)
+mat <- DuckDBMatrix(path, datacol = "value",
+    keycols = list(index2 = setNames(seq_len(ncol(mt)), colnames(mt)),
+                   index1 = setNames(seq_len(nrow(mt)), rownames(mt))),
+    dimtbls = createDimTables(mt))
+
+## same answer, one in memory and one queried from disk
+qc_mem <- perCellQCMetrics(m)
+qc_ddb <- perCellQCMetrics(mat)
+all.equal(qc_mem$sum, qc_ddb$sum)
+```
+
+At this size the in-memory matrix is faster --- there is nothing to gain from going
+to disk. The advantage appears at scale, which is what the offline benchmark
+measures.
+
+# Benchmark setup
+
+The full benchmark uses the 10x Genomics 1.3 million brain-cell dataset (available
+through `r Biocpkg("ExperimentHub")`, accession `EH1039`), subset to 12,500 cells
+--- the size used by the original comparison. Each operation runs on three
+backends: an in-memory `r CRANpkg("Matrix")` `dgCMatrix`, an
+`r Biocpkg("HDF5Array")`, and a `DuckDBMatrix`. The in-memory and HDF5 backends run
+single-threaded; `DuckDBMatrix` autotunes DuckDB's internal threads up to the core
+budget. The variance and marker operations run on log-normalized counts produced by
+each backend.
+
+# Results
+
+Rendered from the bundled offline results (`inst/scripts/benchmark_results.rds`);
+regenerate with `inst/scripts/run_scran_scuttle_benchmarks.R` (see that script's
+header).
+
+```{r results, echo=FALSE, results='asis'}
+helper <- system.file("scripts", "make_timings_table.R", package = "BiocDuckDB")
+if (nzchar(helper)) {
+    source(helper)
+    res <- load_vignette_timings()
+} else {
+    res <- NULL
+}
+if (is.null(res)) {
+    cat("_Precomputed benchmark results are not available in this build; ",
+        "generate them with `inst/scripts/run_scran_scuttle_benchmarks.R`._\n", sep = "")
+} else {
+    print(make_timings_table(
+        caption = "Elapsed seconds per operation. Speedups > 1 favor DuckDB.",
+        results = res))
+    cat("\n\n")
+    timings_config_note(res)
+}
+```
+
+# Main takeaways
+
+- **The generics run unchanged on disk.** `perCellQCMetrics()`, `modelGeneVar()`,
+  `findMarkers()` and the rest dispatch to SQL-optimized methods for `DuckDBMatrix`,
+  so existing `r Biocpkg("scran")`/`r Biocpkg("scuttle")` code works on a
+  Parquet-backed matrix without changes or realization.
+- **Against the out-of-core baseline, DuckDB wins every operation.** Compared with
+  `r Biocpkg("HDF5Array")` --- the fair comparison, since both keep the matrix on
+  disk --- DuckDB is faster on all eight operations, from ~1.4x (`findMarkers`) to
+  well over 100x (`correlatePairs`).
+- **QC and normalization beat in-memory too.** `perCellQCMetrics`,
+  `perFeatureQCMetrics`, and `normalizeCounts` are pure `SUM`/`AVG` aggregations and
+  run several times faster than an in-memory `dgCMatrix` while never loading the
+  matrix.
+- **`correlatePairs` is the standout.** Its sparse-aware SQL avoids the dense
+  intermediates the other backends build, making it roughly two orders of magnitude
+  faster than both `r Biocpkg("HDF5Array")` and in-memory.
+- **Some steps still favor in-memory at this scale.** `summarizeAssayByGroup` and
+  `modelGeneVar` are faster in memory (though DuckDB still beats
+  `r Biocpkg("HDF5Array")`); the DuckDB advantage on these grows as data outgrows
+  RAM. Marker detection (`pairwiseTTests`, `findMarkers`) is on par with in-memory,
+  since the per-gene statistics after the SQL `GROUP BY` are the same in every
+  backend.
+
+Consult the rendered table above for the measured numbers on your build's bundled
+results.
+
+# When this matters
+
+The value is compounding: because these methods run on the DuckDB-backed object
+directly, an analysis can go from raw counts through QC, normalization, feature
+selection, and marker detection **before** ever realizing the matrix into memory
+--- realizing only the small, filtered result it actually needs. That is what makes
+the *filter, realize, analyze* pattern from the introduction practical on datasets
+far larger than RAM.
+
+# Running your own benchmarks
+
+`inst/scripts/run_scran_scuttle_benchmarks.R` reproduces these numbers on your
+hardware (`BENCH_NCELLS`, `BENCH_CORES`; set `BENCH_SYNTHETIC=1` to smoke-test
+without the `EH1039` download). It writes `benchmark_results.rds`, which this
+vignette renders via `inst/scripts/make_timings_table.R`. For the lower-level
+matrix operations (`colSums`, `rowVars`, `rowDeviances`), see the
+`r Biocpkg("DuckDBArray")` benchmarking vignette.
+
+# Session information
+
+```{r sessioninfo}
+sessionInfo()
+```

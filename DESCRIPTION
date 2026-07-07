@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.9.22
-Date: 2026-06-26
+Version: 0.9.23
+Date: 2026-07-06
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -22,7 +22,7 @@ Copyright: See the file inst/COPYRIGHTS for third-party schema components
     bundled in inst/schema/ (Frictionless Data Package specifications, in the
     public domain under The Unlicense).
 Depends:
-    R (>= 4.4.0),
+    R (>= 4.6.0),
     methods,
     stats,
     DuckDBDataFrame,
