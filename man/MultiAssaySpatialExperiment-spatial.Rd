@@ -43,8 +43,18 @@ MASE defaults are used when no lazy layers are present.
 }
 
 \examples{
-if (requireNamespace("MultiAssaySpatialExperiment", quietly = TRUE) &&
-    requireNamespace("sf", quietly = TRUE)) {
+# subsetByBoundingBox on a DuckDB-backed layer uses DuckDB's optional spatial
+# extension; probe for it so the example is skipped cleanly where the
+# extension cannot load (offline / firewalled repository / not installed).
+spatial_ok <- requireNamespace("MultiAssaySpatialExperiment", quietly = TRUE) &&
+    requireNamespace("sf", quietly = TRUE) &&
+    requireNamespace("DuckDBSpatial", quietly = TRUE) &&
+    tryCatch({
+        DBI::dbGetQuery(DuckDBDataFrame::acquireDuckDBConn(),
+            "SELECT ST_Area(ST_GeomFromText('POLYGON((0 0,0 1,1 1,1 0,0 0))'))")
+        TRUE
+    }, error = function(e) FALSE)
+if (spatial_ok) {
     pts <- S4Vectors::DataFrame(
         x = 1:3, y = 1:3, instance_id = c("A", "B", "C"))
     mat <- matrix(1:9, 3, 3,

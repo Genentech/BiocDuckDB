@@ -1,5 +1,13 @@
 # BiocDuckDB 0.9.23
 
+## Bug fixes
+
+- `readParquet()` now restores `factor` columns (including ordered factors) in
+  the flat-table read paths, using the `categories`/`categoriesOrdered` recorded
+  in the product schema on write. Previously these columns came back as
+  `character`. (Factor restoration inside `GRanges`/`SelfHits` `mcols` is not yet
+  covered.)
+
 ## Documentation
 
 - Restructured the vignettes into a user-first set, replacing *Constructing

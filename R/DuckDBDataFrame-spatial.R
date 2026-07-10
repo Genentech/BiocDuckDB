@@ -37,7 +37,17 @@ NULL
 #' documentation.
 #'
 #' @examples
-#' if (requireNamespace("DuckDBSpatial", quietly = TRUE)) {
+#' # Spatial predicates need DuckDB's optional spatial extension. Probe for it so
+#' # the example runs only where the extension can actually load; it is skipped
+#' # cleanly when offline or behind a firewall that blocks the extension
+#' # repository, or when DuckDBSpatial is not installed.
+#' spatial_ok <- requireNamespace("DuckDBSpatial", quietly = TRUE) &&
+#'     tryCatch({
+#'         DBI::dbGetQuery(DuckDBDataFrame::acquireDuckDBConn(),
+#'             "SELECT ST_Area(ST_GeomFromText('POLYGON((0 0,0 1,1 1,1 0,0 0))'))")
+#'         TRUE
+#'     }, error = function(e) FALSE)
+#' if (spatial_ok) {
 #'     df <- data.frame(id = 1:3, x = 1:3, y = 1:3)
 #'     path <- tempfile(fileext = ".parquet")
 #'     arrow::write_parquet(df, path)

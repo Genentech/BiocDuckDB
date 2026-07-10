@@ -572,13 +572,8 @@ test_that("Unbound metadata with non-serializable objects is skipped with warnin
     names(dimnames(airway_counts_expected)) <- c("__feature__", "__sample__")
     checkDuckDBMatrix(assay(airway2, "counts"), airway_counts_expected)
 
-    # Check colData (convert factors to character for comparison)
+    # colData factors now round-trip, so compare factor-vs-factor
     coldata_expected <- as.data.frame(colData(airway), stringsAsFactors = FALSE)
-    for (j in names(coldata_expected)) {
-        if (is.factor(coldata_expected[[j]])) {
-            coldata_expected[[j]] <- as.character(coldata_expected[[j]])
-        }
-    }
     checkDuckDBDataFrame(colData(airway2), coldata_expected)
 
     # Check rowRanges (basic structure only - GRangesList metadata has known limitations)
@@ -587,6 +582,42 @@ test_that("Unbound metadata with non-serializable objects is skipped with warnin
     expect_identical(names(rowRanges(airway2)), names(rowRanges(airway)))
 
     unlink(tmpdir, recursive = TRUE)
+})
+
+test_that("factor and ordered factor colData columns survive round-trip", {
+    ncells <- 12L
+    counts <- matrix(rpois(20L * ncells, 5), nrow = 20L)
+    rownames(counts) <- paste0("Gene", seq_len(20L))
+    colnames(counts) <- paste0("Cell", seq_len(ncells))
+
+    se <- SummarizedExperiment(
+        assays = list(counts = counts),
+        colData = DataFrame(
+            group = factor(rep(c("ctrl", "treat", "ctrl"), length.out = ncells),
+                           levels = c("ctrl", "treat")),
+            dose = factor(rep(c("low", "high", "mid"), length.out = ncells),
+                          levels = c("low", "mid", "high"), ordered = TRUE),
+            label = rep(c("x", "y"), length.out = ncells)  # plain character
+        )
+    )
+
+    tmpdir <- tempfile()
+    on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+    writeParquet(se, tmpdir)
+    se2 <- readParquet(tmpdir)
+
+    cd <- as.data.frame(colData(se2))
+    expect_true(is.factor(cd$group))
+    expect_false(is.ordered(cd$group))
+    expect_identical(levels(cd$group), c("ctrl", "treat"))
+
+    expect_true(is.ordered(cd$dose))
+    expect_identical(levels(cd$dose), c("low", "mid", "high"))
+
+    expect_type(cd$label, "character")
+
+    # single-column materialization path (as.vector,DuckDBColumn)
+    expect_true(is.ordered(as.vector(colData(se2)[["dose"]])))
 })
 
 # ==============================================================================

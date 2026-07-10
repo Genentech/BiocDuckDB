@@ -213,6 +213,33 @@ function(path,
     setdiff(all_fields, exclude)
 }
 
+## Factor levels recorded for the given data columns, in DuckDBTable's
+## 'collevels' shape (named list of list(levels, ordered)). Only the flat-table
+## factor shape (categories = character vector of levels, from
+## fieldtypes.R:.fieldtype.factor) is restored here; the array/keycol shape
+## (categories = list of {value, label} structs) is left to the array reader.
+.schema_collevels <- function(schema, datacols) {
+    fields <- schema[["fields"]]
+    if (length(fields) == 0L) {
+        return(NULL)
+    }
+    names(fields) <- sapply(fields, `[[`, "name")
+    out <- list()
+    for (nm in intersect(datacols, names(fields))) {
+        cats <- fields[[nm]][["categories"]]
+        if (is.null(cats) || length(cats) == 0L) {
+            next
+        }
+        first <- cats[[1L]]
+        if (is.list(first) && !is.null(first[["value"]])) {
+            next  # array/keycol {value,label} shape, not a flat factor
+        }
+        out[[nm]] <- list(levels = as.character(unlist(cats)),
+                          ordered = isTRUE(fields[[nm]][["categoriesOrdered"]]))
+    }
+    if (length(out) == 0L) NULL else out
+}
+
 .schema_genomic <- function(schema, role) {
     schema[["genomicCoords"]][[role]]
 }
@@ -348,7 +375,8 @@ function(path,
     if (length(keycol) > 1L) {
         keycol <- keycol[1L]
     }
-    DuckDBDataFrame(path, datacols = datacols, keycol = keycol)
+    DuckDBDataFrame(path, datacols = datacols, keycol = keycol,
+                    collevels = .schema_collevels(resource[["schema"]], datacols))
 }
 
 #' @importFrom DuckDBDataFrame DuckDBDataFrame acquireDuckDBConn
@@ -365,7 +393,8 @@ function(path,
     }
     if (length(keycol) > 1L)
         keycol <- keycol[1L]
-    DuckDBDataFrame(path, datacols = datacols, keycol = keycol)
+    DuckDBDataFrame(path, datacols = datacols, keycol = keycol,
+                    collevels = .schema_collevels(resource[["schema"]], datacols))
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

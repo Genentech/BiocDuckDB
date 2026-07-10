@@ -4,6 +4,17 @@
 
 skip_if_not_installed("MultiAssaySpatialExperiment")
 skip_if_not_installed("sf")
+skip_if_not_installed("DuckDBSpatial")
+
+# The spatial predicates need DuckDB's spatial extension to be loadable; skip
+# where it cannot be obtained (offline / firewalled extension repository).
+skip_if_not(
+    tryCatch({
+        DBI::dbGetQuery(DuckDBDataFrame::acquireDuckDBConn(),
+            "SELECT ST_Area(ST_GeomFromText('POLYGON((0 0,0 1,1 1,1 0,0 0))'))")
+        TRUE
+    }, error = function(e) FALSE),
+    "DuckDB spatial extension not available")
 
 library(sf)
 library(MultiAssaySpatialExperiment)
