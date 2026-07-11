@@ -1,11 +1,13 @@
 ---
-# BiocDuckDB CI — MODL shared R-check (base template). Its intra-suite dependencies
-# (DuckDBDataFrame, DuckDBArray, DuckDBGRanges + MultiAssaySpatialExperiment) resolve from
-# Kite at check time, so no cloning is needed for release CI. See modl/modl-ci.
-# (For dev-integration against UNPUBLISHED sibling HEADs, switch to .modl_r_check_with_deps
-#  and set MODL_R_INTERNAL_DEPS in build order:
-#    modl/BiocDuckDB/DuckDBDataFrame modl/BiocDuckDB/DuckDBArray
-#    modl/BiocDuckDB/DuckDBGRanges  modl/BiocDuckDB/MultiAssaySpatialExperiment)
+# BiocDuckDB CI — MODL shared R-check, in DEV-INTEGRATION mode (.modl_r_check_with_deps):
+# the intra-suite siblings (DuckDBDataFrame, DuckDBArray, DuckDBGRanges, DuckDBSpatial,
+# MultiAssaySpatialExperiment) are cloned and installed from their HEADs, in build order,
+# so the check runs against UNPUBLISHED sibling changes rather than the Kite-published
+# versions. Required because readParquet.R uses DuckDBDataFrame's `collevels` argument
+# (factor round-trip on read), which is on DuckDBDataFrame HEAD but not yet on Kite.
+#
+# Revert to the base `.modl_r_check` (deps resolved from Kite, no cloning) once every
+# used sibling feature is published to Kite. See modl/modl-ci.
 
 include:
   - project: 'modl/modl-ci'
@@ -13,4 +15,11 @@ include:
     file: 'r-check.yml'
 
 check:
-  extends: .modl_r_check
+  extends: .modl_r_check_with_deps
+  variables:
+    MODL_R_INTERNAL_DEPS: >-
+      modl/BiocDuckDB/DuckDBDataFrame
+      modl/BiocDuckDB/DuckDBArray
+      modl/BiocDuckDB/DuckDBGRanges
+      modl/BiocDuckDB/DuckDBSpatial
+      modl/BiocDuckDB/MultiAssaySpatialExperiment
