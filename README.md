@@ -72,5 +72,5 @@ to Parquet. See the *Introduction to BiocDuckDB* vignette.
 
 ## License
 
-Apache License 2.0. Copyright Genentech, Inc. See `inst/COPYRIGHTS` for bundled
+MIT License. Copyright Genentech, Inc., 2026. See `inst/COPYRIGHTS` for bundled
 third-party schema components.
