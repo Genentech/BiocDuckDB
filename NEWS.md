@@ -1,3 +1,14 @@
+# BiocDuckDB 0.9.26
+
+## New features
+
+- `writeParquet(..., cluster_by = )` threads a clustering key (`DuckDBDataFrame::zorder()` /
+  `hilbert()`, or a character vector) through every `writeParquet` method to the primitive
+  writers, so rows are physically ordered on write for DuckDB row-group zonemap pruning. The
+  lazy `DuckDBTable`/`DuckDBDataFrame` path lowers it SQL-side (no materialization); the
+  materializing `data.frame`/`DataFrame` path reorders in memory via
+  `DuckDBDataFrame::clusterSort()`. Requires DuckDBDataFrame (>= 0.9.27).
+
 # BiocDuckDB 0.9.23
 
 ## Bug fixes

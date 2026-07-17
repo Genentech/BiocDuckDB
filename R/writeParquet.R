@@ -723,13 +723,13 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
 }
 
 #' @importFrom arrow Array write_dataset write_parquet
-#' @importFrom DuckDBDataFrame arrowType reconcileParquetSchema setupFlatParquetWrite
+#' @importFrom DuckDBDataFrame arrowType reconcileParquetSchema setupFlatParquetWrite clusterSort
 #' @importFrom S4Vectors I
 #' @importFrom stats setNames
 .writeDataFrameParquet <-
 function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
          refs = NULL, append = FALSE, offset = 0L, part = NULL,
-         part_digits = 0L, ...)
+         part_digits = 0L, cluster_by = NULL, ...)
 {
     prep <- setupFlatParquetWrite(
         path, append = append, offset = offset, part = part,
@@ -738,6 +738,11 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
     part <- prep$part
     offset <- prep$offset
     flat_part <- prep$flat_part
+
+    # Cluster the in-memory rows (no SQL ORDER BY on this Arrow path); no-op if NULL. The
+    # __index__/__name__ assigned below follow the clustered order.
+    if (!is.null(cluster_by))
+        x <- clusterSort(x, cluster_by)
 
     if (is.null(indexcol)) {
         index <- NULL
