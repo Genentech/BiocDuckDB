@@ -56,3 +56,20 @@ test_that("writeParquet without cluster_by is unchanged (no clustering)", {
     # not spatially clustered (ratio ~1); this guards that cluster_by is opt-in
     expect_gt(.cluster_step_ratio(got, df), 0.75)
 })
+
+test_that("cluster_by is not spatial-specific: a reducedDim embedding clusters too", {
+    # The cross-domain point: cluster_by is a general N-D coord index, not an x/y
+    # feature. A 2-D embedding (UMAP1/UMAP2, e.g. a reducedDim) clusters on write
+    # exactly like spatial points, so a UMAP-viewport range query prunes row groups.
+    skip_if_not_installed("arrow")
+    set.seed(1)
+    emb <- data.frame(UMAP1 = runif(2500, -10, 10), UMAP2 = runif(2500, -10, 10),
+                      cell = sprintf("c%04d", seq_len(2500)))
+    out <- tempfile()
+    writeParquet(emb, out, cluster_by = DuckDBDataFrame::zorder(c("UMAP1", "UMAP2")))
+    got <- .read_one_parquet(out)
+    expect_equal(nrow(got), nrow(emb))
+    expect_setequal(got$cell, emb$cell)
+    step <- function(d) mean(sqrt(diff(d$UMAP1)^2 + diff(d$UMAP2)^2))
+    expect_lt(step(got) / step(emb), 0.5)   # embedding-space neighbours contiguous
+})
