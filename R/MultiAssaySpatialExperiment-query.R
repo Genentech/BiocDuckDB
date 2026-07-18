@@ -20,12 +20,7 @@
 #' @include MultiAssaySpatialExperiments-internals.R
 NULL
 
-# Unique temp relation name (R-side randomness; mirrors
-# writeSpatialPointsParquet).
-#' @importFrom stats runif
-.maseTmpName <- function(prefix) {
-    sprintf("%s%d", prefix, as.integer(runif(1L, 1L, .Machine$integer.max)))
-}
+.maseTmpName <- function(prefix) basename(tempfile(prefix))
 
 .maseTransforms <- function(mase) {
     tf <- S4Vectors::metadata(mase)[["transforms"]]
@@ -303,6 +298,14 @@ function(mase, strict = FALSE, conn = acquireDuckDBConn())
         }
         lv <- .registerLayerView(layer, conn, .maseTmpName("mase_ri_layer_"))
         smv <- .maseTmpName("mase_ri_spmap_")
+        # This validator is fully eager (dbGetQuery), so the per-region temps can
+        # be dropped on exit rather than leaked on the shared connection.
+        on.exit({
+            try(dbExecute(conn, sprintf("DROP VIEW IF EXISTS %s",
+                dbQuoteIdentifier(conn, lv))), silent = TRUE)
+            try(dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s",
+                dbQuoteIdentifier(conn, smv))), silent = TRUE)
+        }, add = TRUE)
         dbWriteTable(conn, smv, rows, temporary = TRUE, overwrite = TRUE)
         orphan <- dbGetQuery(conn, sprintf(paste0(
             "SELECT m.* FROM %s m LEFT JOIN %s c ",

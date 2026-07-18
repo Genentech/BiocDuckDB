@@ -5,7 +5,7 @@
 - Cross-element DuckDB query layer over a `MultiAssaySpatialExperiment` whose
   spatial layers are DuckDB-backed (`R/MultiAssaySpatialExperiment-query.R`). MASE
   stays DuckDB-free; this is BiocDuckDB's DuckDB engine operating on a MASE, using
-  DuckDBSpatial (Suggests, `>= 0.9.12`) for spatial SQL.
+  DuckDBSpatial (Suggests) for spatial SQL.
   - `spatialViews()` registers each spatial layer and the `spatialMap` junction as
     on-the-fly DuckDB temp views (lazy layers as views over their rendered SQL; no
     materialization).
