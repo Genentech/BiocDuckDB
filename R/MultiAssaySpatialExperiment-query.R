@@ -14,8 +14,8 @@
 ###
 ### Per-element transforms live in metadata(mase)$transforms as
 ###   "<element_type>/<region>" -> list(<coordinate_system> -> <transform dict>)
-### (RFC-5 / scibis-shaped dicts, e.g. list(type = "scale", scale = c(2, 3))),
-### and round-trip through the standard MASE metadata annotations.
+### (RFC-5-shaped dicts, e.g. list(type = "scale", scale = c(2, 3))), and
+### round-trip through the standard MASE metadata annotations.
 
 #' @include MultiAssaySpatialExperiments-internals.R
 NULL
