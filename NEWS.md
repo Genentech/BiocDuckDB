@@ -1,3 +1,13 @@
+# BiocDuckDB 0.9.27
+
+## Changes
+
+- The test harness pins DuckDB to a single thread
+  (`options(DuckDBDataFrame.threads = 1L)` in `setup.R`) so parallel
+  floating-point reductions accumulate in a fixed order and tight-tolerance
+  expectations stay reproducible run-to-run. This is a test-only change; real
+  sessions use all cores.
+
 # BiocDuckDB 0.9.26
 
 ## New features
