@@ -277,7 +277,13 @@ makeSpatialMASEFixture <- function() {
         spatialMap = S4Vectors::DataFrame(
             assay = "assay1", colname = c("A", "B", "C"),
             element_type = "points", region = "centroids",
-            instance_id = c("A", "B", "C")))
+            instance_id = c("A", "B", "C")),
+        metadata = list(transforms = list(
+            "points/centroids" = list(
+                global = list(type = "identity"),
+                scaled = list(type = "scale", scale = c(2, 2))),
+            "shapes/cells" = list(
+                global = list(type = "identity")))))
 }
 
 makeLazySpatialMASE <- function(path = NULL) {

@@ -759,7 +759,10 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
 
     is_sf <- inherits(x, "sf")
     if (is_sf) {
-        if (isTRUE(append) || flat_part) {
+        # A normal single-file write is a flat part 0 (flat_part is TRUE for every
+        # flat write); GeoParquet only cannot express a genuine append or a
+        # subsequent part (part > 0), mirroring the lazy .writeDuckDBParquet guard.
+        if (isTRUE(append) || part > 0L) {
             stop("flat append ('append', 'part') is not supported for sf objects")
         }
         if (!requireNamespace("DuckDBSpatial", quietly = TRUE)) {

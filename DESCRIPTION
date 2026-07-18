@@ -87,6 +87,7 @@ Collate:
     'DuckDBDualSubset-class.R'
     'DuckDBMatrix-scran.R'
     'DuckDBMatrix-scuttle.R'
+    'MultiAssaySpatialExperiment-query.R'
     'MultiAssaySpatialExperiment-spatial.R'
     'SingleCellExperiments-internals.R'
     'SingleCellExperiment-colTables.R'
