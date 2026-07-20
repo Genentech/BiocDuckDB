@@ -1,3 +1,24 @@
+# BiocDuckDB 0.9.29
+
+## Bug fixes
+
+- `writeParquet()` now right-sizes the internal integer index columns of
+  data-frame resources (the `__index__`/`__sample__`/`__feature__` key spine and
+  graph-edge `from`/`to`) to their smallest Arrow integer type. This narrowing
+  was previously unreachable: it was gated on `!flat_part`, but
+  `setupFlatParquetWrite()` always resolves `flat_part = TRUE`, so data-frame
+  index columns were written as `int32`. The coord-array assay path already
+  narrowed, so only the tabular resources were affected.
+  - Scoped to internal index columns to match `scibis`
+    (`_optimize_integer_columns` / `_narrow_index`): user data columns and
+    Hive partition-group columns keep their declared dtype, so a write→read
+    round-trip is dtype-preserving.
+  - On append, each part's index columns are pinned to the existing part-0
+    schema (via `reconcileParquetSchema()`, whose result was previously
+    discarded) so every part of a streamed resource shares one integer width.
+  - The recorded `arrowType` in each resource's schema now reflects the narrowed
+    width, matching the physical Parquet.
+
 # BiocDuckDB 0.9.28
 
 ## New features

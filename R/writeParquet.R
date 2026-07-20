@@ -655,12 +655,12 @@ function(x,
 
 .buildTableResourceMetadata <-
 function(x, path, name, dimension, layout, indexcol, keycol, dimtbl,
-         refs = NULL)
+         refs = NULL, arrowtypes = NULL)
 {
     has_key <- !is.null(keycol) && keycol %in% colnames(x)
 
     schema <- list(fields = lapply(colnames(x), function(j) {
-        .buildFieldSpec(name = j, x = x[[j]])
+        .buildFieldSpec(name = j, x = x[[j]], arrow_type = arrowtypes[[j]])
     }))
 
     if (!is.null(indexcol)) {
@@ -731,7 +731,7 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
     invisible(resources)
 }
 
-#' @importFrom arrow Array write_dataset write_parquet
+#' @importFrom arrow Array as_arrow_table write_dataset write_parquet
 #' @importFrom DuckDBDataFrame arrowType reconcileParquetSchema setupFlatParquetWrite clusterSort
 #' @importFrom S4Vectors I
 #' @importFrom stats setNames
@@ -767,6 +767,7 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
     }
 
     is_sf <- inherits(x, "sf")
+    narrow_types <- list()   # per-column narrowed Arrow int types (non-sf path)
     if (is_sf) {
         # A normal single-file write is a flat part 0 (flat_part is TRUE for every
         # flat write); GeoParquet only cannot express a genuine append or a
@@ -792,35 +793,50 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
         x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
         colnames(x) <- make.unique(colnames(x), sep = "_")
 
-        if (!flat_part && !isTRUE(append)) {
-            for (j in seq_along(x)) {
-                if (is.integer(x[[j]]) && length(x[[j]]) > 0L) {
-                    x[[j]] <- Array$create(x[[j]], type = arrowType(x[[j]]))
-                }
+        # Right-size the INTERNAL index columns (the integer key spine + graph
+        # from/to) to their smallest Arrow integer type. On append the widths
+        # are pinned to the existing part-0 schema so every part shares one
+        # type.
+        narrow_cols <- intersect(c(indexcol, "from", "to"), colnames(x))
+        narrow_cols <- narrow_cols[vapply(narrow_cols, function(nm)
+            is.integer(x[[nm]]) && length(x[[nm]]) > 0L, logical(1L))]
+        narrow_types <- list()
+        if (length(narrow_cols)) {
+            if (isTRUE(append)) {
+                narrow_types <- reconcileParquetSchema(
+                    path, narrow_cols,
+                    setNames(rep(list(NULL), length(narrow_cols)), narrow_cols))
+            } else {
+                narrow_types <- setNames(
+                    lapply(narrow_cols, function(nm) arrowType(x[[nm]])),
+                    narrow_cols)
             }
         }
 
-        if (isTRUE(append)) {
-            int_cols <- colnames(x)[vapply(x, is.integer, logical(1L))]
-            if (length(int_cols) > 0L) {
-                arrowtypes <- setNames(rep(list(NULL), length(int_cols)),
-                                       int_cols)
-                reconcileParquetSchema(path, int_cols, arrowtypes)
+        # Narrow only the write payload (an Arrow table); `x` stays an R
+        # data.frame so the schema builder reports the base "integer" type with
+        # the narrowed arrowType recorded per column below.
+        write_obj <- x
+        if (length(narrow_types)) {
+            write_obj <- as_arrow_table(x)
+            for (nm in names(narrow_types)) {
+                write_obj[[nm]] <- write_obj[[nm]]$cast(narrow_types[[nm]])
             }
         }
 
         if (flat_part) {
-            write_parquet(x, prep$pq_path, compression = "zstd",
+            write_parquet(write_obj, prep$pq_path, compression = "zstd",
                           compression_level = 3L, ...)
         } else {
-            write_dataset(x, path, format = "parquet", compression = "zstd",
-                          compression_level = 3L, ...)
+            write_dataset(write_obj, path, format = "parquet",
+                          compression = "zstd", compression_level = 3L, ...)
         }
     }
 
     .buildTableResourceMetadata(
         x, path = path, name = name, dimension = dimension, layout = layout,
-        indexcol = indexcol, keycol = keycol, dimtbl = dimtbl, refs = refs)
+        indexcol = indexcol, keycol = keycol, dimtbl = dimtbl, refs = refs,
+        arrowtypes = narrow_types)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
