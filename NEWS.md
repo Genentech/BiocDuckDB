@@ -1,3 +1,22 @@
+# BiocDuckDB 0.9.28
+
+## New features
+
+- `readParquet()` can now read a dataset from remote object storage (`s3://`,
+  `gs://`, `http(s)://`, …). The `datapackage.json` sidecar is fetched over DuckDB
+  `httpfs` (`jsonlite::read_json` cannot fetch object-storage schemes) after
+  `DuckDBDataFrame::configureCloud()` installs/loads `httpfs` and applies any
+  `s3_*` credentials; the resource reads then prune row groups over the VFS the
+  same as on local disk. Local paths are unchanged.
+
+## Changes
+
+- `writeParquet()` refuses a remote object-storage path with an actionable error
+  ("write to a local directory and upload it"). Object stores have no atomic
+  directory swap and the append/refuse-to-overwrite guards rely on local file
+  existence, so BiocDuckDB writes stay local + whole-object; upload the written
+  directory afterwards (e.g. `aws s3 cp --recursive`).
+
 # BiocDuckDB 0.9.27
 
 ## Changes

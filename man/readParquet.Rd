@@ -6,8 +6,7 @@
 \usage{
 readParquet(
   path,
-  package = read_json(file.path(path, "datapackage.json"), simplifyVector = TRUE,
-    simplifyDataFrame = FALSE, simplifyMatrix = FALSE),
+  package = .readDatapackage(path),
   model = package[["model"]],
   ...
 )

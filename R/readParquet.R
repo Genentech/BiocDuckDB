@@ -166,14 +166,10 @@
 #' @include fieldtypes.R
 #'
 #' @export
-#' @importFrom jsonlite read_json
 #' @rdname readParquet
 readParquet <-
 function(path,
-         package = read_json(file.path(path, "datapackage.json"),
-                             simplifyVector = TRUE,
-                             simplifyDataFrame = FALSE,
-                             simplifyMatrix = FALSE),
+         package = .readDatapackage(path),
          model = package[["model"]],
          ...)
 {
@@ -187,6 +183,28 @@ function(path,
            "multi_assay_experiment"         = .readParquetMAE(path, package, ...),
            "multi_assay_spatial_experiment" = .readParquetMASE(path, package, ...),
            stop("unsupported model: ", model))
+}
+
+#' @importFrom jsonlite fromJSON read_json
+#' @importFrom DBI dbGetQuery
+#' @importFrom DuckDBDataFrame acquireDuckDBConn configureCloud
+.readDatapackage <- function(path) {
+    dp <- file.path(path, "datapackage.json")
+    remote <- is.character(path) && length(path) == 1L && !is.na(path) &&
+        grepl("^(s3|gs|gcs|az|azure|abfss|r2|http|https)://", path)
+    if (remote) {
+        conn <- acquireDuckDBConn()
+        configureCloud(conn)
+        res <- dbGetQuery(conn, sprintf(
+            "SELECT content FROM read_text('%s')", gsub("'", "''", dp)))
+        if (nrow(res) == 0L || is.na(res[["content"]][[1L]])) {
+            stop("could not read remote datapackage.json at '", dp, "'")
+        }
+        return(fromJSON(res[["content"]][[1L]], simplifyVector = TRUE,
+                        simplifyDataFrame = FALSE, simplifyMatrix = FALSE))
+    }
+    read_json(dp, simplifyVector = TRUE, simplifyDataFrame = FALSE,
+              simplifyMatrix = FALSE)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

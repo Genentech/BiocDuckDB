@@ -340,6 +340,15 @@
 setGeneric("writeParquet", signature = "x",
 function(x, path, ...)
 {
+  # Guardrail: writes stay local + whole-object. Object stores have no atomic
+  # directory swap and the append guards below rely on local file existence, so
+  # BiocDuckDB never writes (or appends) to a remote URI. Write locally, upload.
+  if (is.character(path) && length(path) == 1L && !is.na(path) &&
+      grepl("^(s3|gs|gcs|az|azure|abfss|r2|http|https)://", path)) {
+      stop("writeParquet() does not support remote object storage ('", path,
+           "'); write to a local directory and upload it (e.g. ",
+           "'aws s3 cp --recursive').")
+  }
   standardGeneric("writeParquet")
 })
 
