@@ -1,3 +1,18 @@
+# BiocDuckDB 0.99.4
+
+## Bug fixes
+
+- `writeParquet()` (flat / data-frame path) can now write a resource with more
+  than ~2.1e9 rows without the `__index__` column overflowing 32-bit integers. A
+  new optional `index_max` argument declares the resource's total index range;
+  when it exceeds the 32-bit limit the `__index__` column is typed as a 64-bit
+  integer up front (part 0 included) so every streamed append part shares one
+  type, instead of narrowing part 0 to `int32` and overflowing later parts on
+  cast (mirrors the coord-array `max_dim` typing). Pass `index_max = Inf` when
+  the total row count is unknown before streaming (e.g. graph edges). Small
+  resources are unaffected --- the index still narrows to the smallest integer
+  type. Requires the companion `DuckDBDataFrame` `validateAppendOffset()` fix.
+
 # BiocDuckDB 0.99.3
 
 ## New features

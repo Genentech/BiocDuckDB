@@ -732,13 +732,13 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
 }
 
 #' @importFrom arrow Array as_arrow_table write_dataset write_parquet
-#' @importFrom DuckDBDataFrame arrowType reconcileParquetSchema setupFlatParquetWrite clusterSort
+#' @importFrom DuckDBDataFrame arrowIntType arrowType reconcileParquetSchema setupFlatParquetWrite clusterSort
 #' @importFrom S4Vectors I
 #' @importFrom stats setNames
 .writeDataFrameParquet <-
 function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
          refs = NULL, append = FALSE, offset = 0L, part = NULL,
-         part_digits = 0L, cluster_by = NULL, ...)
+         part_digits = 0L, cluster_by = NULL, index_max = NULL, ...)
 {
     prep <- setupFlatParquetWrite(
         path, append = append, offset = offset, part = part,
@@ -811,6 +811,15 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
                     lapply(narrow_cols, function(nm) arrowType(x[[nm]])),
                     narrow_cols)
             }
+        }
+
+        # Type the __index__ column by the producer-declared total range
+        # (`index_max`), not this block's, so every part of a > 2^31-row resource
+        # shares one wide type instead of narrowing part 0 to int32 and
+        # overflowing later parts (mirrors the coord-array `max_dim` typing).
+        if (!is.null(indexcol) && !is.null(index_max) &&
+            indexcol %in% colnames(x)) {
+            narrow_types[[indexcol]] <- arrowIntType(c(0, index_max))
         }
 
         # Narrow only the write payload (an Arrow table); `x` stays an R
