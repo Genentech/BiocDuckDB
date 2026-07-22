@@ -54,6 +54,12 @@
 #'
 #' @author Patrick Aboyoun
 #'
+#' @return
+#' The \code{DuckDBDualSubset()} constructor returns a DuckDBDualSubset object
+#' wrapping a \linkS4class{DuckDBSelfHits}. \code{length()} returns the number of
+#' nodes (an integer); subsetting (\code{[}) returns a DuckDBDualSubset, and the
+#' \code{[<-} and \code{c()} methods return the updated DuckDBDualSubset.
+#'
 #' @aliases [,DuckDBDualSubset,ANY,ANY,ANY-method
 #' @aliases [<-,DuckDBDualSubset,ANY,ANY,ANY-method
 #' @aliases c,DuckDBDualSubset-method

@@ -12,6 +12,18 @@
 \alias{scoreMarkers,DuckDBMatrix-method}
 \alias{summaryMarkerStats,DuckDBMatrix-method}
 \title{DuckDBMatrix scran methods}
+\value{
+These methods mirror their \pkg{scran} generics. \code{correlatePairs()}
+returns a \code{DataFrame} of gene pairs with correlations and significance.
+\code{modelGeneVar()}, \code{modelGeneVarByPoisson()}, and
+\code{modelGeneCV2()} return a \code{DataFrame} of per-gene variance
+statistics, with the fitted mean-variance trend in \code{metadata()}.
+\code{pairwiseTTests()} and \code{pairwiseBinom()} return a list with
+\code{statistics} and \code{pairs} elements; \code{findMarkers()} and
+\code{scoreMarkers()} return a \link[S4Vectors]{List} of per-group
+\code{DataFrame}s of marker statistics; and \code{summaryMarkerStats()}
+returns a \code{DataFrame} summarizing marker statistics per group.
+}
 \description{
 scran methods for \linkS4class{DuckDBMatrix} objects.
 }

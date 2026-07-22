@@ -57,6 +57,13 @@ NULL
 #'     unlink(path)
 #' }
 #'
+#' @return
+#' \code{spatialOverlaps()} returns the pairwise spatial-overlap result between
+#' the lazy layers, \code{spatialMatch()} the matched table, and
+#' \code{spatialJoin()} a sparse pair table (mapping row indices between layers)
+#' when \code{sparse = TRUE}, or the joined table otherwise. All are computed
+#' lazily over the DuckDB-backed layers.
+#'
 #' @aliases spatialOverlaps,DuckDBDataFrame-method
 #' @aliases spatialMatch,DuckDBDataFrame,DataFrame-method
 #' @aliases spatialMatch,DuckDBDataFrame,DuckDBDataFrame-method

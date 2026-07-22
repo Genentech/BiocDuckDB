@@ -8,6 +8,14 @@
 \alias{subsetByBoundingBox,MultiAssaySpatialExperiment-method}
 \alias{subsetByPolygon,MultiAssaySpatialExperiment-method}
 \title{MultiAssaySpatialExperiment lazy spatial methods}
+\value{
+\code{readParquetForMASE()} returns the parsed table --- a lazy
+\code{DuckDBDataFrame} for large files, or an in-memory object for small ones
+--- and \code{readGeoParquetForMASE()} returns a geometry-bearing object (an
+\pkg{sf} data frame). \code{annotateWithRegions()},
+\code{subsetByBoundingBox()}, and \code{subsetByPolygon()} return a
+\linkS4class{MultiAssaySpatialExperiment} (annotated or spatially subset).
+}
 \description{
 Lazy \linkS4class{MultiAssaySpatialExperiment} methods that keep spatial
 layers as \linkS4class{DuckDBDataFrame} objects when possible. In-memory

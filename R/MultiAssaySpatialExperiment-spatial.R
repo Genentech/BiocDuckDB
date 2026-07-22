@@ -74,6 +74,14 @@ NULL
 #'     unlink(tmp, recursive = TRUE)
 #' }
 #'
+#' @return
+#' \code{readParquetForMASE()} returns the parsed table --- a lazy
+#' \code{DuckDBDataFrame} for large files, or an in-memory object for small ones
+#' --- and \code{readGeoParquetForMASE()} returns a geometry-bearing object (an
+#' \pkg{sf} data frame). \code{annotateWithRegions()},
+#' \code{subsetByBoundingBox()}, and \code{subsetByPolygon()} return a
+#' \linkS4class{MultiAssaySpatialExperiment} (annotated or spatially subset).
+#'
 #' @aliases readParquetForMASE,character-method
 #' @aliases readGeoParquetForMASE,character-method
 #' @aliases annotateWithRegions,MultiAssaySpatialExperiment-method

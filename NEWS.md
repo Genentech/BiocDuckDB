@@ -1,3 +1,13 @@
+# BiocDuckDB 0.99.2
+
+## Documentation
+
+- Added `\value` sections (roxygen `@return`) to the `DuckDBDataFrame-spatial`,
+  `DuckDBDualSubset-class`, `DuckDBMatrix-scran`, `DuckDBMatrix-scuttle`, and
+  `MultiAssaySpatialExperiment-spatial` man pages, documenting the values
+  returned by the spatial query, dual-subset, scran, scuttle, and MASE spatial
+  I/O methods. Resolves the `R CMD BiocCheck` "missing \value" WARNING.
+
 # BiocDuckDB 0.99.1
 
 ## Bug fixes

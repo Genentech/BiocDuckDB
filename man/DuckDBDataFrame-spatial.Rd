@@ -7,6 +7,13 @@
 \alias{spatialMatch,DuckDBDataFrame,DuckDBDataFrame-method}
 \alias{spatialJoin,DuckDBDataFrame,DuckDBDataFrame-method}
 \title{DuckDBDataFrame spatial methods}
+\value{
+\code{spatialOverlaps()} returns the pairwise spatial-overlap result between
+the lazy layers, \code{spatialMatch()} the matched table, and
+\code{spatialJoin()} a sparse pair table (mapping row indices between layers)
+when \code{sparse = TRUE}, or the joined table otherwise. All are computed
+lazily over the DuckDB-backed layers.
+}
 \description{
 \linkS4class{DuckDBDataFrame} methods for \pkg{MultiAssaySpatialExperiment}
 spatial generics. Lazy layers delegate to \pkg{DuckDBSpatial} for

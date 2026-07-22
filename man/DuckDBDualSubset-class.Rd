@@ -7,6 +7,12 @@
 \alias{c,DuckDBDualSubset-method}
 \alias{length,DuckDBDualSubset-method}
 \title{DuckDBDualSubset objects}
+\value{
+The \code{DuckDBDualSubset()} constructor returns a DuckDBDualSubset object
+wrapping a \linkS4class{DuckDBSelfHits}. \code{length()} returns the number of
+nodes (an integer); subsetting (\code{[}) returns a DuckDBDualSubset, and the
+\code{[<-} and \code{c()} methods return the updated DuckDBDualSubset.
+}
 \description{
 The DuckDBDualSubset class conforms to the DualSubset class from
 SingleCellExperiment to provide lazy node-based subsetting for

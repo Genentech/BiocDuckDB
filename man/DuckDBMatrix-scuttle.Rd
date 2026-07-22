@@ -14,6 +14,17 @@
 \alias{sumCountsAcrossFeatures,DuckDBMatrix-method}
 \alias{summarizeAssayByGroup,DuckDBMatrix-method}
 \title{DuckDBMatrix scuttle methods}
+\value{
+These methods mirror their \pkg{scuttle} generics.
+\code{perCellQCMetrics()} and \code{perFeatureQCMetrics()} return a
+\code{DataFrame} of QC metrics. \code{librarySizeFactors()},
+\code{geometricSizeFactors()}, and \code{calculateAverage()} return a numeric
+vector. \code{normalizeCounts()}, \code{calculateCPM()}, and
+\code{calculateTPM()} return a matrix-like object of transformed values, and
+\code{numDetectedAcrossFeatures()} and \code{sumCountsAcrossFeatures()} a
+matrix-like object of per-group summaries. \code{summarizeAssayByGroup()}
+returns a \linkS4class{SummarizedExperiment} of per-group assay summaries.
+}
 \description{
 scuttle methods for \linkS4class{DuckDBMatrix} objects.
 }
