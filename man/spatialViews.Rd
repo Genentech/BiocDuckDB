@@ -27,6 +27,8 @@ substrate used by \code{\link{linkSpatialMap}} /
 \code{\link{validateSpatialMap}} and a handle for power-user raw SQL.
 }
 \examples{
-# v <- spatialViews(mase)
-# DBI::dbGetQuery(v$conn, sprintf("SELECT * FROM \%s LIMIT 5", v$spatial_map))
+mase <- readParquet(system.file("extdata", "spatial_mase",
+                                package = "BiocDuckDB"))
+v <- spatialViews(mase)
+v$spatial_map
 }

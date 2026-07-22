@@ -1,0 +1,288 @@
+{
+  "$schema": "https://datapackage.org/profiles/2.0/datapackage.json",
+  "model": "multi_assay_spatial_experiment",
+  "resources": [
+    {
+      "name": "centroids",
+      "path": "sample_points_centroids",
+      "dimension": "sample",
+      "layout": "spatial_points",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "schema": {
+        "fields": [
+          {
+            "name": "__index__",
+            "type": "integer",
+            "arrowType": "uint8"
+          },
+          {
+            "name": "x",
+            "type": "number"
+          },
+          {
+            "name": "y",
+            "type": "number"
+          },
+          {
+            "name": "instance_id",
+            "type": "string"
+          }
+        ],
+        "sortOrder": [
+          {
+            "field": "__index__",
+            "direction": "ascending"
+          }
+        ],
+        "primaryKey": "__index__",
+        "spatialCoords": {
+          "x": "x",
+          "y": "y",
+          "instance_id": "instance_id"
+        }
+      }
+    },
+    {
+      "name": "nuclei",
+      "path": "sample_points_nuclei",
+      "dimension": "sample",
+      "layout": "spatial_points",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "schema": {
+        "fields": [
+          {
+            "name": "__index__",
+            "type": "integer",
+            "arrowType": "uint8"
+          },
+          {
+            "name": "x",
+            "type": "number"
+          },
+          {
+            "name": "y",
+            "type": "number"
+          },
+          {
+            "name": "instance_id",
+            "type": "string"
+          }
+        ],
+        "sortOrder": [
+          {
+            "field": "__index__",
+            "direction": "ascending"
+          }
+        ],
+        "primaryKey": "__index__",
+        "spatialCoords": {
+          "x": "x",
+          "y": "y",
+          "instance_id": "instance_id"
+        }
+      }
+    },
+    {
+      "name": "spatial_map",
+      "path": "spatial_map",
+      "dimension": "unbound",
+      "layout": "data_frame",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "schema": {
+        "fields": [
+          {
+            "name": "__index__",
+            "type": "integer",
+            "arrowType": "uint8"
+          },
+          {
+            "name": "assay",
+            "type": "string"
+          },
+          {
+            "name": "colname",
+            "type": "string"
+          },
+          {
+            "name": "element_type",
+            "type": "string"
+          },
+          {
+            "name": "region",
+            "type": "string"
+          },
+          {
+            "name": "instance_id",
+            "type": "string"
+          }
+        ],
+        "sortOrder": [
+          {
+            "field": "__index__",
+            "direction": "ascending"
+          }
+        ],
+        "primaryKey": "__index__"
+      }
+    },
+    {
+      "name": "subjects",
+      "path": "subjects",
+      "dimension": "sample",
+      "layout": "data_frame",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "schema": {
+        "fields": [
+          {
+            "name": "__index__",
+            "type": "integer",
+            "arrowType": "uint8"
+          },
+          {
+            "name": "__name__",
+            "type": "string"
+          }
+        ],
+        "sortOrder": [
+          {
+            "field": "__index__",
+            "direction": "ascending"
+          }
+        ],
+        "primaryKey": "__name__"
+      }
+    },
+    {
+      "name": "sample_map",
+      "path": "sample_map",
+      "dimension": "unbound",
+      "layout": "data_frame",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "schema": {
+        "fields": [
+          {
+            "name": "__index__",
+            "type": "integer",
+            "arrowType": "uint8"
+          },
+          {
+            "name": "assay",
+            "type": "string",
+            "categories": ["assay1"],
+            "categoriesOrdered": false
+          },
+          {
+            "name": "primary",
+            "type": "string"
+          },
+          {
+            "name": "colname",
+            "type": "string"
+          }
+        ],
+        "sortOrder": [
+          {
+            "field": "__index__",
+            "direction": "ascending"
+          }
+        ],
+        "primaryKey": "__index__",
+        "foreignKeys": [
+          {
+            "fields": "primary",
+            "reference": {
+              "fields": "__name__",
+              "resource": "subjects"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "assay1",
+      "path": "experiment_assay1",
+      "dimension": "crossed",
+      "layout": "coord_array",
+      "format": "parquet",
+      "mediatype": "application/vnd.apache.parquet",
+      "schema": {
+        "fields": [
+          {
+            "name": "__feature__",
+            "type": "integer",
+            "categories": [
+              {
+                "value": 1,
+                "label": ["G1"]
+              },
+              {
+                "value": 2,
+                "label": ["G2"]
+              },
+              {
+                "value": 3,
+                "label": ["G3"]
+              }
+            ],
+            "categoriesOrdered": true
+          },
+          {
+            "name": "__sample__",
+            "type": "integer",
+            "categories": [
+              {
+                "value": 1,
+                "label": ["A"]
+              },
+              {
+                "value": 2,
+                "label": ["B"]
+              },
+              {
+                "value": 3,
+                "label": ["C"]
+              }
+            ],
+            "categoriesOrdered": true
+          },
+          {
+            "name": "value",
+            "type": "integer"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "fields": "__feature__",
+            "reference": {
+              "fields": ""
+            }
+          },
+          {
+            "fields": "__sample__",
+            "reference": {
+              "fields": ""
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "annotations": {
+    "transforms": {
+      "points/centroids": {
+        "global": {
+          "type": "identity"
+        },
+        "scaled": {
+          "type": "scale",
+          "scale": [2, 2]
+        }
+      }
+    }
+  }
+}

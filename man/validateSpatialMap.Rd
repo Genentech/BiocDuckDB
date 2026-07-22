@@ -30,6 +30,7 @@ no matching layer), \code{orphan_instance} (a \code{spatialMap} row whose
 within a layer).
 }
 \examples{
-# validateSpatialMap(mase)              # report
-# validateSpatialMap(mase, strict = TRUE)  # error on any violation
+mase <- readParquet(system.file("extdata", "spatial_mase",
+                                package = "BiocDuckDB"))
+validateSpatialMap(mase)  # empty report: the spatialMap is valid
 }

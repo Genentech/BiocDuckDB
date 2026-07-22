@@ -18,7 +18,7 @@ transforms stored in \code{metadata(x)$transforms} (the targets each element
 is mapped into). Empty when no transforms are recorded.
 }
 \examples{
-# metadata(mase)$transforms <- list("points/centroids" =
-#     list(global = list(type = "identity")))
-# spatialCoordinateSystems(mase)  # -> "global"
+mase <- readParquet(system.file("extdata", "spatial_mase",
+                                package = "BiocDuckDB"))
+spatialCoordinateSystems(mase)
 }

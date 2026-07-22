@@ -36,9 +36,9 @@ NULL
 #' @param x A \linkS4class{MultiAssaySpatialExperiment}.
 #' @return A character vector of coordinate-system names.
 #' @examples
-#' # metadata(mase)$transforms <- list("points/centroids" =
-#' #     list(global = list(type = "identity")))
-#' # spatialCoordinateSystems(mase)  # -> "global"
+#' mase <- readParquet(system.file("extdata", "spatial_mase",
+#'                                 package = "BiocDuckDB"))
+#' spatialCoordinateSystems(mase)
 #' @export
 #' @importFrom S4Vectors metadata
 spatialCoordinateSystems <- function(x) {
@@ -126,8 +126,10 @@ spatialCoordinateSystems <- function(x) {
 #' @param prefix View-name prefix.
 #' @return A \code{MASESpatialViews} registry (a list of view names + \code{conn}).
 #' @examples
-#' # v <- spatialViews(mase)
-#' # DBI::dbGetQuery(v$conn, sprintf("SELECT * FROM %s LIMIT 5", v$spatial_map))
+#' mase <- readParquet(system.file("extdata", "spatial_mase",
+#'                                 package = "BiocDuckDB"))
+#' v <- spatialViews(mase)
+#' v$spatial_map
 #' @export
 #' @importFrom DuckDBDataFrame acquireDuckDBConn
 #' @importFrom DBI dbWriteTable
@@ -182,7 +184,9 @@ print.MASESpatialViews <- function(x, ...) {
 #' @param conn A DuckDB connection (default the shared BiocDuckDB connection).
 #' @return A lazy \linkS4class{DuckDBDataFrame} of linked observations.
 #' @examples
-#' # linkSpatialMap(mase, assay = "assay1")
+#' mase <- readParquet(system.file("extdata", "spatial_mase",
+#'                                 package = "BiocDuckDB"))
+#' linkSpatialMap(mase, assay = "assay1")
 #' @export
 #' @importFrom DuckDBDataFrame acquireDuckDBConn DuckDBDataFrame
 #' @importFrom DBI dbExecute dbWriteTable dbQuoteIdentifier
@@ -246,8 +250,9 @@ function(mase, assay = NULL, element_type = NULL, region = NULL,
 #'   \code{colname}, \code{element_type}, \code{region}, \code{instance_id},
 #'   \code{detail}); empty when the spatialMap is valid.
 #' @examples
-#' # validateSpatialMap(mase)              # report
-#' # validateSpatialMap(mase, strict = TRUE)  # error on any violation
+#' mase <- readParquet(system.file("extdata", "spatial_mase",
+#'                                 package = "BiocDuckDB"))
+#' validateSpatialMap(mase)  # empty report: the spatialMap is valid
 #' @export
 #' @importFrom DuckDBDataFrame acquireDuckDBConn
 #' @importFrom DBI dbExecute dbWriteTable dbGetQuery dbQuoteIdentifier

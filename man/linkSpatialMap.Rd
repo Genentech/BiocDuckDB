@@ -34,5 +34,7 @@ specify); the join is pushed to DuckDB and returned as a lazy
 layer's coordinate columns.
 }
 \examples{
-# linkSpatialMap(mase, assay = "assay1")
+mase <- readParquet(system.file("extdata", "spatial_mase",
+                                package = "BiocDuckDB"))
+linkSpatialMap(mase, assay = "assay1")
 }
