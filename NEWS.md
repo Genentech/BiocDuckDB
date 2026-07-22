@@ -1,3 +1,27 @@
+# BiocDuckDB 0.99.3
+
+## New features
+
+- Added the exported `writeDatapackage()` function, which assembles and writes a
+  Frictionless `datapackage.json` envelope from a list of resource descriptors.
+  The experiment-level `writeParquet()` methods (`SummarizedExperiment`,
+  `MultiAssayExperiment`) now single-source their manifest assembly through it,
+  and producers that build resources incrementally --- streaming a dataset too
+  large to hold in memory, or promoting from another store --- can emit a
+  conformant manifest without reconstructing an in-memory Bioconductor object.
+  `NULL` descriptors (returned by append/streaming parts) are dropped, so
+  accumulated resource lists can be passed straight through. This is the write
+  half of the ingest contract; the read half is `readParquet()` together with
+  the `DuckDBMatrix()`/`DuckDBArray()`/`DuckDBTable()` constructors, which attach
+  existing Parquet in place.
+
+## Documentation
+
+- Documented the storage layout as a targetable Frictionless contract in the
+  package vignette (the new "Targeting the storage contract" section), covering
+  `writeDatapackage()` for assembling a manifest and the DuckDB-backed
+  constructors for attaching existing coord-array Parquet in place.
+
 # BiocDuckDB 0.99.2
 
 ## Documentation

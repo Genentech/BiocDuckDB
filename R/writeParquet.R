@@ -1486,14 +1486,13 @@ function(x,
 
     # Metadata — recursive JSON vs Parquet dispatch
     ser <- .serializeMetadata(x, path = path, ...)
-    package[["resources"]] <- c(package[["resources"]], ser$resources)
-    package[["annotations"]] <- ser[["annotations"]]
 
-    # Declare the Frictionless profile
-    package <- c(list("$schema" = .BIOCDUCKDB_PROFILE), package)
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
+    # Assemble + write the datapackage.json envelope (SCE sets main_exp_name).
+    writeDatapackage(model = package[["model"]],
+                     resources = c(package[["resources"]], ser$resources),
+                     path = path,
+                     main_exp_name = package[["main_exp_name"]],
+                     annotations = ser[["annotations"]])
 
     invisible(NULL)
 })
@@ -1750,14 +1749,12 @@ function(x,
     package[["resources"]] <- c(package[["resources"]], resources)
 
     ser <- .serializeMetadata(x, path = path, ...)
-    package[["resources"]] <- c(package[["resources"]], ser$resources)
-    package[["annotations"]] <- ser[["annotations"]]
 
-    # Declare the Frictionless profile
-    package <- c(list("$schema" = .BIOCDUCKDB_PROFILE), package)
-
-    write_json(package, path = file.path(path, "datapackage.json"),
-               auto_unbox = TRUE, pretty = TRUE)
+    # Assemble + write the datapackage.json envelope.
+    writeDatapackage(model = package[["model"]],
+                     resources = c(package[["resources"]], ser$resources),
+                     path = path,
+                     annotations = ser[["annotations"]])
 
     invisible(NULL)
 })

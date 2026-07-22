@@ -95,6 +95,38 @@ Assays are stored in **coordinate (COO) form** --- one row per stored entry with
 sparse matrices typical of single-cell data, and lets DuckDB scan only what a query
 touches.
 
+## Targeting the storage contract
+
+The `datapackage.json` layout is a stable [Frictionless](https://datapackage.org)
+profile --- BiocDuckDB's extensions are additive and base-conformant --- so any
+producer can *target* it and any consumer can *attach* it. These are the write and
+read halves of an ingest/attach contract, exposed as public functions so a store
+that already holds COO Parquet does not need to reconstruct an in-memory object to
+interoperate with BiocDuckDB.
+
+To assemble a manifest from resources written incrementally (a dataset streamed in
+parts, or promoted from another store), collect the descriptors returned by the
+primitive `writeParquet()` methods and call `writeDatapackage()`:
+
+```{r ingest, eval=FALSE}
+resources <- c(
+    writeParquet(features, file.path(dir, "features"), dimension = "feature"),
+    writeParquet(assays,   dir,                        dimension = "crossed"))
+writeDatapackage("summarized_experiment", resources, dir)
+```
+
+Going the other way, the `DuckDBMatrix()` / `DuckDBArray()` / `DuckDBTable()`
+constructors attach an existing COO Parquet in place --- wrapping it as a lazy,
+out-of-core object without copying or materializing it:
+
+```{r attach, eval=FALSE}
+mat <- DuckDBMatrix(coo_path, datacol = "value",
+                    keycols = c("__feature__", "__sample__"))
+```
+
+The documented `model` values and the `dimension` x `layout` dispatch that maps each
+resource to its accessor are described on `?writeParquet` and `?readParquet`.
+
 ## Operations run as SQL
 
 The DuckDB-backed object supports the standard API; component access, subsetting,
