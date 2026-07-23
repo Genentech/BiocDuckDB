@@ -756,6 +756,17 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
     if (is.null(indexcol)) {
         index <- NULL
     } else {
+        # A > 2^31 index must be typed int64 up front (via index_max) so every
+        # streamed part shares one type. Without index_max the index would be a
+        # double excluded from narrowing and silently written as float64 (a
+        # floating-point key spine) -- fail loudly instead and require the range.
+        if (is.null(index_max) &&
+            (offset + nrow(x)) > .Machine$integer.max) {
+            stop("__index__ exceeds the 32-bit integer range (offset ",
+                 format(offset, scientific = FALSE), " + ", nrow(x), " rows); ",
+                 "pass 'index_max' (the resource's total index range, or Inf ",
+                 "when unknown) so the column is typed int64 for every part")
+        }
         index <- setNames(list(offset + seq_len(nrow(x))), indexcol)
     }
 

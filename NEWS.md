@@ -1,3 +1,16 @@
+# BiocDuckDB 0.99.5
+
+- `.writeDataFrameParquet()` now fails loudly when a part's `__index__` would
+  exceed the 32-bit range but `index_max` was not supplied, instead of silently
+  writing a floating-point (`float64`) key spine. Producers streaming past 2^31
+  rows must declare `index_max` (or `Inf`) so the column is typed `int64`
+  consistently across parts.
+
+- `writeDatapackage()` validates its inputs at the write seam (every resource
+  must be a descriptor with a single-string `name` and `path`; names must be
+  unique), so a malformed manifest fails fast at write time rather than
+  surfacing as an obscure error at read time.
+
 # BiocDuckDB 0.99.4
 
 ## Bug fixes

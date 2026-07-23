@@ -76,6 +76,22 @@ test_that("writeDatapackage validates its arguments", {
     expect_error(writeDatapackage("m", list(), 1L), "single")
 })
 
+test_that("writeDatapackage rejects malformed / duplicate resources (fail fast)", {
+    # Duplicate resource names (the reader indexes by name).
+    dup <- list(.featureResource("dup"), .featureResource("dup"))
+    expect_error(writeDatapackage("summarized_experiment", dup, tempfile()),
+                 "unique")
+    # A resource missing name / path.
+    expect_error(
+        writeDatapackage("summarized_experiment",
+                         list(list(path = "x", layout = "data_frame")), tempfile()),
+        "name")
+    expect_error(
+        writeDatapackage("summarized_experiment",
+                         list(list(name = "x", layout = "data_frame")), tempfile()),
+        "path")
+})
+
 test_that("writeDatapackage re-assembles a reader-valid manifest (round-trip)", {
     set.seed(11)
     counts <- matrix(rpois(30L, 5), nrow = 6L, ncol = 5L)

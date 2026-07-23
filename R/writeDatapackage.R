@@ -86,6 +86,25 @@ writeDatapackage <- function(model, resources, path,
     # Drop NULL descriptors (append/streaming parts return NULL).
     resources <- Filter(Negate(is.null), resources)
 
+    # Fail fast at the write seam every producer funnels through, rather than
+    # deferring a malformed manifest to a read-time error. Each resource must be
+    # a named descriptor with a non-empty `name` and `path`, and names must be
+    # unique (the reader indexes resources by `name`).
+    for (i in seq_along(resources)) {
+        r <- resources[[i]]
+        if (!is.list(r) || !isSingleString(r[["name"]]) ||
+            !isSingleString(r[["path"]])) {
+            stop("resources[[", i, "]] must be a list with single-string ",
+                 "'name' and 'path' fields")
+        }
+    }
+    nms <- vapply(resources, `[[`, character(1L), "name")
+    dup <- unique(nms[duplicated(nms)])
+    if (length(dup)) {
+        stop("resource 'name' must be unique; duplicated: ",
+             paste(dup, collapse = ", "))
+    }
+
     package <- list(model = model, resources = resources)
     if (!is.null(main_exp_name))
         package[["main_exp_name"]] <- main_exp_name

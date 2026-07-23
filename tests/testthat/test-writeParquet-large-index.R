@@ -48,3 +48,13 @@ test_that("without index_max a small index still narrows (no regression)", {
     expect_identical(.indexArrowType(f), "uint8")
     unlink(dir, recursive = TRUE)
 })
+
+test_that("a > 2^31 index without index_max fails loudly (not silent float64)", {
+    dir <- tempfile()
+    expect_error(
+        writeParquet(data.frame(v = 1:5), dir, indexcol = "__index__",
+                     keycol = NULL, dimension = "sample", layout = "data_frame",
+                     offset = 3e9, part = 0L, part_digits = 2L, append = FALSE),
+        "index_max")
+    unlink(dir, recursive = TRUE)
+})
