@@ -1,3 +1,16 @@
+# BiocDuckDB 0.99.6
+
+## Bug fixes
+
+- Reading a `graph_edges` resource no longer materializes the `__index__` keycol.
+  `.readParquetGraphEdges()` now constructs the graph with a `row_number` key
+  (`keycol = NULL`) instead of the schema's `__index__` keycol. A level-discovered
+  keycol pulls every distinct edge id into R and sorts it, which overflowed
+  `bit64`'s radixsort ("long vectors not supported") for a graph with more than
+  ~2.1e9 edges. A graph edge is identified by its `from`/`to` endpoints, not its
+  row position, so the row-number key reconstructs the same graph without the
+  scan.
+
 # BiocDuckDB 0.99.5
 
 - `.writeDataFrameParquet()` now fails loudly when a part's `__index__` would

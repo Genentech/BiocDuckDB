@@ -311,6 +311,9 @@ test_that("SingleCellExperiment with colPairs (graph_edges) works", {
     expect_identical(names(colPairs(sce2)), "knn")
     checkDuckDBSelfHits(colPair(sce2, "knn"), colPair(sce, "knn"))
 
+    # The graph must reconstruct with a row_number key
+    expect_true(DuckDBDataFrame::.has_row_number(colPair(sce2, "knn")))
+
     unlink(tmpdir, recursive = TRUE)
 })
 

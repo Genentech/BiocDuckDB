@@ -487,9 +487,10 @@ function(path,
 function(path,
          resource,
          datacols = .schema_datacols(resource[["schema"]]),
-         keycol = .schema_keycols(resource[["schema"]]),
+         keycol = NULL,
          ...)
 {
+    # Graph edges are order-immaterial. Use keycol = NULL.
     schema <- resource[["schema"]]
     DuckDBSelfHits(path,
                    from = .schema_graph(schema, "from"),
