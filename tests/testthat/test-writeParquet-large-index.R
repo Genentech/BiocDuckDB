@@ -58,3 +58,30 @@ test_that("a > 2^31 index without index_max fails loudly (not silent float64)", 
         "index_max")
     unlink(dir, recursive = TRUE)
 })
+
+test_that("cross-path append is schema-consistent", {
+    skip_if_not_installed("arrow")
+    dir <- tempfile()
+    # Part 0 via the in-memory data.frame path, typed int64 up front.
+    writeParquet(data.frame(v = 1:5), dir, indexcol = "__index__", keycol = NULL,
+                 dimension = "sample", layout = "data_frame",
+                 offset = 0, part = 0L, part_digits = 2L, append = FALSE,
+                 index_max = Inf)
+    # Part 1 via the lazy DuckDBTable path; must pin __index__ to part 0's int64
+    # (not default to BIGINT independently) so the resource stays readable.
+    src <- tempfile(fileext = ".parquet"); on.exit(unlink(src), add = TRUE)
+    arrow::write_parquet(data.frame(v = 11:15), src)
+    ddf <- DuckDBDataFrame::DuckDBDataFrame(src)
+    writeParquet(ddf, dir, indexcol = "__index__", keycol = NULL,
+                 dimension = "sample", layout = "data_frame",
+                 offset = 5, part = 1L, part_digits = 2L, append = TRUE)
+
+    files <- sort(list.files(dir, pattern = "parquet$", recursive = TRUE,
+                             full.names = TRUE))
+    expect_length(files, 2L)
+    types <- vapply(files, function(p)
+        arrow::ParquetFileReader$create(p)$GetSchema()$
+            GetFieldByName("__index__")$type$ToString(), character(1L))
+    expect_true(all(types == "int64"))
+    unlink(dir, recursive = TRUE)
+})
