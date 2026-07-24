@@ -153,6 +153,10 @@ function(blocks, path, dimension,
         }
         written <- written + 1L
         offset <- offset + nrow(block)
+        # Free the written block before pulling the next one; keeps RSS bounded
+        # over a long stream (the whole point of writing out-of-core).
+        rm(block)
+        gc(verbose = FALSE)
     }
 
     # Partition-alignment guard: a per-block dimtbl slice assumes a dense,
