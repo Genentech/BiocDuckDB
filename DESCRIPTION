@@ -1,5 +1,5 @@
 Package: BiocDuckDB
-Version: 0.99.6
+Version: 0.99.7
 Date: 2026-07-23
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
@@ -98,4 +98,5 @@ Collate:
     'readParquet.R'
     'writeDatapackage.R'
     'writeParquet.R'
+    'writeStreamingResource.R'
 Config/roxygen2/version: 8.0.0

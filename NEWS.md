@@ -1,3 +1,21 @@
+# BiocDuckDB 0.99.7
+
+## New features
+
+- `writeStreamingResource()` streams a larger-than-memory table to a single
+  flat, multi-part Parquet resource by pulling it block-by-block from a producer
+  callback (`blocks(i)` returning the i-th `data.frame` or `NULL` when
+  exhausted). It owns the streaming bookkeeping that large producers otherwise
+  hand-roll on top of `writeParquet()`: the running row `offset`, the `part`
+  index and zero-padded `part_digits`, the `append` flag, the positional
+  `dimtbl` slice per block, and `index_max` threading so the `__index__` column
+  stays one consistent (possibly > 2^31) integer type across parts. It also
+  performs the post-write integrity checks — a fatal partition-alignment guard
+  when the streamed row count disagrees with the dimension table, a coverage
+  warning against `expected_rows`, and a narrowing-floor warning when a small
+  part 0 is followed by more parts without `index_max`. The returned descriptor
+  (with `n_rows`) is ready for `writeDatapackage()`.
+
 # BiocDuckDB 0.99.6
 
 ## Bug fixes
