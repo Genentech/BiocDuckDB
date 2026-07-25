@@ -66,6 +66,16 @@
 #' column would be misaligned (silently corrupting directory pruning), so this
 #' is a fatal error rather than a warning.
 #'
+#' \strong{Commit boundary.} A multi-part resource is complete only once every
+#' part is written. To make "readable only when complete" hold by construction,
+#' an \code{_INCOMPLETE} marker file is dropped into \code{path} as soon as part
+#' 0 creates the directory and removed once the stream finishes. A finished
+#' resource is therefore a clean directory of only parquet parts that the reader
+#' loads normally, while an interrupted write leaves the marker behind; because
+#' the marker is not a parquet file, a read of the incomplete directory fails
+#' loudly instead of silently returning the partial parts. A fatal
+#' partition-alignment error likewise leaves the marker in place.
+#'
 #' @return
 #' Invisibly, the single Frictionless resource descriptor (a list) captured from
 #' part 0, with an added \code{n_rows} count, ready for
@@ -104,6 +114,9 @@ function(blocks, path, dimension,
     }
 
     resource <- NULL
+    # In-progress marker (see the "Commit boundary" section in the docs): dropped
+    # once part 0 has created the directory and removed on successful completion.
+    marker <- file.path(path, "_INCOMPLETE")
     offset <- 0            # numeric (not 0L): a > 2^31-row resource overflows
     written <- 0L          # count of NON-EMPTY parts actually written
     part0_rows <- NA_real_ # rows in part 0, for the narrowing-floor warning
@@ -150,6 +163,7 @@ function(blocks, path, dimension,
         if (written == 0L) {
             resource <- res      # descriptor is returned only from part 0
             part0_rows <- nrow(block)
+            file.create(marker)  # part 0 created the dir; mark it in-progress
         }
         written <- written + 1L
         offset <- offset + nrow(block)
@@ -180,6 +194,14 @@ function(blocks, path, dimension,
     # Stamp the true row count onto the descriptor for downstream checks.
     if (!is.null(resource) && length(resource)) {
         resource[[length(resource)]][["n_rows"]] <- offset
+    }
+
+    # Completed: remove the in-progress marker so the resource directory is a
+    # clean set of parquet parts. A fatal guard above (partition-alignment)
+    # returns early via stop() and leaves the marker in place, correctly marking
+    # the resource incomplete. An empty stream never created the marker.
+    if (!is.null(resource) && length(resource)) {
+        unlink(marker)
     }
     invisible(resource)
 }

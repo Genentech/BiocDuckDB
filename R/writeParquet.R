@@ -845,8 +845,14 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
         }
 
         if (flat_part) {
-            write_parquet(write_obj, prep$pq_path, compression = "zstd",
-                          compression_level = 3L, ...)
+            # Pin row groups so row-groups-per-file >= query threads. Matches
+            # the coord path's fixed 491520 (writeCoordArray-duckdb.R).
+            dots <- list(...)
+            if (is.null(dots[["chunk_size"]])) {
+                dots[["chunk_size"]] <- 491520L
+            }
+            do.call(write_parquet, c(list(write_obj, prep$pq_path,
+                    compression = "zstd", compression_level = 3L), dots))
         } else {
             write_dataset(write_obj, path, format = "parquet",
                           compression = "zstd", compression_level = 3L, ...)

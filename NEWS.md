@@ -1,3 +1,25 @@
+# BiocDuckDB 0.99.8
+
+## New features
+
+- `writeStreamingResource()` now guards a multi-part write with an in-progress
+  marker: an `_INCOMPLETE` file is dropped into the resource directory once part
+  0 creates it and removed once the stream finishes. A completed resource is
+  therefore a clean directory of only Parquet parts that reads normally, while an
+  interrupted write leaves the marker behind; because the marker is not a Parquet
+  file, reading the incomplete directory fails loudly instead of silently
+  returning the partial parts. This makes "readable only when complete" hold by
+  construction with no change to the reader.
+
+## Enhancements
+
+- The flat `data.frame` Parquet write path now pins the row-group size
+  (`arrow::write_parquet(chunk_size = ...)`, default 491520 rows, matching the
+  coordinate-array writer) instead of relying on the Arrow default. A large or
+  streamed flat resource is written with bounded row groups, so range predicates
+  prune at row-group granularity and reads parallelize across groups; a caller
+  may still override `chunk_size`.
+
 # BiocDuckDB 0.99.7
 
 ## New features

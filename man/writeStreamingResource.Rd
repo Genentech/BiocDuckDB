@@ -103,6 +103,16 @@ stream is dense and contiguous with exactly \code{nrow(dimtbl)} rows in index
 order. If the streamed total does not equal \code{nrow(dimtbl)} the partition
 column would be misaligned (silently corrupting directory pruning), so this
 is a fatal error rather than a warning.
+
+\strong{Commit boundary.} A multi-part resource is complete only once every
+part is written. To make "readable only when complete" hold by construction,
+an \code{_INCOMPLETE} marker file is dropped into \code{path} as soon as part
+0 creates the directory and removed once the stream finishes. A finished
+resource is therefore a clean directory of only parquet parts that the reader
+loads normally, while an interrupted write leaves the marker behind; because
+the marker is not a parquet file, a read of the incomplete directory fails
+loudly instead of silently returning the partial parts. A fatal
+partition-alignment error likewise leaves the marker in place.
 }
 \examples{
 tf <- tempfile()
