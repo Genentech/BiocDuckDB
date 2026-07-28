@@ -224,6 +224,7 @@ function(path,
     keycol <- .schema_keycols(schema)
     pkey <- schema[["primaryKey"]]
     exclude <- c(keycol,
+                 "__element__",
                  if (!is.null(pkey) && !identical(pkey, keycol)) pkey,
                  .schema_partitions(schema),
                  unlist(schema[["genomicCoords"]]),
@@ -886,6 +887,12 @@ function(path,
         x <- .readParquetDataFrame(fullpath, resource = spatial_map_res,
                                    keycol = index, ...)
         spatial_map <- as.data.frame(x, optional = TRUE)
+        drop_cols <- intersect(c("__index__", "__element__"),
+                               colnames(spatial_map))
+        if (length(drop_cols)) {
+            spatial_map <- spatial_map[,
+                setdiff(colnames(spatial_map), drop_cols), drop = FALSE]
+        }
         spatial_map <- DataFrame(spatial_map, check.names = FALSE)
     }
 

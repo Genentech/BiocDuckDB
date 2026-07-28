@@ -1,3 +1,28 @@
+# BiocDuckDB 0.99.10
+
+## Enhancements
+
+- `writeParquet()` now serializes a `MultiAssaySpatialExperiment`'s `spatialMap`
+  as a monomorphic bridge over a conformed **element-instance registry**
+  (`spatial_element_registry`), so the observation-to-spatial-element association
+  becomes real, single-target foreign keys instead of an opaque polymorphic
+  reference. A new `spatial_element_registry` resource enumerates every
+  points/shapes instance across all layers with an integer `__element__` spine;
+  each typed spatial layer foreign-keys that spine; and `spatial_map` declares
+  two foreign keys -- the element side (`__element__` to `spatial_element_registry`)
+  and the observation side (`(assay, colname)` to `sample_map`, which encodes
+  the spatialMap validity rule as a real composite FK). The `__element__` spine
+  is a serialization-internal column: `readParquet()` reconstructs the
+  object-model `spatialMap` and the spatial layers without it, so the round-trip
+  is unchanged.
+
+## Bug fixes
+
+- `writeParquet()` emitted a `coord_array` index column's category `label` as a
+  one-element array rather than a string, so a datapackage carrying an assay with
+  dimnames failed validation against the bundled Frictionless profile. The label
+  is now a string, and such packages conform.
+
 # BiocDuckDB 0.99.9
 
 ## Enhancements

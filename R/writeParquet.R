@@ -587,7 +587,7 @@ function(x,
                                         lapply(seq_along(dimnames_x[[i]]),
                                                function(j) {
                                                    list(value = j,
-                                                        label = I(dimnames_x[[i]][[j]]))
+                                                        label = dimnames_x[[i]][[j]])
                                                }),
                                     categoriesOrdered = TRUE)
                            }
@@ -1835,6 +1835,70 @@ setMethod("writeParquet", "ShapesLayerList", function(x, path, ...)
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Spatial element-instance registry
+###
+
+# Enumerate every points/shapes instance across all layers into one conformed
+# registry, so spatialMap's polymorphic (element_type, region, instance_id)
+# reference monomorphizes to a single-target foreign key.
+#' @importFrom S4Vectors DataFrame
+.spatialElementRegistry <- function(pts, shps) {
+    parts <- list()
+    collect <- function(ll, etype) {
+        for (i in seq_along(ll)) {
+            iid <- ll[[i]][["instance_id"]]
+            if (!is.null(iid) && length(iid)) {
+                parts[[length(parts) + 1L]] <<- DataFrame(
+                    element_type = etype,
+                    region = names(ll)[i],
+                    instance_id = as.character(iid))
+            }
+        }
+    }
+    collect(pts, "points")
+    collect(shps, "shapes")
+    if (!length(parts))
+        return(NULL)
+    do.call(rbind, parts)
+}
+
+.spatialElementKey <- function(reg) {
+    keys <- paste(reg[["element_type"]], reg[["region"]],
+                  as.character(reg[["instance_id"]]), sep = "\r")
+    stats::setNames(seq_len(nrow(reg)), keys)
+}
+
+.elementRegistryRef <- function() {
+    list(list(fields = "__element__",
+              reference = list(fields = "__element__",
+                               resource = "spatial_element_registry")))
+}
+
+.writeSpatialLayersWithRegistry <-
+function(ll, etype, path, elem_key, ...)
+{
+    layout <- sprintf("spatial_%s", etype)
+    prefix <- sprintf("sample_%s_", etype)
+    ref <- if (is.null(elem_key)) NULL else .elementRegistryRef()
+    resources <- list()
+    for (i in seq_along(ll)) {
+        region <- names(ll)[i]
+        lyr <- ll[[i]]
+        if (!is.null(elem_key)) {
+            k <- paste(etype, region, as.character(lyr[["instance_id"]]),
+                       sep = "\r")
+            lyr[["__element__"]] <- as.integer(elem_key[k])
+        }
+        resources <- c(resources,
+                       writeParquet(lyr,
+                                    path = file.path(path, paste0(prefix, region)),
+                                    name = region, dimension = "sample",
+                                    layout = layout, refs = ref, ...))
+    }
+    resources
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### MultiAssaySpatialExperiment objects
 ###
 
@@ -1850,17 +1914,33 @@ function(x,
                         resources = list()),
          ...)
 {
-    # Points
     pts <- MultiAssaySpatialExperiment::spatialPoints(x)
+    shps <- MultiAssaySpatialExperiment::spatialShapes(x)
+
+    # Element-instance registry
+    reg <- .spatialElementRegistry(pts, shps)
+    elem_key <- NULL
+    if (!is.null(reg)) {
+        elem_key <- .spatialElementKey(reg)
+        resources <- callGeneric(as.data.frame(reg, optional = TRUE),
+                                 path = file.path(path, "spatial_element_registry"),
+                                 indexcol = "__element__", keycol = NULL,
+                                 name = "spatial_element_registry", dimension = "sample",
+                                 layout = "spatial_element_registry", ...)
+        package[["resources"]] <- c(package[["resources"]], resources)
+    }
+
+    # Points
     if (length(pts) > 0L) {
-        resources <- callGeneric(pts, path = path, ...)
+        resources <- .writeSpatialLayersWithRegistry(pts, "points", path,
+                                                     elem_key, ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
     # Shapes
-    shps <- MultiAssaySpatialExperiment::spatialShapes(x)
     if (length(shps) > 0L) {
-        resources <- callGeneric(shps, path = path, ...)
+        resources <- .writeSpatialLayersWithRegistry(shps, "shapes", path,
+                                                     elem_key, ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
@@ -2003,11 +2083,23 @@ function(x,
         package[["resources"]] <- c(package[["resources"]], resources_img)
     }
 
-    # Spatial Map
+    # Spatial Map: a monomorphic bridge with two single-target FKs
     spatial_map <- MultiAssaySpatialExperiment::spatialMap(x)
     if (!is.null(spatial_map) && nrow(spatial_map) > 0L) {
+        sm_refs <- list()
+        if (!is.null(elem_key)) {
+            k <- paste(as.character(spatial_map[["element_type"]]),
+                       as.character(spatial_map[["region"]]),
+                       as.character(spatial_map[["instance_id"]]), sep = "\r")
+            spatial_map[["__element__"]] <- as.integer(elem_key[k])
+            sm_refs <- c(sm_refs, .elementRegistryRef())
+        }
+        sm_refs <- c(sm_refs, list(list(
+            fields = c("assay", "colname"),
+            reference = list(fields = c("assay", "colname"),
+                             resource = "sample_map"))))
         resources_sm <- callGeneric(spatial_map, path = file.path(path, "spatial_map"),
-                                    dimension = "unbound", ...)
+                                    dimension = "unbound", refs = sm_refs, ...)
         package[["resources"]] <- c(package[["resources"]], resources_sm)
     }
 

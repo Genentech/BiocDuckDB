@@ -162,3 +162,73 @@ test_that("MultiAssayExperiment sample_map declares the primary -> subjects fore
 
     unlink(tmpdir, recursive = TRUE)
 })
+
+test_that("MASE conforms spatialMap via an spatial_element_registry + monomorphic bridge (ADR-067)", {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+    validator <- .profileValidator()
+    suppressPackageStartupMessages(library(MultiAssaySpatialExperiment))
+
+    mat <- matrix(rpois(20, 5), 5, 4,
+                  dimnames = list(paste0("G", 1:5), paste0("obs", 1:4)))
+    pts <- S4Vectors::DataFrame(x = 1:4, y = 1:4, instance_id = paste0("obs", 1:4))
+    mase <- MultiAssaySpatialExperiment(
+        experiments = ExperimentList(rna = mat),
+        colData = S4Vectors::DataFrame(tissue = c("core", "margin"),
+                                       row.names = c("specimen_A", "specimen_B")),
+        sampleMap = S4Vectors::DataFrame(
+            assay = factor(rep("rna", 4), "rna"),
+            primary = rep(c("specimen_A", "specimen_B"), each = 2),
+            colname = paste0("obs", 1:4)),
+        points = PointsLayerList(coords = pts),
+        spatialMap = S4Vectors::DataFrame(
+            assay = factor(rep("rna", 4), "rna"),
+            colname = paste0("obs", 1:4), element_type = "points",
+            region = "coords", instance_id = paste0("obs", 1:4)))
+
+    tmpdir <- tempfile()
+    writeParquet(mase, tmpdir)
+
+    # Conforms to the profile (new spatial_element_registry layout + composite FK).
+    expect_true(.validateDataPackage(validator, tmpdir))
+
+    dp <- jsonlite::fromJSON(file.path(tmpdir, "datapackage.json"),
+                             simplifyVector = FALSE)
+    get_res <- function(nm) Find(function(r) identical(r[["name"]], nm),
+                                 dp[["resources"]])
+    fk_map <- function(res) {
+        fks <- res[["schema"]][["foreignKeys"]]
+        stats::setNames(lapply(fks, function(k)
+            c(resource = k[["reference"]][["resource"]],
+              fields = paste(unlist(k[["reference"]][["fields"]]), collapse = "+"))),
+            vapply(fks, function(k) paste(unlist(k[["fields"]]), collapse = "+"), ""))
+    }
+
+    # The conformed registry dimension.
+    reg <- get_res("spatial_element_registry")
+    expect_false(is.null(reg))
+    expect_identical(reg[["layout"]], "spatial_element_registry")
+    expect_true(all(c("__element__", "element_type", "region", "instance_id") %in%
+                    vapply(reg[["schema"]][["fields"]], `[[`, "", "name")))
+
+    # The typed layer foreign-keys the registry's integer spine.
+    coords_fk <- fk_map(get_res("coords"))
+    expect_identical(coords_fk[["__element__"]][["resource"]], "spatial_element_registry")
+
+    # The bridge carries both single-target FKs.
+    sm_fk <- fk_map(get_res("spatial_map"))
+    expect_identical(sm_fk[["__element__"]][["resource"]], "spatial_element_registry")
+    expect_identical(sm_fk[["assay+colname"]][["resource"]], "sample_map")
+    expect_identical(sm_fk[["assay+colname"]][["fields"]], "assay+colname")
+
+    # Round-trip: the internal spine does not leak back into the object model.
+    m2 <- readParquet(tmpdir)
+    sm2 <- MultiAssaySpatialExperiment::spatialMap(m2)
+    expect_false(any(c("__element__", "__index__") %in% colnames(sm2)))
+    expect_true(all(c("assay", "colname", "element_type", "region",
+                      "instance_id") %in% colnames(sm2)))
+    layer2 <- as.data.frame(
+        MultiAssaySpatialExperiment::spatialPoints(m2)[["coords"]])
+    expect_false("__element__" %in% colnames(layer2))
+
+    unlink(tmpdir, recursive = TRUE)
+})
