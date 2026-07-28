@@ -1373,6 +1373,13 @@ function(x,
     invisible(resources)
 })
 
+# Both endpoints of a neighbor graph reference the SAME dimension key
+.graphEndpointRefs <- function(keyfield, resource) {
+    ref <- list(fields = keyfield, resource = resource)
+    list(list(fields = "from", reference = ref),
+         list(fields = "to",   reference = ref))
+}
+
 .writeParquetGraphs <-
 function(x,
          path,
@@ -1619,6 +1626,10 @@ function(x,
                                  indexcol = indexcols[1L],
                                  dimension = "feature",
                                  layout = "embedding_table",
+                                 refs = list(list(
+                                     fields = indexcols[1L],
+                                     reference = list(fields = indexcols[1L],
+                                                      resource = "features"))),
                                  ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
@@ -1639,6 +1650,10 @@ function(x,
                                  indexcol = indexcols[2L],
                                  dimension = "sample",
                                  layout = "embedding_table",
+                                 refs = list(list(
+                                     fields = indexcols[2L],
+                                     reference = list(fields = indexcols[2L],
+                                                      resource = "samples"))),
                                  ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
@@ -1672,7 +1687,10 @@ function(x,
     rpairs <- rowPairs(x, asSparse = FALSE)
     if (length(rpairs)) {
         resources <- .writeParquetGraphs(rpairs, path = path,
-                                         dimension = "feature", ...)
+                                         dimension = "feature",
+                                         refs = .graphEndpointRefs(indexcols[1L],
+                                                                   "features"),
+                                         ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 
@@ -1680,7 +1698,10 @@ function(x,
     cpairs <- colPairs(x, asSparse = FALSE)
     if (length(cpairs)) {
         resources <- .writeParquetGraphs(cpairs, path = path,
-                                         dimension = "sample", ...)
+                                         dimension = "sample",
+                                         refs = .graphEndpointRefs(indexcols[2L],
+                                                                   "samples"),
+                                         ...)
         package[["resources"]] <- c(package[["resources"]], resources)
     }
 

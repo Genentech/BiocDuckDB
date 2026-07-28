@@ -1,3 +1,19 @@
+# BiocDuckDB 0.99.9
+
+## Enhancements
+
+- `writeParquet()` now declares dimension foreign keys for neighbor graphs and
+  reducedDim embeddings, so a `datapackage.json` losslessly serializes the object
+  model's relational structure rather than only the assay's. A `colPairs` /
+  `rowPairs` `graph_edges` resource declares both edge endpoints (`from` / `to`)
+  as foreign keys into the sample / feature dimension's crossing key (a
+  role-playing self-reference), and a `reducedDims` / `rowLoadings`
+  `embedding_table` resource declares its key column as a foreign key into its
+  dimension table (an outrigger). The additions are additive and reader-neutral:
+  the reader reconstructs graphs and embeddings from `graphEdges` / the Parquet
+  schema as before, and the emitted package still validates against the bundled
+  Frictionless profile.
+
 # BiocDuckDB 0.99.8
 
 ## New features

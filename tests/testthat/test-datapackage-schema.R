@@ -69,6 +69,49 @@ test_that("SingleCellExperiment with embeddings conforms (fixed-length array fie
     unlink(tmpdir, recursive = TRUE)
 })
 
+test_that("reducedDim embedding + colPairs graph declare their dimension foreign keys (#104)", {
+    # The datapackage must losslessly serialize the object model's relational
+    # structure: a reducedDim embedding is an OUTRIGGER off the sample dimension,
+    # and a colPairs neighbor graph is a role-playing self-reference (from/to both
+    # into the sample dimension). Both must declare foreign keys, like the assay.
+    set.seed(204)
+    ngenes <- 12L
+    ncells <- 8L
+    counts <- matrix(rpois(ngenes * ncells, 5), nrow = ngenes, ncol = ncells)
+    rownames(counts) <- paste0("Gene", seq_len(ngenes))
+    colnames(counts) <- paste0("Cell", seq_len(ncells))
+
+    sce <- SingleCellExperiment(assays = list(counts = counts))
+    reducedDim(sce, "PCA") <- matrix(rnorm(ncells * 3L), nrow = ncells, ncol = 3L)
+    colPair(sce, "knn") <- SelfHits(c(1L, 2L, 3L), c(2L, 3L, 1L), nnode = ncells)
+
+    tmpdir <- tempfile()
+    writeParquet(sce, tmpdir)
+    dp <- jsonlite::fromJSON(file.path(tmpdir, "datapackage.json"),
+                             simplifyVector = FALSE)
+    by_layout <- function(lay) Filter(function(r) identical(r[["layout"]], lay),
+                                      dp[["resources"]])
+
+    emb <- by_layout("embedding_table")[[1L]]
+    efks <- emb[["schema"]][["foreignKeys"]]
+    expect_equal(length(efks), 1L)
+    expect_identical(efks[[1L]][["fields"]], "__sample__")
+    expect_identical(efks[[1L]][["reference"]][["resource"]], "samples")
+    expect_identical(efks[[1L]][["reference"]][["fields"]], "__sample__")
+
+    graph <- by_layout("graph_edges")[[1L]]
+    gfks <- graph[["schema"]][["foreignKeys"]]
+    expect_equal(length(gfks), 2L)
+    endpoints <- vapply(gfks, `[[`, character(1L), "fields")
+    expect_setequal(endpoints, c("from", "to"))
+    for (fk in gfks) {
+        expect_identical(fk[["reference"]][["resource"]], "samples")
+        expect_identical(fk[["reference"]][["fields"]], "__sample__")
+    }
+
+    unlink(tmpdir, recursive = TRUE)
+})
+
 test_that("MultiAssayExperiment datapackage.json conforms to the profile", {
     validator <- .profileValidator()
 
