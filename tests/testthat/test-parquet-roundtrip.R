@@ -351,6 +351,7 @@ test_that("MultiAssayExperiment with nested experiments works", {
 
     # Check structure
     expect_s4_class(mae2, "MultiAssayExperiment")
+    expect_true(validObject(mae2))
     expect_identical(names(experiments(mae2)), c("RNA", "Protein"))
     expect_identical(length(experiments(mae2)), 2L)
 
@@ -393,6 +394,7 @@ test_that("MultiAssayExperiment with flat array-like objects works", {
 
     # Check structure
     expect_s4_class(mae2, "MultiAssayExperiment")
+    expect_true(validObject(mae2))
     expect_identical(names(experiments(mae2)), c("Dataset1", "Dataset2"))
     expect_identical(length(experiments(mae2)), 2L)
 

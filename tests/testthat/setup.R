@@ -299,5 +299,9 @@ makeLazySpatialMASE <- function(path = NULL) {
     if (is.null(path))
         path <- file.path(tempdir(), paste0("mase_lazy_", sample.int(1e6, 1L)))
     BiocDuckDB::writeParquet(mase, path)
-    BiocDuckDB::readParquet(path)
+    out <- BiocDuckDB::readParquet(path)
+    # readParquet assembles the MASE with new2(check = FALSE); assert the
+    # write-trusted fast path still yields a valid object (guards every caller).
+    expect_true(validObject(out))
+    out
 }

@@ -699,6 +699,41 @@ function(path,
 ### MultiAssayExperiment objects
 ###
 
+#' @importClassesFrom MultiAssayExperiment MultiAssayExperiment
+#' @importClassesFrom S4Vectors DataFrame
+#' @importFrom MultiAssayExperiment ExperimentList
+#' @importFrom S4Vectors new2
+.newMAE <- function(experiments, colData, sampleMap, metadata = list()) {
+    if (is.null(metadata)) {
+        metadata <- list()
+    }
+    new2("MultiAssayExperiment",
+         ExperimentList = ExperimentList(experiments),
+         colData        = colData,
+         sampleMap      = as(sampleMap, "DataFrame"),
+         metadata       = metadata,
+         check          = FALSE)
+}
+
+#' @importClassesFrom MultiAssaySpatialExperiment MultiAssaySpatialExperiment
+#' @importClassesFrom MultiAssaySpatialExperiment RasterLayerList
+#' @importClassesFrom MultiAssaySpatialExperiment PointsLayerList
+#' @importClassesFrom MultiAssaySpatialExperiment ShapesLayerList
+#' @importFrom S4Vectors new2
+.newMASE <-
+function(mae, images, labels, points, shapes, imgData, spatialMap)
+{
+    new2("MultiAssaySpatialExperiment",
+         mae,
+         images     = as(images, "RasterLayerList"),
+         labels     = as(labels, "RasterLayerList"),
+         points     = as(points, "PointsLayerList"),
+         shapes     = as(shapes, "ShapesLayerList"),
+         imgData    = imgData,
+         spatialMap = spatialMap,
+         check      = FALSE)
+}
+
 #' @importFrom MultiAssayExperiment MultiAssayExperiment
 #' @importFrom stats setNames
 .readParquetMAE <- function(path, package, ...) {
@@ -735,10 +770,8 @@ function(path,
     metadata <- .deserializeMetadata(package[["annotations"]], resources, path, ...)
 
     # MultiAssayExperiment
-    MultiAssayExperiment(experiments,
-                         colData = subjects,
-                         sampleMap = sample_map,
-                         metadata = metadata)
+    .newMAE(experiments, colData = subjects, sampleMap = sample_map,
+            metadata = metadata)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -896,16 +929,7 @@ function(path,
         spatial_map <- DataFrame(spatial_map, check.names = FALSE)
     }
 
-    MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
-        experiments = experiments(mae),
-        colData = colData(mae),
-        sampleMap = sampleMap(mae),
-        images = images,
-        labels = labels,
-        points = points,
-        shapes = shapes,
-        imgData = img_data,
-        spatialMap = spatial_map,
-        metadata = metadata(mae)
-    )
+    # MultiAssaySpatialExperiment
+    .newMASE(mae, images = images, labels = labels, points = points,
+             shapes = shapes, imgData = img_data, spatialMap = spatial_map)
 }

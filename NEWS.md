@@ -1,3 +1,30 @@
+# BiocDuckDB 0.99.11
+
+## Enhancements
+
+- `readParquet()` now assembles `multi_assay_experiment` and
+  `multi_assay_spatial_experiment` objects directly with
+  `S4Vectors::new2(check = FALSE)` instead of calling the
+  `MultiAssayExperiment()` / `MultiAssaySpatialExperiment()` constructors. Those
+  constructors re-derive sample-name set equality at construction time via a
+  locale-collation sort over the full, cell-grain `sampleMap`, which dominates
+  read time on large products (tens of millions of `sampleMap` rows -- e.g. a
+  cell-resolved spatial atlas took ~22 min to read, over 60% of it in that
+  redundant sort). The datapackage already carries `writeParquet()`'s write-time
+  integrity guarantee (a DuckDB anti-join proving every `sampleMap` `primary` is
+  a subjects rowname), so the constructor-time re-check is redundant; the
+  assembled object still passes `validObject()`. The direct assembly also skips
+  harmonization, so unreferenced `colData` rows are retained rather than dropped
+  on read (write with `subset_subjects_to_referenced` upstream to avoid them).
+
+## Testing
+
+- The `multi_assay_experiment` and `multi_assay_spatial_experiment` round-trip
+  tests now assert `validObject()` on every object returned by `readParquet()`.
+  Because the read path assembles with `new2(check = FALSE)` (no constructor-time
+  validity), these explicit checks guard against a `readParquet()`-assembled
+  object being structurally invalid.
+
 # BiocDuckDB 0.99.10
 
 ## Enhancements

@@ -32,7 +32,11 @@
                 scaled = list(type = "scale", scale = c(2, 2))))))
     path <- file.path(tempdir(), paste0("mase_q_", sample.int(1e6, 1L)))
     BiocDuckDB::writeParquet(mase, path)
-    BiocDuckDB::readParquet(path)
+    out <- BiocDuckDB::readParquet(path)
+    # readParquet assembles the MASE with new2(check = FALSE); assert the
+    # write-trusted fast path still yields a valid object (guards every caller).
+    expect_true(validObject(out))
+    out
 }
 
 test_that("per-element transforms round-trip and expose coordinate systems", {

@@ -222,6 +222,7 @@ test_that("MASE conforms spatialMap via an spatial_element_registry + monomorphi
 
     # Round-trip: the internal spine does not leak back into the object model.
     m2 <- readParquet(tmpdir)
+    expect_true(validObject(m2))
     sm2 <- MultiAssaySpatialExperiment::spatialMap(m2)
     expect_false(any(c("__element__", "__index__") %in% colnames(sm2)))
     expect_true(all(c("assay", "colname", "element_type", "region",
