@@ -8,9 +8,7 @@ changing the release. Most such wins are query-shaped materializations
 alternate-axis copies) that must stay downstream. The few FAITHFUL writer
 improvements are tracked per subpackage:
   - DuckDBArray/TODO      COO cluster_by (within-partition ordering)
-  - DuckDBDataFrame/TODO  lazy-export row-group size; targeted blooms; exported
-                          ordering / column-extents API
-  - DuckDBSpatial/TODO    all-null coordinate-column warning
+  - DuckDBDataFrame/TODO  targeted blooms; exported ordering / column-extents API
 
 o Consider a first-class serving-layout builder as a SEPARATE utility package
   (not writeParquet). It would take a release and emit a non-release,
