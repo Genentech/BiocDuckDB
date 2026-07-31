@@ -1,0 +1,39 @@
+Serving-layer / query optimization
+==================================
+
+Benchmarking showed that most query-speed wins come from a DERIVED, disposable
+Parquet "serving layout" built downstream of the immutable release, NOT from
+changing the release. Most such wins are query-shaped materializations
+(denormalized aggregates, per-cell kNN arrays, synthetic partitions, duplicate
+alternate-axis copies) that must stay downstream. The few FAITHFUL writer
+improvements are tracked per subpackage:
+  - DuckDBArray/TODO      COO cluster_by (within-partition ordering)
+  - DuckDBDataFrame/TODO  lazy-export row-group size; targeted blooms; exported
+                          ordering / column-extents API
+  - DuckDBSpatial/TODO    all-null coordinate-column warning
+
+o Consider a first-class serving-layout builder as a SEPARATE utility package
+  (not writeParquet). It would take a release and emit a non-release,
+  query-optimized directory (no datapackage.json), plus a parity-gate utility
+  that checks serving == release. Keeping it out of the release writer is what
+  lets it denormalize, duplicate, and synthetically partition freely without
+  touching the faithful-serialization contract, readers, or the parity golden.
+  New primitives it would need (and that BiocDuckDB should expose):
+  - graph edge-list -> per-cell kNN-array writer;
+  - feature-clustered COO writer;
+  - a partition-by-observation helper;
+  - the exported Morton / Hilbert cluster_by (see DuckDBDataFrame/TODO);
+  - a parity-check utility.
+  - Scope note for the parity gate: it can only prove DuckDB-reads-serving ==
+    DuckDB-reads-release under order-insensitive normalization, NOT equivalence
+    to what BiocDuckDB / scibis present. A productized gate should state that
+    scope, or add the stronger engine-read check against the cross-engine parity
+    golden.
+
+o A release COO written with a single 2-D grid partition (feature-group x
+  sample-group) pessimizes BOTH a sample-selective and a feature-selective query
+  (each touches a whole group along the other axis). A release ships one
+  ordering, so once cluster_by lands (DuckDBArray/TODO), document that the
+  producer should pick the dominant access axis for the release, and that
+  optimizing the other axis is a legitimate serving-tier duplicate, not a
+  release deficiency.
