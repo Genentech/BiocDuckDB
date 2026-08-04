@@ -18,7 +18,6 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(BiocStyle)
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
                       error = FALSE, warning = FALSE, message = FALSE)
 ```
