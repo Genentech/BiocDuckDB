@@ -1,3 +1,12 @@
+# BiocDuckDB 0.99.13
+
+## Follow-up review changes
+
+- Updated the sole caller of the shared internal generic (a round-trip test) to
+  the undotted name after the Bioconductor-review rename in DuckDBDataFrame
+  (`.has_row_number` -> `has_row_number`; guideline: functions starting with `.`
+  should not be exported). Requires the renamed version of DuckDBDataFrame.
+
 # BiocDuckDB 0.99.12
 
 ## Documentation
