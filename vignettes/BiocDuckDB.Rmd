@@ -24,24 +24,24 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
 
 # Introduction
 
-Bioconductor's experiment containers --- `SummarizedExperiment`,
-`SingleCellExperiment`, `MultiAssayExperiment` --- hold their assays, annotations,
+Bioconductor's experiment containers, `SummarizedExperiment`,
+`SingleCellExperiment`, `MultiAssayExperiment`, hold their assays, annotations,
 and reduced dimensions in memory. For modern datasets that is increasingly
 impractical: a million-cell single-cell experiment is tens of gigabytes, and a
 multi-omics study multiplies that across assays.
 
 `r Biocpkg("BiocDuckDB")` is the integration layer of the **BiocDuckDB** suite. It
-provides two high-level functions ---
+provides two high-level functions,
 
 - **`writeParquet()`** serializes a Bioconductor experiment object to a structured
   directory of columnar **Parquet** files, and
 - **`readParquet()`** reads that directory back as a **DuckDB-backed** experiment
-  object
+  object.
 
---- so an experiment keeps its assays on disk while presenting the *same*
+So an experiment keeps its assays on disk while presenting the *same*
 Bioconductor API. Assays become `r Biocpkg("DuckDBArray")` matrices, `rowData` and
 `colData` become `r Biocpkg("DuckDBDataFrame")`s, and `rowRanges` becomes a
-`r Biocpkg("DuckDBGRanges")` list --- and operations on them run as SQL against the
+`r Biocpkg("DuckDBGRanges")` list, and operations on them run as SQL against the
 Parquet files. The on-disk format is a self-describing
 [Frictionless Data Package](https://frictionlessdata.io/), readable by other tools
 and languages, not just R.
@@ -89,15 +89,15 @@ Frictionless-style directory, described by a `datapackage.json`:
 head(list.files(se_path, recursive = TRUE), 10)
 ```
 
-Assays are stored in **coordinate (COO) form** --- one row per stored entry with
-`__feature__`/`__sample__` index columns and a `value` --- which is compact for the
+Assays are stored in **coordinate (COO) form**, one row per stored entry with
+`__feature__`/`__sample__` index columns and a `value`, which is compact for the
 sparse matrices typical of single-cell data, and lets DuckDB scan only what a query
 touches.
 
 ## Targeting the storage contract
 
 The `datapackage.json` layout is a stable [Frictionless](https://datapackage.org)
-profile --- BiocDuckDB's extensions are additive and base-conformant --- so any
+profile, BiocDuckDB's extensions are additive and base-conformant, so any
 producer can *target* it and any consumer can *attach* it. These are the write and
 read halves of an ingest/attach contract, exposed as public functions so a store
 that already holds COO Parquet does not need to reconstruct an in-memory object to
@@ -115,7 +115,7 @@ writeDatapackage("summarized_experiment", resources, dir)
 ```
 
 Going the other way, the `DuckDBMatrix()` / `DuckDBArray()` / `DuckDBTable()`
-constructors attach an existing COO Parquet in place --- wrapping it as a lazy,
+constructors attach an existing COO Parquet in place, wrapping it as a lazy,
 out-of-core object without copying or materializing it:
 
 ```{r attach, eval=FALSE}
@@ -191,7 +191,7 @@ dim(keep)
 # The filter, realize, analyze pattern
 
 For data larger than memory, the idiomatic workflow uses DuckDB for the parts it
-does well --- filtering and summarizing on disk --- and only then realizes the
+does well, filtering and summarizing on disk, and only then realizes the
 manageable subset into memory for the standard analysis pipeline:
 
 ```{r pattern, eval=FALSE}
@@ -219,7 +219,7 @@ writeParquet(sce, "data/processed")
 ```
 
 Many `r Biocpkg("scran")`/`r Biocpkg("scuttle")` steps can run *directly* on the
-DuckDB-backed object as SQL, before any realization --- that is the subject of
+DuckDB-backed object as SQL, before any realization, that is the subject of
 *Benchmarking BiocDuckDB*.
 
 # Multi-omics
@@ -247,7 +247,7 @@ GeoParquet via `r Biocpkg("DuckDBSpatial")`.
 A good fit for experiments **larger than memory**, for **exploration, QC, and
 filtering** of large datasets, and for a **self-describing, cross-language** on-disk
 format (the Parquet files are readable by Python, Julia, and DuckDB directly).
-Parquet is also a compact archival format --- typically several-fold smaller than
+Parquet is also a compact archival format, typically several-fold smaller than
 `.rds` for sparse data, and self-describing.
 
 Realize a subset to an ordinary in-memory object for iterative algorithms with

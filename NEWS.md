@@ -7,6 +7,10 @@
   (`.has_row_number` -> `has_row_number`; guideline: functions starting with `.`
   should not be exported). Requires the renamed version of DuckDBDataFrame.
 
+## Documentation
+
+- Replaced em dashes with commas or colons in the vignettes.
+
 # BiocDuckDB 0.99.12
 
 ## Documentation
