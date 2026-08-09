@@ -1,6 +1,8 @@
 # Tests the basic functions of a DuckDBMatrix.
 # library(testthat); library(BiocDuckDB); source("setup.R"); source("test-DuckDBMatrix-spatial.R")
 
+skip_if_not_installed("sf")
+
 .make_ddb_matrix <- function(mat, label) {
     pq_dir <- file.path(tempdir(), paste0("c3_", label))
     DuckDBArray::writeCoordArray(mat, pq_dir)

@@ -1,6 +1,8 @@
 # Tests the basic functions of a DuckDBMatrix.
 # library(testthat); library(BiocDuckDB); source("setup.R"); source("test-DuckDBMatrix-scuttle.R")
 
+skip_if_not_installed("airway")
+
 test_that("librarySizeFactors works as expected for a DuckDBMatrix", {
     names(dimnames(airway_counts)) <- c("index1", "index2")
     pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",

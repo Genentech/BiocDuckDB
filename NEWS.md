@@ -1,3 +1,18 @@
+# BiocDuckDB 0.99.14
+
+## Testing
+
+- Loading the `airway` Suggests package in `tests/testthat/setup.R` is now
+  conditional, and the airway-dependent test files
+  (`test-DuckDBMatrix-scuttle.R`, `test-DuckDBMatrix-scran.R`) and test block
+  (`test-parquet-roundtrip.R`) call `skip_if_not_installed("airway")`.
+  Previously the unconditional `data(airway, ...)` call in `setup.R` would
+  fail and abort the entire test suite (not just the airway-dependent tests)
+  when `airway` was not installed. Same class of issue as found in the
+  DuckDBArray Bioconductor review.
+- `test-MultiAssaySpatialExperiment.R` calls `skip_if_not_installed("sf")`,
+  the Suggests package its fixtures build geometries with.
+
 # BiocDuckDB 0.99.13
 
 ## Follow-up review changes

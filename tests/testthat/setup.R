@@ -6,10 +6,12 @@
 options(DuckDBDataFrame.threads = 1L)
 
 # Airway counts dataset
-data(airway, package = "airway")
-airway_counts <- SummarizedExperiment::assay(airway, "counts")
-airway_counts_path <- file.path(tempfile(), "airway_counts")
-BiocDuckDB::writeParquet(airway_counts, airway_counts_path)
+if (requireNamespace("airway", quietly = TRUE)) {
+    data(airway, package = "airway")
+    airway_counts <- SummarizedExperiment::assay(airway, "counts")
+    airway_counts_path <- file.path(tempfile(), "airway_counts")
+    BiocDuckDB::writeParquet(airway_counts, airway_counts_path)
+}
 
 
 # Helper functions

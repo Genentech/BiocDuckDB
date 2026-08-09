@@ -106,159 +106,201 @@ importClassesFrom(SingleCellExperiment,SingleCellExperiment)
 importClassesFrom(SummarizedExperiment,Assays)
 importClassesFrom(SummarizedExperiment,RangedSummarizedExperiment)
 importClassesFrom(SummarizedExperiment,SummarizedExperiment)
-importFrom(BiocParallel,SerialParam)
-importFrom(BiocParallel,bpstart)
-importFrom(BiocParallel,bpstop)
-importFrom(DBI,dbExecute)
-importFrom(DBI,dbGetQuery)
-importFrom(DBI,dbQuoteIdentifier)
-importFrom(DBI,dbWriteTable)
-importFrom(DelayedArray,defaultAutoGrid)
-importFrom(DelayedArray,getAutoBPPARAM)
-importFrom(DelayedArray,setAutoBPPARAM)
-importFrom(DelayedArray,sweep)
-importFrom(DelayedArray,type)
-importFrom(DuckDBArray,DuckDBArray)
-importFrom(DuckDBArray,DuckDBMatrix)
-importFrom(DuckDBArray,createDimTables)
-importFrom(DuckDBArray,writeCoordArray)
-importFrom(DuckDBDataFrame,DuckDBDataFrame)
-importFrom(DuckDBDataFrame,DuckDBSelfHits)
-importFrom(DuckDBDataFrame,acquireDuckDBConn)
-importFrom(DuckDBDataFrame,arrowIntType)
-importFrom(DuckDBDataFrame,arrowType)
-importFrom(DuckDBDataFrame,clusterSort)
-importFrom(DuckDBDataFrame,configureCloud)
-importFrom(DuckDBDataFrame,dbconn)
-importFrom(DuckDBDataFrame,extractNODES)
-importFrom(DuckDBDataFrame,keynames)
-importFrom(DuckDBDataFrame,reconcileParquetSchema)
-importFrom(DuckDBDataFrame,setupFlatParquetWrite)
-importFrom(DuckDBDataFrame,tblconn)
-importFrom(DuckDBDataFrame,writeDuckDBTableParquet)
-importFrom(DuckDBGRanges,DuckDBGRanges)
-importFrom(DuckDBGRanges,DuckDBGRangesList)
-importFrom(GenomicRanges,end)
-importFrom(GenomicRanges,seqnames)
-importFrom(GenomicRanges,start)
-importFrom(GenomicRanges,strand)
+importFrom(BiocParallel,
+  SerialParam,
+  bpstart,
+  bpstop
+)
+importFrom(DBI,
+  dbExecute,
+  dbGetQuery,
+  dbQuoteIdentifier,
+  dbWriteTable
+)
+importFrom(DelayedArray,
+  defaultAutoGrid,
+  getAutoBPPARAM,
+  setAutoBPPARAM,
+  sweep,
+  type
+)
+importFrom(DuckDBArray,
+  DuckDBArray,
+  DuckDBMatrix,
+  createDimTables,
+  writeCoordArray
+)
+importFrom(DuckDBDataFrame,
+  DuckDBDataFrame,
+  DuckDBSelfHits,
+  acquireDuckDBConn,
+  arrowIntType,
+  arrowType,
+  clusterSort,
+  configureCloud,
+  dbconn,
+  extractNODES,
+  keynames,
+  reconcileParquetSchema,
+  setupFlatParquetWrite,
+  tblconn,
+  writeDuckDBTableParquet
+)
+importFrom(DuckDBGRanges,
+  DuckDBGRanges,
+  DuckDBGRangesList
+)
+importFrom(GenomicRanges,
+  end,
+  seqnames,
+  start,
+  strand
+)
 importFrom(IRanges,DataFrameList)
-importFrom(MatrixGenerics,colMeans)
-importFrom(MatrixGenerics,colSums)
-importFrom(MatrixGenerics,rowMeans)
-importFrom(MultiAssayExperiment,ExperimentList)
-importFrom(MultiAssayExperiment,MultiAssayExperiment)
-importFrom(MultiAssayExperiment,experiments)
-importFrom(MultiAssayExperiment,sampleMap)
-importFrom(MultiAssaySpatialExperiment,PointsLayerList)
-importFrom(MultiAssaySpatialExperiment,ShapesLayerList)
-importFrom(MultiAssaySpatialExperiment,annotateWithRegions)
-importFrom(MultiAssaySpatialExperiment,readGeoParquetForMASE)
-importFrom(MultiAssaySpatialExperiment,readParquetForMASE)
-importFrom(MultiAssaySpatialExperiment,spatialJoin)
-importFrom(MultiAssaySpatialExperiment,spatialMap)
-importFrom(MultiAssaySpatialExperiment,spatialMatch)
-importFrom(MultiAssaySpatialExperiment,spatialOverlaps)
-importFrom(MultiAssaySpatialExperiment,spatialPoints)
-importFrom(MultiAssaySpatialExperiment,spatialShapes)
-importFrom(MultiAssaySpatialExperiment,subsetByBoundingBox)
-importFrom(MultiAssaySpatialExperiment,subsetByPolygon)
-importFrom(S4Vectors,"mcols<-")
-importFrom(S4Vectors,"metadata<-")
-importFrom(S4Vectors,DataFrame)
-importFrom(S4Vectors,I)
-importFrom(S4Vectors,SimpleList)
-importFrom(S4Vectors,endoapply)
-importFrom(S4Vectors,getListElement)
-importFrom(S4Vectors,head)
-importFrom(S4Vectors,isSingleNumber)
-importFrom(S4Vectors,isSingleString)
-importFrom(S4Vectors,make_zero_col_DFrame)
-importFrom(S4Vectors,mcols)
-importFrom(S4Vectors,metadata)
-importFrom(S4Vectors,new2)
-importFrom(S4Vectors,nnode)
-importFrom(S4Vectors,tail)
-importFrom(S4Vectors,wmsg)
-importFrom(SingleCellExperiment,"colPair<-")
-importFrom(SingleCellExperiment,"colPairs<-")
-importFrom(SingleCellExperiment,"int_colData<-")
-importFrom(SingleCellExperiment,"int_elementMetadata<-")
-importFrom(SingleCellExperiment,"rowPair<-")
-importFrom(SingleCellExperiment,"rowPairs<-")
-importFrom(SingleCellExperiment,SingleCellExperiment)
-importFrom(SingleCellExperiment,altExps)
-importFrom(SingleCellExperiment,colPairNames)
-importFrom(SingleCellExperiment,colPairs)
-importFrom(SingleCellExperiment,int_colData)
-importFrom(SingleCellExperiment,int_elementMetadata)
-importFrom(SingleCellExperiment,mainExpName)
-importFrom(SingleCellExperiment,reducedDimNames)
-importFrom(SingleCellExperiment,reducedDims)
-importFrom(SingleCellExperiment,rowPairNames)
-importFrom(SingleCellExperiment,rowPairs)
+importFrom(MatrixGenerics,
+  colMeans,
+  colSums,
+  rowMeans
+)
+importFrom(MultiAssayExperiment,
+  ExperimentList,
+  MultiAssayExperiment,
+  experiments,
+  sampleMap
+)
+importFrom(MultiAssaySpatialExperiment,
+  PointsLayerList,
+  ShapesLayerList,
+  annotateWithRegions,
+  readGeoParquetForMASE,
+  readParquetForMASE,
+  spatialJoin,
+  spatialMap,
+  spatialMatch,
+  spatialOverlaps,
+  spatialPoints,
+  spatialShapes,
+  subsetByBoundingBox,
+  subsetByPolygon
+)
+importFrom(S4Vectors,
+  "mcols<-",
+  "metadata<-",
+  DataFrame,
+  I,
+  SimpleList,
+  endoapply,
+  getListElement,
+  head,
+  isSingleNumber,
+  isSingleString,
+  make_zero_col_DFrame,
+  mcols,
+  metadata,
+  new2,
+  nnode,
+  tail,
+  wmsg
+)
+importFrom(SingleCellExperiment,
+  "colPair<-",
+  "colPairs<-",
+  "int_colData<-",
+  "int_elementMetadata<-",
+  "rowPair<-",
+  "rowPairs<-",
+  SingleCellExperiment,
+  altExps,
+  colPairNames,
+  colPairs,
+  int_colData,
+  int_elementMetadata,
+  mainExpName,
+  reducedDimNames,
+  reducedDims,
+  rowPairNames,
+  rowPairs
+)
 importFrom(SparseArray,COO_SparseArray)
-importFrom(SummarizedExperiment,"colData<-")
-importFrom(SummarizedExperiment,"rowData<-")
-importFrom(SummarizedExperiment,SummarizedExperiment)
-importFrom(SummarizedExperiment,assays)
-importFrom(SummarizedExperiment,colData)
-importFrom(SummarizedExperiment,rowData)
-importFrom(SummarizedExperiment,rowRanges)
-importFrom(arrow,Array)
-importFrom(arrow,as_arrow_table)
-importFrom(arrow,write_dataset)
-importFrom(arrow,write_parquet)
+importFrom(SummarizedExperiment,
+  "colData<-",
+  "rowData<-",
+  SummarizedExperiment,
+  assays,
+  colData,
+  rowData,
+  rowRanges
+)
+importFrom(arrow,
+  Array,
+  as_arrow_table,
+  write_dataset,
+  write_parquet
+)
 importFrom(dbplyr,sql_render)
-importFrom(dplyr,collect)
-importFrom(dplyr,filter)
-importFrom(dplyr,group_by)
-importFrom(dplyr,left_join)
-importFrom(dplyr,mutate)
-importFrom(dplyr,n)
-importFrom(dplyr,sql)
-importFrom(dplyr,summarize)
-importFrom(dplyr,tbl)
-importFrom(duckdb,duckdb_register)
-importFrom(duckdb,duckdb_unregister)
-importFrom(jsonlite,fromJSON)
-importFrom(jsonlite,read_json)
-importFrom(jsonlite,write_json)
-importFrom(metapod,averageParallelStats)
-importFrom(metapod,combineParallelPValues)
-importFrom(scran,combineBlocks)
-importFrom(scran,combineMarkers)
-importFrom(scran,computeMinRank)
-importFrom(scran,correlatePairs)
-importFrom(scran,findMarkers)
-importFrom(scran,fitTrendCV2)
-importFrom(scran,fitTrendPoisson)
-importFrom(scran,fitTrendVar)
-importFrom(scran,modelGeneCV2)
-importFrom(scran,modelGeneVar)
-importFrom(scran,modelGeneVarByPoisson)
-importFrom(scran,pairwiseBinom)
-importFrom(scran,pairwiseTTests)
-importFrom(scran,scoreMarkers)
-importFrom(scran,summaryMarkerStats)
-importFrom(scuttle,.bpNotSharedOrUp)
-importFrom(scuttle,calculateAverage)
-importFrom(scuttle,calculateCPM)
-importFrom(scuttle,calculateTPM)
-importFrom(scuttle,geometricSizeFactors)
-importFrom(scuttle,librarySizeFactors)
-importFrom(scuttle,normalizeCounts)
-importFrom(scuttle,numDetectedAcrossFeatures)
-importFrom(scuttle,perCellQCMetrics)
-importFrom(scuttle,perFeatureQCMetrics)
-importFrom(scuttle,sumCountsAcrossFeatures)
-importFrom(scuttle,summarizeAssayByGroup)
-importFrom(stats,median)
-importFrom(stats,p.adjust)
-importFrom(stats,pbinom)
-importFrom(stats,pnorm)
-importFrom(stats,pt)
-importFrom(stats,rnbinom)
-importFrom(stats,rpois)
-importFrom(stats,setNames)
+importFrom(dplyr,
+  collect,
+  filter,
+  group_by,
+  left_join,
+  mutate,
+  n,
+  sql,
+  summarize,
+  tbl
+)
+importFrom(duckdb,
+  duckdb_register,
+  duckdb_unregister
+)
+importFrom(jsonlite,
+  fromJSON,
+  read_json,
+  write_json
+)
+importFrom(metapod,
+  averageParallelStats,
+  combineParallelPValues
+)
+importFrom(scran,
+  combineBlocks,
+  combineMarkers,
+  computeMinRank,
+  correlatePairs,
+  findMarkers,
+  fitTrendCV2,
+  fitTrendPoisson,
+  fitTrendVar,
+  modelGeneCV2,
+  modelGeneVar,
+  modelGeneVarByPoisson,
+  pairwiseBinom,
+  pairwiseTTests,
+  scoreMarkers,
+  summaryMarkerStats
+)
+importFrom(scuttle,
+  .bpNotSharedOrUp,
+  calculateAverage,
+  calculateCPM,
+  calculateTPM,
+  geometricSizeFactors,
+  librarySizeFactors,
+  normalizeCounts,
+  numDetectedAcrossFeatures,
+  perCellQCMetrics,
+  perFeatureQCMetrics,
+  sumCountsAcrossFeatures,
+  summarizeAssayByGroup
+)
+importFrom(stats,
+  median,
+  p.adjust,
+  pbinom,
+  pnorm,
+  pt,
+  rnbinom,
+  rpois,
+  setNames
+)
 importMethodsFrom(scran,correlatePairs)

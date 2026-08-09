@@ -1,6 +1,8 @@
 # Tests the basic functions of a DuckDBMatrix.
 # library(testthat); library(BiocDuckDB); source("setup.R"); source("test-DuckDBMatrix-scran.R")
 
+skip_if_not_installed("airway")
+
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### scran correlatePairs tests
 ###

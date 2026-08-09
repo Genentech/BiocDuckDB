@@ -556,6 +556,8 @@ test_that("Metadata with package_version and POSIXt serializes to JSON", {
 })
 
 test_that("Unbound metadata with non-serializable objects is skipped with warning", {
+    skip_if_not_installed("airway")
+
     # Load airway which has MIAME metadata
     data(airway, package = "airway")
 

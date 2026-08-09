@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.99.13
-Date: 2026-08-05
+Version: 0.99.14
+Date: 2026-08-08
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -102,4 +102,4 @@ Collate:
     'writeDatapackage.R'
     'writeParquet.R'
     'writeStreamingResource.R'
-Config/roxygen2/version: 8.0.0
+Config/roxygen2/version: 8.1.0
