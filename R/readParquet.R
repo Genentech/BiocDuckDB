@@ -787,7 +787,8 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
              "BiocManager::install(\"MultiAssaySpatialExperiment\")")
     }
     resources <- package[["resources"]]
-    names(resources) <- sapply(package[["resources"]], `[[`, "name")
+    names(resources) <- vapply(package[["resources"]], `[[`,
+                               character(1L), "name")
 
     # Base MAE object
     mae <- .readParquetMAE(path, package, ...)
@@ -799,7 +800,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
             .readParquetResource(path, r, ...)
         })
         names(points_list) <- sub("^sample_points_", "",
-            sapply(points_res, `[[`, "name"))
+            vapply(points_res, `[[`, character(1L), "name"))
         points <- MultiAssaySpatialExperiment::PointsLayerList(points_list)
     } else {
         points <- MultiAssaySpatialExperiment::PointsLayerList()
@@ -812,7 +813,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
             .readParquetResource(path, r, ...)
         })
         names(shapes_list) <- sub("^sample_shapes_", "",
-            sapply(shapes_res, `[[`, "name"))
+            vapply(shapes_res, `[[`, character(1L), "name"))
         shapes <- MultiAssaySpatialExperiment::ShapesLayerList(shapes_list)
     } else {
         shapes <- MultiAssaySpatialExperiment::ShapesLayerList()
@@ -821,11 +822,14 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     # Images (optional) - raster path references
     images <- MultiAssaySpatialExperiment::RasterLayerList()
     img_res <- .filterResources(resources, "sample", "spatial_raster_ref")
+    img_names <- vapply(img_res, `[[`, character(1L), "name")
+    img_res <- img_res[grep("^sample_images_", img_names)]
     if (length(img_res)) {
         images_list <- lapply(img_res, function(r) {
             .readParquetRasterRef(file.path(path, r[["path"]]), r, ...)
         })
-        names(images_list) <- sub("^sample_images_", "", sapply(img_res, `[[`, "name"))
+        names(images_list) <- sub("^sample_images_", "",
+            vapply(img_res, `[[`, character(1L), "name"))
         images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
     } else if (!is.null(resources[["images"]])) {
         fullpath <- file.path(path, resources[["images"]][["path"]])
@@ -845,19 +849,22 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     labels <- MultiAssaySpatialExperiment::RasterLayerList()
     lab_coord <- .filterResources(resources, "sample", "spatial_label_coord")
     lab_ref <- .filterResources(resources, "sample", "spatial_raster_ref")
-    lab_ref <- lab_ref[grep("^sample_labels_", sapply(lab_ref, `[[`, "name"))]
+    lab_names <- vapply(lab_ref, `[[`, character(1L), "name")
+    lab_ref <- lab_ref[grep("^sample_labels_", lab_names)]
     if (length(lab_coord)) {
         labels_list <- lapply(lab_coord, function(r) {
             .readParquetArray(file.path(path, r[["path"]]), r, ...)
         })
-        names(labels_list) <- sub("^sample_labels_", "", sapply(lab_coord, `[[`, "name"))
+        names(labels_list) <- sub("^sample_labels_", "",
+            vapply(lab_coord, `[[`, character(1L), "name"))
         labels <- MultiAssaySpatialExperiment::RasterLayerList(labels_list)
     }
     if (length(lab_ref)) {
         ref_list <- lapply(lab_ref, function(r) {
             .readParquetRasterRef(file.path(path, r[["path"]]), r, ...)
         })
-        names(ref_list) <- sub("^sample_labels_", "", sapply(lab_ref, `[[`, "name"))
+        names(ref_list) <- sub("^sample_labels_", "",
+            vapply(lab_ref, `[[`, character(1L), "name"))
         if (length(labels))
             labels[names(ref_list)] <- ref_list
         else

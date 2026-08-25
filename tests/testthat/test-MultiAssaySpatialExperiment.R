@@ -122,3 +122,44 @@ test_that("aggregateByRegion count is data-agnostic (spatialMap only)", {
     expect_s4_class(cnt, "DataFrame")
     expect_equal(cnt$count, 2L)
 })
+
+test_that("a raster-backed label is not also loaded as an image", {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+    skip_if_not_installed("SpatialExperiment")
+    # Only an array-valued label takes the 'spatial_label_coord' branch; a
+    # raster-backed one is written with the same 'spatial_raster_ref' layout
+    # as an image, so filtering the image branch on layout alone pulled every
+    # such label in as well, under an unstripped "sample_labels_<nm>" name.
+    mkpng <- function() {
+        f <- tempfile(fileext = ".png")
+        grDevices::png(f, width = 8, height = 8)
+        graphics::par(mar = c(0, 0, 0, 0))
+        graphics::plot.new()
+        grDevices::dev.off()
+        f
+    }
+    se <- SummarizedExperiment::SummarizedExperiment(
+        assays = list(counts = matrix(1:6, 3, 2)),
+        colData = S4Vectors::DataFrame(row.names = c("c1", "c2")))
+    smap <- S4Vectors::DataFrame(assay = factor(rep("RNA", 2)),
+                                 primary = c("s1", "s1"),
+                                 colname = c("c1", "c2"))
+    m <- MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
+        experiments = MultiAssayExperiment::ExperimentList(list(RNA = se)),
+        colData = S4Vectors::DataFrame(row.names = "s1"),
+        sampleMap = smap,
+        images = MultiAssaySpatialExperiment::RasterLayerList(
+            list(myimage = SpatialExperiment::SpatialImage(mkpng()))),
+        labels = MultiAssaySpatialExperiment::RasterLayerList(
+            list(mylabel = SpatialExperiment::SpatialImage(mkpng()))))
+
+    tmpdir <- tempfile()
+    on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+    writeParquet(m, tmpdir)
+    back <- readParquet(tmpdir)
+
+    expect_identical(names(MultiAssaySpatialExperiment::spatialImages(back)),
+                     "myimage")
+    expect_identical(names(MultiAssaySpatialExperiment::spatialLabels(back)),
+                     "mylabel")
+})

@@ -2,6 +2,15 @@
 
 ## Bug fixes
 
+- Reading a `MultiAssaySpatialExperiment` loaded every raster-backed label
+  twice: correctly into `spatialLabels()`, and again into `spatialImages()`
+  under the unstripped name `sample_labels_<nm>`. Only an array-valued label
+  takes the `spatial_label_coord` branch on write; a raster-backed one is
+  written with the same `spatial_raster_ref` layout an image uses, so
+  selecting the image resources by layout alone could not tell the two apart.
+  The label branch already narrowed its own selection by name; the image
+  branch now does the same.
+
 - `readParquet()` could not read a package declaring
   `model = "experiment_list"`; it failed with `subscript out of bounds`. The
   dispatch passed the whole `datapackage.json` manifest to
