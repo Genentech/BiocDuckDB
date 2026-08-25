@@ -179,7 +179,7 @@ function(path,
            "summarized_experiment"          =,
            "ranged_summarized_experiment"   =,
            "single_cell_experiment"         = .readParquetSE(path, package, ...),
-           "experiment_list"                = .readParquetExps(path, package, ...),
+           "experiment_list"                = .readParquetExps(path, package[["resources"]], ...),
            "multi_assay_experiment"         = .readParquetMAE(path, package, ...),
            "multi_assay_spatial_experiment" = .readParquetMASE(path, package, ...),
            stop("unsupported model: ", model))

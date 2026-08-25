@@ -747,4 +747,32 @@ test_that("Dimension and layout fields are correctly written", {
     unlink(tmpdir, recursive = TRUE)
 })
 
+test_that("readParquet reads a model='experiment_list' package", {
+    # writeParquet,ExperimentList returns resources without writing a
+    # manifest, so the envelope is assembled explicitly here. The reader
+    # previously handed the whole manifest to .readParquetExps(), which
+    # expects the resource list, so it iterated '$schema' and failed with
+    # "subscript out of bounds": this model was unreadable.
+    se1 <- SummarizedExperiment(
+        assays = list(counts = matrix(1:6, 3, 2)),
+        colData = DataFrame(s = c("x", "y")))
+    se2 <- SummarizedExperiment(assays = list(counts = matrix(7:12, 3, 2)))
+    el <- ExperimentList(list(a = se1, b = se2))
+
+    tmpdir <- tempfile()
+    on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+    resources <- writeParquet(el, tmpdir)
+    writeDatapackage(model = "experiment_list", resources = resources,
+                     path = tmpdir)
+
+    out <- readParquet(tmpdir)
+    expect_s4_class(out, "ExperimentList")
+    expect_identical(names(out), c("a", "b"))
+    expect_identical(dim(out[["a"]]), c(3L, 2L))
+    expect_identical(unname(as.matrix(assay(out[["a"]], "counts"))),
+                     matrix(1:6, 3, 2))
+    expect_identical(unname(as.matrix(assay(out[["b"]], "counts"))),
+                     matrix(7:12, 3, 2))
+})
+
 cat("All readParquet/writeParquet tests defined.\n")

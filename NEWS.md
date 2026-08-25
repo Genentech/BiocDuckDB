@@ -1,3 +1,22 @@
+# BiocDuckDB 0.99.15
+
+## Bug fixes
+
+- `readParquet()` could not read a package declaring
+  `model = "experiment_list"`; it failed with `subscript out of bounds`. The
+  dispatch passed the whole `datapackage.json` manifest to
+  `.readParquetExps()`, which takes the *resource list* rather than the
+  manifest (its two other callers, the `altExps` path and
+  `.readParquetMAE()`, both pass a filtered resource list). It therefore
+  iterated the manifest's top-level entries and tried to read a `name` field
+  off `$schema`. It is now handed `package[["resources"]]`.
+
+  `experiment_list` is one of the reader values named in the profile's
+  `model` description, and `writeParquet()` has had an `ExperimentList`
+  method throughout. The gap went unnoticed because the round-trip suite
+  explicitly skipped `ExperimentList` (a note to that effect sat in
+  `test-parquet-roundtrip.R`); it is now covered.
+
 # BiocDuckDB 0.99.14
 
 ## Testing
