@@ -1,6 +1,14 @@
-# BiocDuckDB 0.99.15
+# BiocDuckDB 0.99.16
 
 ## Bug fixes
+
+- `writeStreamingResource()` created its `_INCOMPLETE` marker *after* part 0
+  had been written, so a crash during part 0, the very case the marker
+  exists to catch. It left no marker at all, contradicting the documented
+  behavior. It is now created immediately before part 0, along with the
+  directory to hold it.
+
+# BiocDuckDB 0.99.15
 
 - Reading a `MultiAssaySpatialExperiment` loaded every raster-backed label
   twice: correctly into `spatialLabels()`, and again into `spatialImages()`

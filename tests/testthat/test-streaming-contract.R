@@ -53,13 +53,48 @@ test_that("an incomplete resource (marker present) fails loudly, not partial", {
         index_max = 3, name = "tbl")
     file.create(file.path(tf, "tbl", "_INCOMPLETE"))   # simulate a crashed write
 
-    # the non-parquet marker makes a read of the incomplete directory fail rather
-    # than silently return the partial parts.
-    expect_error({
-        tbl <- DuckDBDataFrame::DuckDBDataFrame(file.path(tf, "tbl"),
-                                                keycol = "__index__")
-        as.data.frame(tbl)
-    })
+    # The reader refuses the marked directory explicitly. This assertion used
+    # to be a bare expect_error(), which passed for the wrong reason: any
+    # sibling file made .wrapConn() leave the path unwrapped, so the failure
+    # was an unrelated SQL parser error about a missing catalog table. Match
+    # the message so a future relaxation of that wrap test cannot make an
+    # interrupted stream silently readable again.
+    expect_error(
+        DuckDBDataFrame::DuckDBDataFrame(file.path(tf, "tbl"),
+                                         keycol = "__index__"),
+        "marked incomplete")
+})
+
+test_that("the in-progress marker is written before part 0, not after", {
+    # The marker exists to make a crashed write unreadable, so a crash DURING
+    # part 0 has to be covered. It previously ran after writeParquet()
+    # returned, which left no marker in exactly that case.
+    local_mocked_bindings(writeParquet = function(...) stop("simulated crash"),
+                          .package = "BiocDuckDB")
+    tf <- tempfile()
+    on.exit(unlink(tf, recursive = TRUE), add = TRUE)
+    expect_error(
+        writeStreamingResource(
+            function(i) if (i == 1L) data.frame(v = 1:3) else NULL,
+            path = file.path(tf, "tbl"), dimension = "unbound",
+            keycol = NULL, index_max = 3, name = "tbl"),
+        "simulated crash")
+    expect_true(file.exists(file.path(tf, "tbl", "_INCOMPLETE")))
+})
+
+test_that("a completed stream leaves no marker and reads back whole", {
+    tf <- tempfile()
+    on.exit(unlink(tf, recursive = TRUE), add = TRUE)
+    writeStreamingResource(
+        function(i) if (i <= 2L) data.frame(v = (1:3) + (i - 1L) * 3L) else NULL,
+        path = file.path(tf, "tbl"), dimension = "unbound", keycol = NULL,
+        index_max = 6, name = "tbl")
+
+    expect_false(file.exists(file.path(tf, "tbl", "_INCOMPLETE")))
+    got <- as.data.frame(
+        DuckDBDataFrame::DuckDBDataFrame(file.path(tf, "tbl"),
+                                         keycol = "__index__"))
+    expect_identical(sort(got$v), 1:6)
 })
 
 # --- fixed row-group size (491520) + zonemap stats, via one write --

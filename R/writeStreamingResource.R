@@ -68,13 +68,14 @@
 #'
 #' \strong{Commit boundary.} A multi-part resource is complete only once every
 #' part is written. To make "readable only when complete" hold by construction,
-#' an \code{_INCOMPLETE} marker file is dropped into \code{path} as soon as part
-#' 0 creates the directory and removed once the stream finishes. A finished
-#' resource is therefore a clean directory of only parquet parts that the reader
-#' loads normally, while an interrupted write leaves the marker behind; because
-#' the marker is not a parquet file, a read of the incomplete directory fails
-#' loudly instead of silently returning the partial parts. A fatal
-#' partition-alignment error likewise leaves the marker in place.
+#' an \code{_INCOMPLETE} marker file is dropped into \code{path} immediately
+#' before part 0 is written and removed once the stream finishes, so a crash
+#' during part 0 is covered too. A finished resource is therefore a clean
+#' directory of only parquet parts that the reader loads normally, while an
+#' interrupted write leaves the marker behind; \code{DuckDBDataFrame} refuses
+#' to open a directory carrying the marker, so a read of an incomplete
+#' resource fails loudly instead of silently returning the partial parts. A
+#' fatal partition-alignment error likewise leaves the marker in place.
 #'
 #' @return
 #' Invisibly, the single Frictionless resource descriptor (a list) captured from
@@ -153,6 +154,10 @@ function(blocks, path, dimension,
             dimtbl_block <- dimtbl[offset + seq_len(nrow(block)), , drop = FALSE]
         }
 
+        if (written == 0L) {
+            dir.create(path, recursive = TRUE, showWarnings = FALSE)
+            file.create(marker)
+        }
         res <- writeParquet(block, path = path, indexcol = indexcol,
                             keycol = keycol, dimension = dimension,
                             layout = layout, refs = refs, dimtbl = dimtbl_block,
@@ -163,7 +168,6 @@ function(blocks, path, dimension,
         if (written == 0L) {
             resource <- res      # descriptor is returned only from part 0
             part0_rows <- nrow(block)
-            file.create(marker)  # part 0 created the dir; mark it in-progress
         }
         written <- written + 1L
         offset <- offset + nrow(block)
