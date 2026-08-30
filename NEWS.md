@@ -1,3 +1,28 @@
+# BiocDuckDB 0.99.17
+
+## Bug fixes
+
+- `.readParquetMAE()` silently misbehaved on two edge cases in a
+  `multi_assay_experiment` package: a missing `subjects` resource collapsed
+  `file.path(path, NULL)` to `character(0)`, reaching `DuckDBDataFrame()`
+  with an opaque downstream error instead of a clear one; a missing
+  `sample_map` resource (legitimate: scibis only writes one when an explicit
+  sample key is configured, and its own reader treats the absence as "no
+  mapping" rather than an error) indexed into a `NULL` resource the same way.
+  `subjects` now errors immediately with a message naming the missing
+  resource. A missing `sample_map` is now handled by deriving a real map,
+  the same way `MultiAssayExperiment()`'s own constructor does when its
+  `sampleMap` argument is omitted (matching column names against `colData`
+  row names) rather than falling back to an empty `DataFrame`, since an
+  empty `sampleMap` only satisfies `MultiAssayExperiment`'s own
+  `.checkSampleNames()` validity check when every experiment is also empty.
+  That derivation now lives in `.newMAE()` (this package's own internal
+  constructor, called from exactly one place) rather than in
+  `.readParquetMAE()` itself, so any future caller passing `sampleMap = NULL`
+  gets the same behavior for free, without `.newMAE()` taking on
+  `MultiAssayExperiment()`'s own `.harmonize()`/full `validObject()` cost,
+  which this package's writer output does not need paying again on read.
+
 # BiocDuckDB 0.99.16
 
 ## Bug fixes

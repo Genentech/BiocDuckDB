@@ -703,12 +703,16 @@ function(path,
 #' @importClassesFrom S4Vectors DataFrame
 #' @importFrom MultiAssayExperiment ExperimentList
 #' @importFrom S4Vectors new2
-.newMAE <- function(experiments, colData, sampleMap, metadata = list()) {
+.newMAE <- function(experiments, colData, sampleMap = NULL, metadata = list()) {
     if (is.null(metadata)) {
         metadata <- list()
     }
+    experiments <- ExperimentList(experiments)
+    if (is.null(sampleMap)) {
+        sampleMap <- MultiAssayExperiment:::.sampleMapFromData(colData, experiments)
+    }
     new2("MultiAssayExperiment",
-         ExperimentList = ExperimentList(experiments),
+         ExperimentList = experiments,
          colData        = colData,
          sampleMap      = as(sampleMap, "DataFrame"),
          metadata       = metadata,
@@ -746,6 +750,9 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
 
     # Subject Data
     subject_res <- resources[["subjects"]]
+    if (is.null(subject_res)) {
+        stop("multi_assay_experiment requires a 'subjects' resource")
+    }
     subject_schema <- subject_res[["schema"]]
     index <- .schema_keycols(subject_schema)
     pkey <- subject_schema[["primaryKey"]]
@@ -759,12 +766,16 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
 
     # Sample Map
     sample_map_res <- resources[["sample_map"]]
-    index <- .schema_keycols(sample_map_res[["schema"]])
-    fullpath <- file.path(path, sample_map_res[["path"]])
-    sample_map <- .readParquetDataFrame(fullpath, resource = sample_map_res,
-                                        keycol = index)
-    sample_map <- as.data.frame(sample_map, optional = TRUE)
-    sample_map[[1L]] <- factor(sample_map[[1L]], levels = names(experiments))
+    if (is.null(sample_map_res)) {
+        sample_map <- NULL
+    } else {
+        index <- .schema_keycols(sample_map_res[["schema"]])
+        fullpath <- file.path(path, sample_map_res[["path"]])
+        sample_map <- .readParquetDataFrame(fullpath, resource = sample_map_res,
+                                            keycol = index)
+        sample_map <- as.data.frame(sample_map, optional = TRUE)
+        sample_map[[1L]] <- factor(sample_map[[1L]], levels = names(experiments))
+    }
 
     # Metadata
     metadata <- .deserializeMetadata(package[["annotations"]], resources, path, ...)

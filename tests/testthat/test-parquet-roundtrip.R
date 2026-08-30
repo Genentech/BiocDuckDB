@@ -372,6 +372,50 @@ test_that("MultiAssayExperiment with nested experiments works", {
     unlink(tmpdir, recursive = TRUE)
 })
 
+test_that("readParquet tolerates a multi_assay_experiment with no sample_map resource", {
+    exp1 <- SummarizedExperiment(assays = list(counts = matrix(1:6, nrow = 2, ncol = 3,
+        dimnames = list(c("g1", "g2"), c("s1", "s2", "s3")))))
+    mae <- MultiAssayExperiment(experiments = ExperimentList(exp1 = exp1),
+                                colData = DataFrame(row.names = c("s1", "s2", "s3")))
+
+    tmpdir <- tempfile()
+    writeParquet(mae, tmpdir)
+    on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+
+    pkg <- jsonlite::read_json(file.path(tmpdir, "datapackage.json"))
+    resnames <- vapply(pkg$resources, `[[`, character(1L), "name")
+    pkg$resources <- pkg$resources[resnames != "sample_map"]
+    jsonlite::write_json(pkg, file.path(tmpdir, "datapackage.json"), auto_unbox = TRUE)
+
+    mae2 <- readParquet(tmpdir)
+    expect_s4_class(mae2, "MultiAssayExperiment")
+    expect_true(validObject(mae2))
+
+    expected_map <- as.data.frame(sampleMap(mae2))
+    expect_identical(colnames(expected_map), c("assay", "primary", "colname"))
+    expect_identical(as.character(expected_map$assay), rep("exp1", 3L))
+    expect_setequal(expected_map$primary, c("s1", "s2", "s3"))
+    expect_identical(expected_map$primary, expected_map$colname)
+})
+
+test_that("readParquet gives a clear error for a multi_assay_experiment with no subjects resource", {
+    exp1 <- SummarizedExperiment(assays = list(counts = matrix(1:6, nrow = 2, ncol = 3,
+        dimnames = list(c("g1", "g2"), c("s1", "s2", "s3")))))
+    mae <- MultiAssayExperiment(experiments = ExperimentList(exp1 = exp1),
+                                colData = DataFrame(row.names = c("s1", "s2", "s3")))
+
+    tmpdir <- tempfile()
+    writeParquet(mae, tmpdir)
+    on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+
+    pkg <- jsonlite::read_json(file.path(tmpdir, "datapackage.json"))
+    resnames <- vapply(pkg$resources, `[[`, character(1L), "name")
+    pkg$resources <- pkg$resources[resnames != "subjects"]
+    jsonlite::write_json(pkg, file.path(tmpdir, "datapackage.json"), auto_unbox = TRUE)
+
+    expect_error(readParquet(tmpdir), "requires a 'subjects' resource")
+})
+
 test_that("MultiAssayExperiment with flat array-like objects works", {
     set.seed(107)
 
