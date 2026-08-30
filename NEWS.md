@@ -6,9 +6,7 @@
   `multi_assay_experiment` package: a missing `subjects` resource collapsed
   `file.path(path, NULL)` to `character(0)`, reaching `DuckDBDataFrame()`
   with an opaque downstream error instead of a clear one; a missing
-  `sample_map` resource (legitimate: scibis only writes one when an explicit
-  sample key is configured, and its own reader treats the absence as "no
-  mapping" rather than an error) indexed into a `NULL` resource the same way.
+  `sample_map` resource indexed into a `NULL` resource the same way.
   `subjects` now errors immediately with a message naming the missing
   resource. A missing `sample_map` is now handled by deriving a real map,
   the same way `MultiAssayExperiment()`'s own constructor does when its
