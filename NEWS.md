@@ -1,3 +1,34 @@
+# BiocDuckDB 0.99.18
+
+## Bug fixes
+
+- `writeParquet.GenomicRanges()` silently wrote positional numbers
+  ("1", "2", ...) instead of a named `GenomicRanges`' real feature names as
+  the `__name__` display column, whenever the installed `GenomicRanges` was
+  1.65.2 or later. `GenomicRanges` 1.65.2 rewrote `as.data.frame.GenomicRanges()`:
+  it used to default `row.names` to `names(x)` when not supplied; the new
+  version hardcodes `row.names = NULL` internally (an explicitly-passed
+  `row.names` argument is silently discarded too) and puts `names(x)` in a
+  new `names` column instead. `writeParquet.GenomicRanges()`'s
+  `df <- as.data.frame(x, optional = TRUE)` relied on the old convention to
+  carry real names into `df`'s row names, which then became the written
+  `__name__` column; with the new convention, `df`'s row names were the
+  default numeric sequence instead. Reading a `RangedSummarizedExperiment`
+  written this way surfaced as `rowRanges()` names coming back wrong, and
+  then, one step further, name-based row indexing (`x[names(x)]`) failing
+  outright with a DuckDB `Conversion Error` trying to match the real names
+  against an integer keycol. Root-caused by installing the
+  exact upstream `GenomicRanges` commit and reproducing the original failure
+  byte-for-byte; fixed by explicitly setting `rownames(df) <- names(x)`
+  (and dropping the new `names` column) after the conversion, which works
+  against both old and new `GenomicRanges`. `writeParquet.GenomicRangesList()`
+  was checked and already set `rownames()` explicitly, so it was unaffected.
+- `checkDuckDBGRanges()` (this package's own test helper, duplicated from
+  `DuckDBGRanges`) had the same reliance on the old `as.data.frame.GenomicRanges()`
+  convention in its own reference comparison; fixed the same way. See
+  `DuckDBGRanges` 0.99.7's `NEWS.md` for the sibling fix to its copy of this
+  helper.
+
 # BiocDuckDB 0.99.17
 
 ## Bug fixes

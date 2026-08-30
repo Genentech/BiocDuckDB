@@ -1255,6 +1255,13 @@ function(x,
 
     # Write Data Table
     df <- as.data.frame(x, optional = TRUE)
+    # GenomicRanges >= 1.65.2 no longer puts names(expected) in row.names of
+    # as.data.frame(x); it uses default numeric row.names and adds a "names"
+    # column instead.
+    if (!is.null(names(x))) {
+        rownames(df) <- names(x)
+        df[["names"]] <- NULL
+    }
     df[["width"]] <- NULL
     resources <- callGeneric(df, path = path, indexcol = indexcol,
                              keycol = keycol, dimtbl = dimtbl,

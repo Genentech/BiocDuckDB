@@ -221,6 +221,13 @@ checkDuckDBGRanges <- function(object, expected) {
         expect_setequal(isCircular(object), isCircular(expected))
         expect_setequal(genome(object), genome(expected))
         df <- as.data.frame(expected)
+        # GenomicRanges >= 1.65.2 no longer puts names(expected) in row.names
+        # of as.data.frame(expected); it uses default numeric row.names and
+        # adds a "names" column instead.
+        if (!is.null(names(expected))) {
+            rownames(df) <- names(expected)
+            df[["names"]] <- NULL
+        }
         for (j in names(df)) {
             if (is.factor(df[[j]])) {
                 df[[j]] <- as.character(df[[j]])
