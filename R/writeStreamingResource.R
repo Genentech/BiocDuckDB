@@ -141,10 +141,8 @@ function(blocks, path, dimension,
         # followed by more parts and no index_max was supplied.
         if (written == 1L && is.null(index_max) &&
             !is.na(part0_rows) && part0_rows < 65536) {
-            warning(sprintf(paste0(
-                "%s: part 0 has %.0f (< 65536) rows and 'index_max' was not set; ",
-                "appending further parts may overflow the narrowed '%s' integer ",
-                "type. Pass index_max = <total rows> for a multi-part stream."),
+            warning(sprintf(
+                "%s: part 0 has %.0f (< 65536) rows and 'index_max' was not set; appending further parts may overflow the narrowed '%s' integer type. Pass index_max = <total rows> for a multi-part stream.",
                 basename(path), part0_rows, indexcol), call. = FALSE)
         }
 
@@ -181,17 +179,17 @@ function(blocks, path, dimension,
     # contiguous stream of exactly nrow(dimtbl) rows. A drift writes NA group
     # labels, silently corrupting directory pruning -- fail loudly.
     if (!is.null(dimtbl) && offset != nrow(dimtbl)) {
-        stop(sprintf(paste0("streamed %.0f rows but dimtbl has %d -- the ",
-                            "partition column would be misaligned"),
-                     offset, nrow(dimtbl)))
+        stop(sprintf(
+            "streamed %.0f rows but dimtbl has %d -- the partition column would be misaligned",
+            offset, nrow(dimtbl)))
     }
 
     # Coverage check: a declared expected row count that the stream did not
     # deliver usually means a dropped block or an off-by-one (warning: an
     # unbound junction table can legitimately differ).
     if (!is.null(expected_rows) && offset != expected_rows) {
-        warning(sprintf(paste0("%s streamed %.0f rows but %d were expected ",
-                               "(%+.0f)."), basename(path), offset,
+        warning(sprintf("%s streamed %.0f rows but %d were expected (%+.0f).",
+                        basename(path), offset,
                         expected_rows, offset - expected_rows), call. = FALSE)
     }
 

@@ -536,7 +536,7 @@ that describe how to split the ranges into list elements.
 \strong{\code{SelfHits} objects:} Writes graph edge lists as a data frame
 with \code{from}, \code{to}, and optional metadata columns. The node count
 (\code{nnode}) is stored in the schema properties to enable reconstruction as
-a \linkS4class{DuckDBSelfHits} object.
+a \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits} object.
 
 \strong{Automatic unnesting of nested DataFrames:} When writing
 \code{SingleCellExperiment} objects, any DataFrame-class columns found in
@@ -633,7 +633,7 @@ list.files(tf3, full.names = TRUE, recursive = TRUE)
     \code{validateAppendOffset}), SQL \code{COPY TO} helpers
     (\code{buildParquetCopySQL}), and lazy table export
     (\code{writeDuckDBTableParquet})
-  \item \code{\link{createDimTables}} for creating dimension lookup tables
+  \item \code{\link[DuckDBArray]{createDimTables}} for creating dimension lookup tables
   \item \code{\link[arrow]{write_dataset}} and \code{\link[arrow]{write_parquet}}
   \item \code{\link[S4Arrays]{ArrayGrid}} for grid partitioning
   \item \code{\link[BiocParallel]{BiocParallelParam}} for parallel processing options

@@ -32,31 +32,6 @@ replaceSlots <- BiocGenerics:::replaceSlots
     inherits(x, "DuckDBDataFrame")
 }
 
-.filterSpatialLayerByInstances <- function(layer, instance_ids) {
-    if (is.null(layer) || !nrow(layer) || !length(instance_ids))
-        return(layer[0L, , drop = FALSE])
-    if (!"instance_id" %in% colnames(layer))
-        return(layer)
-    ids <- as.character(instance_ids)
-    if (.isLazySpatialLayer(layer)) {
-        idx <- as.character(as.vector(layer[["instance_id"]])) %in% ids
-        layer[idx, , drop = FALSE]
-    } else {
-        layer[as.character(layer[["instance_id"]]) %in% ids, , drop = FALSE]
-    }
-}
-
-.filterSpatialLayersByInstances <- function(layers, instance_ids, region = NULL) {
-    if (length(layers) == 0L)
-        return(layers)
-    out <- as.list(layers)
-    nms <- if (is.null(region)) names(out) else intersect(names(out), region)
-    for (nm in nms) {
-        out[[nm]] <- .filterSpatialLayerByInstances(out[[nm]], instance_ids)
-    }
-    out
-}
-
 .propagateSpatialSubset <- function(mase, retained_by_region) {
     spmap <- MultiAssaySpatialExperiment::spatialMap(mase)
     if (is.null(spmap) || nrow(spmap) == 0L)
@@ -78,22 +53,6 @@ replaceSlots <- BiocGenerics:::replaceSlots
     })
     names(j_list_full) <- assay_nms
     MultiAssayExperiment::subsetByColumn(mase, j_list_full)
-}
-
-.spatialExtent <- function(mase) {
-    xmin <- Inf; xmax <- -Inf; ymin <- Inf; ymax <- -Inf
-    for (el in c(as.list(MultiAssaySpatialExperiment::spatialPoints(mase)),
-                 as.list(MultiAssaySpatialExperiment::spatialShapes(mase)))) {
-        if (is.null(el) || !nrow(el))
-            next
-        if ("x" %in% colnames(el) && "y" %in% colnames(el)) {
-            xmin <- min(xmin, min(as.vector(el[["x"]]), na.rm = TRUE))
-            xmax <- max(xmax, max(as.vector(el[["x"]]), na.rm = TRUE))
-            ymin <- min(ymin, min(as.vector(el[["y"]]), na.rm = TRUE))
-            ymax <- max(ymax, max(as.vector(el[["y"]]), na.rm = TRUE))
-        }
-    }
-    c(xmin = xmin, ymin = ymin, xmax = xmax, ymax = ymax)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

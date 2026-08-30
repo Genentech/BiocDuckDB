@@ -15,9 +15,9 @@ when \code{sparse = TRUE}, or the joined table otherwise. All are computed
 lazily over the DuckDB-backed layers.
 }
 \description{
-\linkS4class{DuckDBDataFrame} methods for \pkg{MultiAssaySpatialExperiment}
-spatial generics. Lazy layers delegate to \pkg{DuckDBSpatial} for
-SQL-backed spatial operations.
+\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame} methods for
+\pkg{MultiAssaySpatialExperiment} spatial generics. Lazy layers delegate to
+\pkg{DuckDBSpatial} for SQL-backed spatial operations.
 }
 \section{Methods}{
 

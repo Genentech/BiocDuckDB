@@ -1,3 +1,49 @@
+# BiocDuckDB 0.99.19
+
+## Bug fixes
+
+- The categorical value-label decoder in `.readParquetResource()` (used to
+  reconstruct dictionary-encoded key columns, e.g. `sample_map`'s `assay`
+  column) is built with `sapply()` specifically because its output must
+  retain the names `FUN` returns (`value -> label`). During an independent
+  code-quality review, this call was one of several converted to `vapply()`
+  to address BiocCheck's `sapply()` NOTE; `vapply()` never takes names from
+  what `FUN` returns when `FUN.VALUE` is an unnamed scalar template, so the
+  conversion silently produced an unnamed vector. This corrupted keycol
+  decoding, which surfaced as `sampleMap` reconstruction failures
+  (`"not all ExperimentList samples are found in the sampleMap"`) on
+  `writeParquet()`/`readParquet()` round-trips of spatial
+  `MultiAssaySpatialExperiment` objects. Caught by the full test suite before
+  being committed; reverted to `sapply()` with a comment explaining why, and
+  left as the one deliberate exception BiocCheck still flags.
+
+## Documentation
+
+- Fixed roughly 69 `\link{}` cross-references across 16 man pages
+  (`readParquet`, `writeParquet`, `DuckDBDualSubset`, the
+  `DuckDBMatrix`/`DuckDBDataFrame`/`SingleCellExperiment` method families, and
+  the `MultiAssaySpatialExperiment` query helpers) that pointed at classes or
+  functions defined in other packages (`DuckDBArray`, `DuckDBDataFrame`,
+  `DuckDBGRanges`, `MultiAssaySpatialExperiment`, `S4Vectors`) without a
+  package anchor, which `R CMD check --as-cran` flags as a NOTE.
+
+## Changes
+
+- Added `S4Arrays` to `Suggests:`; it was already an undeclared dependency of
+  two test files (`test-writeParquet-coord-append.R`,
+  `test-writeParquet-roundtrip-append.R`).
+- Removed 6 dead internal functions with no remaining call sites:
+  `.extractIntType`, `.fieldToDuckDBCast` (`fieldtypes.R`);
+  `.filterSpatialLayerByInstances`, `.filterSpatialLayersByInstances`,
+  `.spatialExtent` (`MultiAssaySpatialExperiments-internals.R`); `.prefixSeq`
+  (`writeParquet.R`).
+- Collapsed 4 `paste()`/`paste0()`-built strings passed to `stop()`/`warning()`
+  into single string literals (`DuckDBMatrix-scran.R`,
+  `writeStreamingResource.R`), matching BiocCheck's preference for a single
+  literal over a dynamically assembled condition message.
+- Converted 8 of 9 flagged `sapply()` calls in `readParquet.R` to `vapply()`
+  for a guaranteed return type and length; the 9th is documented above.
+
 # BiocDuckDB 0.99.18
 
 ## Bug fixes

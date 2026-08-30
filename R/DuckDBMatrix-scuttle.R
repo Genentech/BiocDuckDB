@@ -1,7 +1,7 @@
 #' DuckDBMatrix scuttle methods
 #'
 #' @description
-#' scuttle methods for \linkS4class{DuckDBMatrix} objects.
+#' scuttle methods for \link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix} objects.
 #'
 #' @section QC Metrics Methods:
 #' The following QC metrics methods have optimized DuckDBMatrix implementations:
@@ -143,8 +143,8 @@
 #'
 #' @seealso
 #' \itemize{
-#'   \item \code{\link{DuckDBMatrix-class}} for the main class
-#'   \item \code{\link{DuckDBArray-matrixStats}} for the matrixStats methods
+#'   \item \code{\link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix-class}} for the main class
+#'   \item \code{\link[DuckDBArray]{DuckDBArray-matrixStats}} for the matrixStats methods
 #'   \item \code{\link[scuttle]{perCellQCMetrics}} for the scuttle generic
 #'   \item \code{\link[scuttle]{perFeatureQCMetrics}} for the scuttle generic
 #'   \item \code{\link[scuttle]{librarySizeFactors}} for the scuttle generic
@@ -166,7 +166,9 @@
 #' \code{calculateTPM()} return a matrix-like object of transformed values, and
 #' \code{numDetectedAcrossFeatures()} and \code{sumCountsAcrossFeatures()} a
 #' matrix-like object of per-group summaries. \code{summarizeAssayByGroup()}
-#' returns a \linkS4class{SummarizedExperiment} of per-group assay summaries.
+#' returns a
+#' \link[SummarizedExperiment:SummarizedExperiment-class]{SummarizedExperiment}
+#' of per-group assay summaries.
 #'
 #' @aliases librarySizeFactors,DuckDBMatrix-method
 #' @aliases geometricSizeFactors,DuckDBMatrix-method

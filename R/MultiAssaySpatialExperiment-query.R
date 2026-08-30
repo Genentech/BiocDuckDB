@@ -33,7 +33,7 @@ NULL
 #' transforms stored in \code{metadata(x)$transforms} (the targets each element
 #' is mapped into). Empty when no transforms are recorded.
 #'
-#' @param x A \linkS4class{MultiAssaySpatialExperiment}.
+#' @param x A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.
 #' @return A character vector of coordinate-system names.
 #' @examples
 #' mase <- readParquet(system.file("extdata", "spatial_mase",
@@ -113,15 +113,17 @@ spatialCoordinateSystems <- function(x) {
 #' On-the-fly DuckDB views over a MASE's spatial elements
 #'
 #' Registers each spatial layer (points, shapes) and the \code{spatialMap}
-#' junction of a \linkS4class{MultiAssaySpatialExperiment} as DuckDB temp views
-#' on a shared connection, so cross-element queries can be expressed as SQL.
-#' Lazy (\linkS4class{DuckDBDataFrame}) layers are registered as views over
-#' their rendered SQL (no materialization); in-memory layers and the
-#' materialized \code{spatialMap} are registered as temp tables. This is the
-#' substrate used by \code{\link{linkSpatialMap}} /
+#' junction of a
+#' \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}
+#' as DuckDB temp views on a shared connection, so cross-element queries can be
+#' expressed as SQL. Lazy
+#' (\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}) layers are
+#' registered as views over their rendered SQL (no materialization); in-memory
+#' layers and the materialized \code{spatialMap} are registered as temp tables.
+#' This is the substrate used by \code{\link{linkSpatialMap}} /
 #' \code{\link{validateSpatialMap}} and a handle for power-user raw SQL.
 #'
-#' @param mase A \linkS4class{MultiAssaySpatialExperiment}.
+#' @param mase A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.
 #' @param conn A DuckDB connection (default the shared BiocDuckDB connection).
 #' @param prefix View-name prefix.
 #' @return A \code{MASESpatialViews} registry (a list of view names + \code{conn}).
@@ -175,14 +177,15 @@ print.MASESpatialViews <- function(x, ...) {
 #' \code{instance_id}). Resolves a single \code{(element_type, region)} layer
 #' (inferred from the filtered \code{spatialMap} when unambiguous, else
 #' specify); the join is pushed to DuckDB and returned as a lazy
-#' \linkS4class{DuckDBDataFrame} with the assay identity columns plus the
-#' layer's coordinate columns.
+#' \link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame} with the assay
+#' identity columns plus the layer's coordinate columns.
 #'
-#' @param mase A \linkS4class{MultiAssaySpatialExperiment}.
+#' @param mase A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.
 #' @param assay,element_type,region Optional filters selecting the spatialMap
 #'   rows (and thus the single layer) to link.
 #' @param conn A DuckDB connection (default the shared BiocDuckDB connection).
-#' @return A lazy \linkS4class{DuckDBDataFrame} of linked observations.
+#' @return A lazy \link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}
+#'   of linked observations.
 #' @examples
 #' mase <- readParquet(system.file("extdata", "spatial_mase",
 #'                                 package = "BiocDuckDB"))
@@ -242,7 +245,7 @@ function(mase, assay = NULL, element_type = NULL, region = NULL,
 #' \code{duplicate_instance} (an \code{instance_id} occurring more than once
 #' within a layer).
 #'
-#' @param mase A \linkS4class{MultiAssaySpatialExperiment}.
+#' @param mase A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.
 #' @param strict If \code{TRUE}, error when any violation is found instead of
 #'   returning the report.
 #' @param conn A DuckDB connection (default the shared BiocDuckDB connection).
@@ -362,7 +365,7 @@ function(mase, strict = FALSE, conn = acquireDuckDBConn())
 #' \code{annotateWithRegions} (point-in-polygon only) to arbitrary
 #' element pairs and predicates.
 #'
-#' @param mase A \linkS4class{MultiAssaySpatialExperiment}.
+#' @param mase A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.
 #' @param x,y Element specs \code{"<element_type>/<region>"} (e.g.
 #'   \code{"points/centroids"}), or \code{list(element_type=, region=)}.
 #' @param join A spatial predicate function (default
@@ -371,7 +374,8 @@ function(mase, strict = FALSE, conn = acquireDuckDBConn())
 #'   elements into before joining.
 #' @param x_col,y_col Coordinate column names for point elements.
 #' @return The spatial-join result from \pkg{DuckDBSpatial}
-#'   (\code{\link{spatialMatch}} indices for a point/geometry query).
+#'   (\code{\link[MultiAssaySpatialExperiment]{spatialMatch}} indices for a
+#'   point/geometry query).
 #' @examples
 #' # spatialElementJoin(mase, "points/centroids", "shapes/cells")
 #' # spatialElementJoin(mase, "points/centroids", "shapes/cells",

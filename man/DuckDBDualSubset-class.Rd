@@ -9,22 +9,24 @@
 \title{DuckDBDualSubset objects}
 \value{
 The \code{DuckDBDualSubset()} constructor returns a DuckDBDualSubset object
-wrapping a \linkS4class{DuckDBSelfHits}. \code{length()} returns the number of
-nodes (an integer); subsetting (\code{[}) returns a DuckDBDualSubset, and the
-\code{[<-} and \code{c()} methods return the updated DuckDBDualSubset.
+wrapping a \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}.
+\code{length()} returns the number of nodes (an integer); subsetting
+(\code{[}) returns a DuckDBDualSubset, and the \code{[<-} and \code{c()}
+methods return the updated DuckDBDualSubset.
 }
 \description{
 The DuckDBDualSubset class conforms to the DualSubset class from
 SingleCellExperiment to provide lazy node-based subsetting for
-\linkS4class{DuckDBSelfHits} objects.
+\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits} objects.
 }
 \details{
-DuckDBDualSubset is a lightweight wrapper around \linkS4class{DuckDBSelfHits} 
-that provides node-based subsetting semantics required by SingleCellExperiment's
-\code{colPairs}/\code{rowPairs} framework. Unlike the \code{DualSubset} class
-which materializes data immediately upon subsetting, \code{DuckDBDualSubset}
-delegates to the \code{nodes} slot in the wrapped \code{DuckDBSelfHits} object, 
-enabling lazy SQL-based edge filtering.
+DuckDBDualSubset is a lightweight wrapper around
+\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}
+that provides node-based subsetting semantics required by
+SingleCellExperiment's \code{colPairs}/\code{rowPairs} framework. Unlike the
+\code{DualSubset} class which materializes data immediately upon subsetting,
+\code{DuckDBDualSubset} delegates to the \code{nodes} slot in the wrapped
+\code{DuckDBSelfHits} object, enabling lazy SQL-based edge filtering.
 
 When a \code{DuckDBDualSubset} is subset via \code{x[i]}, it delegates to
 \code{extractNODES(x@hits, i)}, which updates the \code{nodes} slot in the
@@ -39,7 +41,8 @@ are retained).
     Creates a DuckDBDualSubset object wrapping a DuckDBSelfHits object.
     \describe{
       \item{\code{hits}}{
-        A \linkS4class{DuckDBSelfHits} object containing the edge data.
+        A \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits} object
+        containing the edge data.
       }
     }
   }
@@ -88,7 +91,8 @@ unlink(tmp, recursive = TRUE)
 
 }
 \seealso{
-\linkS4class{DuckDBSelfHits} for the underlying edge storage class.
+\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits} for the
+underlying edge storage class.
 
 \code{\link[DuckDBDataFrame]{extractNODES}} for the node-based subsetting method.
 }

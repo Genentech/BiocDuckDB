@@ -25,7 +25,7 @@ statistics, with the fitted mean-variance trend in \code{metadata()}.
 returns a \code{DataFrame} summarizing marker statistics per group.
 }
 \description{
-scran methods for \linkS4class{DuckDBMatrix} objects.
+scran methods for \link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix} objects.
 }
 \details{
 The DuckDBMatrix methods compute per-gene statistics using SQL
@@ -249,7 +249,7 @@ unlink(tmp, recursive = TRUE)
 }
 \seealso{
 \itemize{
-  \item \code{\link{DuckDBMatrix-class}} for the main class
+  \item \code{\link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix-class}} for the main class
   \item \code{\link{DuckDBMatrix-scuttle}} for the scuttle methods
   \item \code{\link[scran]{correlatePairs}} for the scran generic
   \item \code{\link[scran]{modelGeneVar}} for the scran generic

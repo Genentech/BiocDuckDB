@@ -9,9 +9,9 @@ NULL
 #' DuckDBDataFrame spatial methods
 #'
 #' @description
-#' \linkS4class{DuckDBDataFrame} methods for \pkg{MultiAssaySpatialExperiment}
-#' spatial generics. Lazy layers delegate to \pkg{DuckDBSpatial} for
-#' SQL-backed spatial operations.
+#' \link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame} methods for
+#' \pkg{MultiAssaySpatialExperiment} spatial generics. Lazy layers delegate to
+#' \pkg{DuckDBSpatial} for SQL-backed spatial operations.
 #'
 #' @section Methods:
 #' \describe{

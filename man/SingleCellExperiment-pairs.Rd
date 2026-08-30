@@ -12,25 +12,25 @@
 \alias{rowPairs<-,SingleCellExperiment,DuckDBSelfHits-method}
 \title{colPairs/rowPairs setters for DuckDBSelfHits}
 \arguments{
-\item{x}{A \linkS4class{SingleCellExperiment} object.}
+\item{x}{A \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment} object.}
 
 \item{type}{String or integer scalar specifying the name or index of the
 pairing to replace.}
 
 \item{...}{Additional arguments passed to the default setter.}
 
-\item{value}{A \linkS4class{DuckDBSelfHits} object to be stored as a
-column/row pairing. This will be automatically wrapped in a
-\linkS4class{DuckDBDualSubset}.}
+\item{value}{A \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}
+object to be stored as a column/row pairing. This will be automatically
+wrapped in a \linkS4class{DuckDBDualSubset}.}
 }
 \value{
 For the setter methods, \code{x} is returned with the modified pairings.
 }
 \description{
 Specialized setter methods for \code{colPairs} and \code{rowPairs} that
-automatically wrap \linkS4class{DuckDBSelfHits} objects in
-\linkS4class{DuckDBDualSubset} containers. This enables lazy node-based
-subsetting when a SingleCellExperiment is subset.
+automatically wrap \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}
+objects in \linkS4class{DuckDBDualSubset} containers. This enables lazy
+node-based subsetting when a SingleCellExperiment is subset.
 }
 \details{
 These methods extend the default \code{colPairs<-} and \code{rowPairs<-}
@@ -80,7 +80,7 @@ unlink(tmp, recursive = TRUE)
 
 }
 \seealso{
-\linkS4class{DuckDBSelfHits} for the lazy edge storage class.
+\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits} for the lazy edge storage class.
 
 \linkS4class{DuckDBDualSubset} for the wrapper that enables node-based subsetting.
 

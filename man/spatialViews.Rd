@@ -7,7 +7,7 @@
 spatialViews(mase, conn = acquireDuckDBConn(), prefix = "mase_")
 }
 \arguments{
-\item{mase}{A \linkS4class{MultiAssaySpatialExperiment}.}
+\item{mase}{A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.}
 
 \item{conn}{A DuckDB connection (default the shared BiocDuckDB connection).}
 
@@ -18,12 +18,14 @@ A \code{MASESpatialViews} registry (a list of view names + \code{conn}).
 }
 \description{
 Registers each spatial layer (points, shapes) and the \code{spatialMap}
-junction of a \linkS4class{MultiAssaySpatialExperiment} as DuckDB temp views
-on a shared connection, so cross-element queries can be expressed as SQL.
-Lazy (\linkS4class{DuckDBDataFrame}) layers are registered as views over
-their rendered SQL (no materialization); in-memory layers and the
-materialized \code{spatialMap} are registered as temp tables. This is the
-substrate used by \code{\link{linkSpatialMap}} /
+junction of a
+\link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}
+as DuckDB temp views on a shared connection, so cross-element queries can be
+expressed as SQL. Lazy
+(\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}) layers are
+registered as views over their rendered SQL (no materialization); in-memory
+layers and the materialized \code{spatialMap} are registered as temp tables.
+This is the substrate used by \code{\link{linkSpatialMap}} /
 \code{\link{validateSpatialMap}} and a handle for power-user raw SQL.
 }
 \examples{

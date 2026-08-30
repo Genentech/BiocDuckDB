@@ -36,11 +36,11 @@ imposed schema.}
 A Bioconductor object of the appropriate class, reconstructed using DuckDB
 backend classes:
 \itemize{
-  \item \code{\linkS4class{DuckDBMatrix}} objects for assay data
-  \item \code{\linkS4class{DuckDBDataFrame}} objects for row and column metadata
-  \item \code{\linkS4class{DuckDBGRanges}} objects for genomic ranges
-  \item \code{\linkS4class{DuckDBGRangesList}} objects for grouped genomic ranges
-  \item \code{\linkS4class{DuckDBSelfHits}} objects for graph edge lists
+  \item \code{\link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix}} objects for assay data
+  \item \code{\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}} objects for row and column metadata
+  \item \code{\link[DuckDBGRanges:DuckDBGRanges-class]{DuckDBGRanges}} objects for genomic ranges
+  \item \code{\link[DuckDBGRanges:DuckDBGRangesList-class]{DuckDBGRangesList}} objects for grouped genomic ranges
+  \item \code{\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}} objects for graph edge lists
   \item \code{\linkS4class{DuckDBDualSubset}} objects for pairwise graphs (wrapping \code{DuckDBSelfHits})
 }
 }
@@ -174,11 +174,11 @@ unlink(tmpdir, recursive = TRUE)
 \seealso{
 \itemize{
   \item \code{\link{writeParquet}} for writing Bioconductor objects to parquet
-  \item \code{\linkS4class{DuckDBMatrix}} for matrix storage
-  \item \code{\linkS4class{DuckDBDataFrame}} for metadata storage
-  \item \code{\linkS4class{DuckDBGRanges}} for genomic ranges
-  \item \code{\linkS4class{DuckDBGRangesList}} for grouped genomic ranges
-  \item \code{\linkS4class{DuckDBSelfHits}} for graph edge lists
+  \item \code{\link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix}} for matrix storage
+  \item \code{\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}} for metadata storage
+  \item \code{\link[DuckDBGRanges:DuckDBGRanges-class]{DuckDBGRanges}} for genomic ranges
+  \item \code{\link[DuckDBGRanges:DuckDBGRangesList-class]{DuckDBGRangesList}} for grouped genomic ranges
+  \item \code{\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}} for graph edge lists
 }
 }
 \author{

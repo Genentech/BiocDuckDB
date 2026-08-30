@@ -13,7 +13,7 @@ linkSpatialMap(
 )
 }
 \arguments{
-\item{mase}{A \linkS4class{MultiAssaySpatialExperiment}.}
+\item{mase}{A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.}
 
 \item{assay, element_type, region}{Optional filters selecting the spatialMap
 rows (and thus the single layer) to link.}
@@ -21,7 +21,8 @@ rows (and thus the single layer) to link.}
 \item{conn}{A DuckDB connection (default the shared BiocDuckDB connection).}
 }
 \value{
-A lazy \linkS4class{DuckDBDataFrame} of linked observations.
+A lazy \link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}
+  of linked observations.
 }
 \description{
 Joins the observations recorded in \code{spatialMap} to the rows of the
@@ -30,8 +31,8 @@ spatial layer they reference, through the full junction key
 \code{instance_id}). Resolves a single \code{(element_type, region)} layer
 (inferred from the filtered \code{spatialMap} when unambiguous, else
 specify); the join is pushed to DuckDB and returned as a lazy
-\linkS4class{DuckDBDataFrame} with the assay identity columns plus the
-layer's coordinate columns.
+\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame} with the assay
+identity columns plus the layer's coordinate columns.
 }
 \examples{
 mase <- readParquet(system.file("extdata", "spatial_mase",

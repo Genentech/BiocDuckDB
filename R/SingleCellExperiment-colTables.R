@@ -2,11 +2,12 @@
 #'
 #' @description
 #' Methods to get or set nested sample-level tables in a
-#' \linkS4class{SingleCellExperiment} object. These tables enable storage of
-#' multi-column relational data associated with samples (cells/perturbations),
-#' which would otherwise require nested DataFrames in \code{colData()}. By
-#' extracting nested tables into a separate slot, they can be serialized to
-#' independent Parquet tables for efficient querying.
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
+#' object. These tables enable storage of multi-column relational data
+#' associated with samples (cells/perturbations), which would otherwise require
+#' nested DataFrames in \code{colData()}. By extracting nested tables into a
+#' separate slot, they can be serialized to independent Parquet tables for
+#' efficient querying.
 #'
 #' @details
 #' Sample tables (\code{colTables}) are stored in
@@ -24,12 +25,14 @@
 #' \item Cell lineage: developmental trajectories or cell state transitions
 #' }
 #'
-#' Each table is a \linkS4class{DataFrame} with \code{ncol(x)} rows, maintaining
-#' alignment with samples. Tables are automatically subset when the parent
-#' SingleCellExperiment is subset by columns.
+#' Each table is a \link[S4Vectors:DataFrame-class]{DataFrame} with
+#' \code{ncol(x)} rows, maintaining alignment with samples. Tables are
+#' automatically subset when the parent SingleCellExperiment is subset by
+#' columns.
 #'
 #' @section Getters:
-#' In the following examples, \code{x} is a \linkS4class{SingleCellExperiment}
+#' In the following examples, \code{x} is a
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
 #' object.
 #' \describe{
 #' \item{\code{colTable(x, type, withDimnames=TRUE)}:}{
@@ -46,8 +49,9 @@
 #' the names may not be unique.
 #' }
 #' \item{\code{colTables(x, withDimnames=TRUE)}:}{
-#' Returns a named \linkS4class{SimpleList} of DataFrames containing one or more
-#' tables. Each table has the same number of rows as \code{ncol(x)}.
+#' Returns a named \link[S4Vectors:SimpleList-class]{SimpleList} of DataFrames
+#' containing one or more tables. Each table has the same number of rows as
+#' \code{ncol(x)}.
 #'
 #' If \code{withDimnames=TRUE}, row names of each DataFrame are replaced with
 #' the column names of \code{x}.
@@ -56,8 +60,10 @@
 #'
 #' @section Single-table setter:
 #' \code{colTable(x, type, withDimnames=TRUE) <- value} will add or replace a
-#' table in a \linkS4class{SingleCellExperiment} object \code{x}.
-#' The value of \code{type} determines how the table is added or replaced:
+#' table in a
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
+#' object \code{x}. The value of \code{type} determines how the table is added
+#' or replaced:
 #' \itemize{
 #' \item If \code{type} is a numeric scalar, it must be within the range of
 #'   existing tables, and \code{value} will be assigned to the table at that
@@ -74,7 +80,8 @@
 #' \code{colnames(x)}.
 #'
 #' @section Other setters:
-#' In the following examples, \code{x} is a \linkS4class{SingleCellExperiment}
+#' In the following examples, \code{x} is a
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
 #' object.
 #' \describe{
 #' \item{\code{colTables(x, withDimnames=TRUE) <- value}:}{
@@ -85,10 +92,10 @@
 #' If \code{value} is named, those names will be used to name the tables in
 #' \code{x}.
 #'
-#' If \code{value} is a \linkS4class{Annotated} object, any
-#' \code{\link{metadata}} will be retained in \code{colTables(x)}.
-#' If \code{value} is a \linkS4class{Vector} object, any \code{\link{mcols}}
-#' will also be retained.
+#' If \code{value} is a \link[S4Vectors:Annotated-class]{Annotated} object, any
+#' \code{\link[S4Vectors]{metadata}} will be retained in \code{colTables(x)}.
+#' If \code{value} is a \link[S4Vectors:Vector-class]{Vector} object, any
+#' \code{\link[S4Vectors]{mcols}} will also be retained.
 #'
 #' If \code{withDimnames=TRUE}, row names in each entry of \code{value} are set
 #' to \code{colnames(x)}.
@@ -100,7 +107,7 @@
 #' }
 #' }
 #'
-#' @param x A \linkS4class{SingleCellExperiment} object.
+#' @param x A \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment} object.
 #' @param type String or integer scalar specifying the name or index of the
 #'   table to get or set.
 #' @param withDimnames Logical scalar indicating whether row names should be
@@ -114,7 +121,7 @@
 #' @return
 #' For \code{colTable}, a DataFrame containing sample-level relational data.
 #'
-#' For \code{colTables}, a \linkS4class{SimpleList} of such DataFrames.
+#' For \code{colTables}, a \link[S4Vectors:SimpleList-class]{SimpleList} of such DataFrames.
 #'
 #' For \code{colTableNames}, a character vector of table names.
 #'

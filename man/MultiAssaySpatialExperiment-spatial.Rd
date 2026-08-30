@@ -14,12 +14,14 @@
 --- and \code{readGeoParquetForMASE()} returns a geometry-bearing object (an
 \pkg{sf} data frame). \code{annotateWithRegions()},
 \code{subsetByBoundingBox()}, and \code{subsetByPolygon()} return a
-\linkS4class{MultiAssaySpatialExperiment} (annotated or spatially subset).
+\link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}
+(annotated or spatially subset).
 }
 \description{
-Lazy \linkS4class{MultiAssaySpatialExperiment} methods that keep spatial
-layers as \linkS4class{DuckDBDataFrame} objects when possible. In-memory
-MASE defaults are used when no lazy layers are present.
+Lazy \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}
+methods that keep spatial layers as
+\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame} objects when
+possible. In-memory MASE defaults are used when no lazy layers are present.
 }
 \section{Parquet readers}{
 

@@ -7,7 +7,7 @@
 spatialCoordinateSystems(x)
 }
 \arguments{
-\item{x}{A \linkS4class{MultiAssaySpatialExperiment}.}
+\item{x}{A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.}
 }
 \value{
 A character vector of coordinate-system names.

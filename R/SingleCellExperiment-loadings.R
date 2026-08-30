@@ -2,11 +2,11 @@
 #'
 #' @description
 #' Methods to get or set feature-level loading matrices in a
-#' \linkS4class{SingleCellExperiment} object. These matrices represent
-#' per-feature contributions to latent factors, embeddings, or statistical
-#' models, where feature identity (e.g., gene names) carries semantic meaning.
-#' Each row of a loading matrix corresponds to a row (feature) of the
-#' SingleCellExperiment object.
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
+#' object. These matrices represent per-feature contributions to latent factors,
+#' embeddings, or statistical models, where feature identity (e.g., gene names)
+#' carries semantic meaning. Each row of a loading matrix corresponds to a row
+#' (feature) of the SingleCellExperiment object.
 #'
 #' @details
 #' Feature loadings (\code{rowLoadings}) are stored in
@@ -29,7 +29,8 @@
 #' features and their loadings.
 #'
 #' @section Getters:
-#' In the following examples, \code{x} is a \linkS4class{SingleCellExperiment}
+#' In the following examples, \code{x} is a
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
 #' object.
 #' \describe{
 #' \item{\code{rowLoading(x, type, withDimnames=TRUE)}:}{
@@ -47,9 +48,9 @@
 #' results, though the names may not be unique.
 #' }
 #' \item{\code{rowLoadings(x, withDimnames=TRUE)}:}{
-#' Returns a named \linkS4class{SimpleList} of matrices containing one or more
-#' loading results. Each result is a matrix with the same number of rows as
-#' \code{nrow(x)}.
+#' Returns a named \link[S4Vectors:SimpleList-class]{SimpleList} of matrices
+#' containing one or more loading results. Each result is a matrix with the same
+#' number of rows as \code{nrow(x)}.
 #'
 #' If \code{withDimnames=TRUE}, row names of each matrix are replaced with the
 #' row names of \code{x}.
@@ -58,8 +59,10 @@
 #'
 #' @section Single-result setter:
 #' \code{rowLoading(x, type, withDimnames=TRUE) <- value} will add or replace a
-#' loading result in a \linkS4class{SingleCellExperiment} object \code{x}.
-#' The value of \code{type} determines how the result is added or replaced:
+#' loading result in a
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
+#' object \code{x}. The value of \code{type} determines how the result is added
+#' or replaced:
 #' \itemize{
 #' \item If \code{type} is a numeric scalar, it must be within the range of
 #'   existing results, and \code{value} will be assigned to the result at that
@@ -76,7 +79,8 @@
 #' \code{rownames(x)}.
 #'
 #' @section Other setters:
-#' In the following examples, \code{x} is a \linkS4class{SingleCellExperiment}
+#' In the following examples, \code{x} is a
+#' \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment}
 #' object.
 #' \describe{
 #' \item{\code{rowLoadings(x, withDimnames=TRUE) <- value}:}{
@@ -87,10 +91,10 @@
 #' If \code{value} is named, those names will be used to name the loading
 #' results in \code{x}.
 #'
-#' If \code{value} is a \linkS4class{Annotated} object, any
-#' \code{\link{metadata}} will be retained in \code{rowLoadings(x)}.
-#' If \code{value} is a \linkS4class{Vector} object, any \code{\link{mcols}}
-#' will also be retained.
+#' If \code{value} is a \link[S4Vectors:Annotated-class]{Annotated} object, any
+#' \code{\link[S4Vectors]{metadata}} will be retained in \code{rowLoadings(x)}.
+#' If \code{value} is a \link[S4Vectors:Vector-class]{Vector} object, any
+#' \code{\link[S4Vectors]{mcols}} will also be retained.
 #'
 #' If \code{withDimnames=TRUE}, row names in each entry of \code{value} are set
 #' to \code{rownames(x)}.
@@ -102,7 +106,7 @@
 #' }
 #' }
 #'
-#' @param x A \linkS4class{SingleCellExperiment} object.
+#' @param x A \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment} object.
 #' @param type String or integer scalar specifying the name or index of the
 #'   loading result to get or set.
 #' @param withDimnames Logical scalar indicating whether row names should be
@@ -117,7 +121,7 @@
 #' For \code{rowLoading}, a matrix containing loading values for features (rows)
 #' and dimensions (columns).
 #'
-#' For \code{rowLoadings}, a \linkS4class{SimpleList} of such matrices.
+#' For \code{rowLoadings}, a \link[S4Vectors:SimpleList-class]{SimpleList} of such matrices.
 #'
 #' For \code{rowLoadingNames}, a character vector of loading names.
 #'

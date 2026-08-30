@@ -7,7 +7,7 @@
 validateSpatialMap(mase, strict = FALSE, conn = acquireDuckDBConn())
 }
 \arguments{
-\item{mase}{A \linkS4class{MultiAssaySpatialExperiment}.}
+\item{mase}{A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.}
 
 \item{strict}{If \code{TRUE}, error when any violation is found instead of
 returning the report.}

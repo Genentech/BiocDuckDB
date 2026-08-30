@@ -2,9 +2,9 @@
 #'
 #' @description
 #' Specialized setter methods for \code{colPairs} and \code{rowPairs} that
-#' automatically wrap \linkS4class{DuckDBSelfHits} objects in
-#' \linkS4class{DuckDBDualSubset} containers. This enables lazy node-based
-#' subsetting when a SingleCellExperiment is subset.
+#' automatically wrap \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}
+#' objects in \linkS4class{DuckDBDualSubset} containers. This enables lazy
+#' node-based subsetting when a SingleCellExperiment is subset.
 #'
 #' @details
 #' These methods extend the default \code{colPairs<-} and \code{rowPairs<-}
@@ -14,13 +14,13 @@
 #' \code{DuckDBSelfHits} objects are lazily filtered via SQL rather than
 #' materialized in memory.
 #'
-#' @param x A \linkS4class{SingleCellExperiment} object.
+#' @param x A \link[SingleCellExperiment:SingleCellExperiment-class]{SingleCellExperiment} object.
 #' @param type String or integer scalar specifying the name or index of the
 #'   pairing to replace.
 #' @param ... Additional arguments passed to the default setter.
-#' @param value A \linkS4class{DuckDBSelfHits} object to be stored as a
-#'   column/row pairing. This will be automatically wrapped in a
-#'   \linkS4class{DuckDBDualSubset}.
+#' @param value A \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}
+#'   object to be stored as a column/row pairing. This will be automatically
+#'   wrapped in a \linkS4class{DuckDBDualSubset}.
 #'
 #' @return
 #' For the setter methods, \code{x} is returned with the modified pairings.
@@ -59,7 +59,7 @@
 #' @aliases rowPairs<-,SingleCellExperiment,DuckDBSelfHits-method
 #'
 #' @seealso
-#' \linkS4class{DuckDBSelfHits} for the lazy edge storage class.
+#' \link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits} for the lazy edge storage class.
 #'
 #' \linkS4class{DuckDBDualSubset} for the wrapper that enables node-based subsetting.
 #'

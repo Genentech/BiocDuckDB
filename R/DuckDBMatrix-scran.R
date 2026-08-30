@@ -1,7 +1,7 @@
 #' DuckDBMatrix scran methods
 #'
 #' @description
-#' scran methods for \linkS4class{DuckDBMatrix} objects.
+#' scran methods for \link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix} objects.
 #'
 #' @section Pairwise Correlation Methods:
 #' The following pairwise correlation methods have optimized DuckDBMatrix implementations:
@@ -207,7 +207,7 @@
 #'
 #' @seealso
 #' \itemize{
-#'   \item \code{\link{DuckDBMatrix-class}} for the main class
+#'   \item \code{\link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix-class}} for the main class
 #'   \item \code{\link{DuckDBMatrix-scuttle}} for the scuttle methods
 #'   \item \code{\link[scran]{correlatePairs}} for the scran generic
 #'   \item \code{\link[scran]{modelGeneVar}} for the scran generic
@@ -1041,8 +1041,8 @@ function(stats, group_levels, direction, lfc, std.lfc, log.p, gene.names)
             } else {
                 hvt.p <- tvh.p <- forward.effect <- reverse.effect <-
                     rep(NA_real_, ngenes)
-                warning(paste("no within-block comparison between", host,
-                              "and", target))
+                warning("no within-block comparison between ", host,
+                        " and ", target)
             }
 
             collected.stats[[counter]] <- list(

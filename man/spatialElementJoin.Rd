@@ -15,7 +15,7 @@ spatialElementJoin(
 )
 }
 \arguments{
-\item{mase}{A \linkS4class{MultiAssaySpatialExperiment}.}
+\item{mase}{A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.}
 
 \item{x, y}{Element specs \code{"<element_type>/<region>"} (e.g.
 \code{"points/centroids"}), or \code{list(element_type=, region=)}.}
@@ -30,7 +30,8 @@ elements into before joining.}
 }
 \value{
 The spatial-join result from \pkg{DuckDBSpatial}
-  (\code{\link{spatialMatch}} indices for a point/geometry query).
+  (\code{\link[MultiAssaySpatialExperiment]{spatialMatch}} indices for a
+  point/geometry query).
 }
 \description{
 Joins two spatial elements (points or shapes, each named

@@ -30,11 +30,11 @@
 #' A Bioconductor object of the appropriate class, reconstructed using DuckDB
 #' backend classes:
 #' \itemize{
-#'   \item \code{\linkS4class{DuckDBMatrix}} objects for assay data
-#'   \item \code{\linkS4class{DuckDBDataFrame}} objects for row and column metadata
-#'   \item \code{\linkS4class{DuckDBGRanges}} objects for genomic ranges
-#'   \item \code{\linkS4class{DuckDBGRangesList}} objects for grouped genomic ranges
-#'   \item \code{\linkS4class{DuckDBSelfHits}} objects for graph edge lists
+#'   \item \code{\link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix}} objects for assay data
+#'   \item \code{\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}} objects for row and column metadata
+#'   \item \code{\link[DuckDBGRanges:DuckDBGRanges-class]{DuckDBGRanges}} objects for genomic ranges
+#'   \item \code{\link[DuckDBGRanges:DuckDBGRangesList-class]{DuckDBGRangesList}} objects for grouped genomic ranges
+#'   \item \code{\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}} objects for graph edge lists
 #'   \item \code{\linkS4class{DuckDBDualSubset}} objects for pairwise graphs (wrapping \code{DuckDBSelfHits})
 #' }
 #'
@@ -145,11 +145,11 @@
 #' @seealso
 #' \itemize{
 #'   \item \code{\link{writeParquet}} for writing Bioconductor objects to parquet
-#'   \item \code{\linkS4class{DuckDBMatrix}} for matrix storage
-#'   \item \code{\linkS4class{DuckDBDataFrame}} for metadata storage
-#'   \item \code{\linkS4class{DuckDBGRanges}} for genomic ranges
-#'   \item \code{\linkS4class{DuckDBGRangesList}} for grouped genomic ranges
-#'   \item \code{\linkS4class{DuckDBSelfHits}} for graph edge lists
+#'   \item \code{\link[DuckDBArray:DuckDBMatrix-class]{DuckDBMatrix}} for matrix storage
+#'   \item \code{\link[DuckDBDataFrame:DuckDBDataFrame-class]{DuckDBDataFrame}} for metadata storage
+#'   \item \code{\link[DuckDBGRanges:DuckDBGRanges-class]{DuckDBGRanges}} for genomic ranges
+#'   \item \code{\link[DuckDBGRanges:DuckDBGRangesList-class]{DuckDBGRangesList}} for grouped genomic ranges
+#'   \item \code{\link[DuckDBDataFrame:DuckDBSelfHits-class]{DuckDBSelfHits}} for graph edge lists
 #' }
 #'
 #' @examples
@@ -220,7 +220,7 @@ function(path,
 }
 
 .schema_datacols <- function(schema) {
-    all_fields <- sapply(schema[["fields"]], `[[`, "name")
+    all_fields <- vapply(schema[["fields"]], `[[`, character(1L), "name")
     keycol <- .schema_keycols(schema)
     pkey <- schema[["primaryKey"]]
     exclude <- c(keycol,
@@ -242,7 +242,7 @@ function(path,
     if (length(fields) == 0L) {
         return(NULL)
     }
-    names(fields) <- sapply(fields, `[[`, "name")
+    names(fields) <- vapply(fields, `[[`, character(1L), "name")
     out <- list()
     for (nm in intersect(datacols, names(fields))) {
         cats <- fields[[nm]][["categories"]]
@@ -357,7 +357,7 @@ function(path,
 .readParquetSimpleList <- function(path, package, ...) {
     resources <- package[["resources"]]
     out <- lapply(resources, function(r) .readParquetResource(path, r, ...))
-    names(out) <- sapply(resources, `[[`, "name")
+    names(out) <- vapply(resources, `[[`, character(1L), "name")
     SimpleList(out)
 }
 
@@ -516,7 +516,7 @@ function(path,
     if (is.null(keycols)) {
         keycols <- .schema_keycols(resource[["schema"]])
         fields <- resource[["schema"]][["fields"]]
-        names(fields) <- sapply(fields, `[[`, "name")
+        names(fields) <- vapply(fields, `[[`, character(1L), "name")
         keycols <- lapply(fields[keycols], function(x) {
             if (is.null(x[["categories"]])) {
                 NULL
@@ -550,7 +550,7 @@ function(path,
 #' @importFrom SummarizedExperiment SummarizedExperiment
 .readParquetSE <- function(path, package, ...) {
     resources <- package[["resources"]]
-    names(resources) <- sapply(package[["resources"]], `[[`, "name")
+    names(resources) <- vapply(package[["resources"]], `[[`, character(1L), "name")
 
     # Dimension Resources
     feature_res <- resources[["features"]]
@@ -605,7 +605,7 @@ function(path,
         t(.readParquetResource(path, res, keycol = rev(dimkeycols),
                                dimtbls = dimtbls))
     })
-    names(assays) <- sapply(assay_res, `[[`, "name")
+    names(assays) <- vapply(assay_res, `[[`, character(1L), "name")
 
     # Metadata
     metadata <- .deserializeMetadata(package[["annotations"]], resources, path, ...)
@@ -691,7 +691,7 @@ function(path,
             .readParquetResource(path, res, ...)
         }
     })
-    names(exps) <- sapply(resources, `[[`, "name")
+    names(exps) <- vapply(resources, `[[`, character(1L), "name")
     ExperimentList(exps)
 }
 
@@ -742,7 +742,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
 #' @importFrom stats setNames
 .readParquetMAE <- function(path, package, ...) {
     resources <- package[["resources"]]
-    names(resources) <- sapply(package[["resources"]], `[[`, "name")
+    names(resources) <- vapply(package[["resources"]], `[[`, character(1L), "name")
 
     # Experiments
     exps_res <- .filterResources(resources, dimension = "crossed")
