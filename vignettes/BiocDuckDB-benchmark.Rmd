@@ -94,7 +94,7 @@ qc_ddb <- perCellQCMetrics(mat)
 all.equal(qc_mem$sum, qc_ddb$sum)
 ```
 
-At this size the in-memory matrix is faster, there is nothing to gain from going
+At this size the in-memory matrix is faster; there is nothing to gain from going
 to disk. The advantage appears at scale, which is what the offline benchmark
 measures.
 

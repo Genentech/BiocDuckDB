@@ -438,7 +438,6 @@ function(x, block = NULL, subset.row = NULL)
                    dimnames = list(rnames, bnames))
 
     # First compute all means (needed for pass 2)
-    gene_means_by_block <- list()
     for (b in seq_len(nblocks)) {
         block_name <- levels(block)[b]
         block_n <- block_ncells[b]
@@ -449,7 +448,6 @@ function(x, block = NULL, subset.row = NULL)
         stored_sum[row_idx] <- block_result$stored_sum +
             fill * (block_n - block_result$stored_n)
         means[, b] <- stored_sum / block_n
-        gene_means_by_block[[block_name]] <- means[, b]
     }
 
     # Pass 2: Compute sum of squared deviations using two-pass algorithm
@@ -1913,23 +1911,24 @@ function(x.means, size.factors, block, npts, dispersion, pseudo.count)
     # Generate simulation points
     sim_means <- exp(seq(log(xlim[1L]), log(xlim[2L]), length.out = npts))
 
-    # Simulate Poisson counts and compute log-normalized variance
+    # Simulate Poisson counts and compute log-normalized variance. All npts x
+    # ncells draws happen in one vectorized call rather than one rpois()/
+    # rnbinom() call per simulation point.
     ncells <- length(size.factors)
-    sim_vars <- numeric(npts)
-
-    for (i in seq_len(npts)) {
-        lambda <- sim_means[i] * size.factors
-        if (dispersion > 0) {
-            # Negative binomial
-            counts <- rnbinom(ncells, mu = lambda, size = 1 / dispersion)
-        } else {
-            # Poisson
-            counts <- rpois(ncells, lambda = lambda)
-        }
-        # Log-normalize
-        log_vals <- log2(counts / size.factors + pseudo.count)
-        sim_vars[i] <- var(log_vals)
+    lambda_mat <- outer(sim_means, size.factors)
+    if (dispersion > 0) {
+        # Negative binomial
+        counts_mat <- matrix(rnbinom(length(lambda_mat), mu = lambda_mat,
+                                     size = 1 / dispersion),
+                             nrow = npts, ncol = ncells)
+    } else {
+        # Poisson
+        counts_mat <- matrix(rpois(length(lambda_mat), lambda = lambda_mat),
+                             nrow = npts, ncol = ncells)
     }
+    # Log-normalize (each column divided by its own cell's size factor)
+    log_vals_mat <- log2(sweep(counts_mat, 2L, size.factors, "/") + pseudo.count)
+    sim_vars <- matrixStats::rowVars(log_vals_mat)
 
     # Convert back to log2 scale for means
     sim_log_means <- log2(sim_means + pseudo.count)
@@ -2386,6 +2385,10 @@ function(x, groups, group_levels, pairs, lfc)
         right_idx <- pairs$right[p]
         left_group <- group_levels[left_idx]
         right_group <- group_levels[right_idx]
+        # group labels are arbitrary user-supplied text (factor levels), so they
+        # must be quoted/escaped rather than interpolated raw into the SQL below
+        left_group_sql <- DBI::dbQuoteString(con, left_group)
+        right_group_sql <- DBI::dbQuoteString(con, right_group)
 
         # Get cell counts for this pair
         n_left <- sum(groups == left_group)
@@ -2400,7 +2403,7 @@ WITH data_tbl AS (%s),
 all_cells_pair AS (
     SELECT cell_id, group_label as grp
     FROM %s
-    WHERE group_label IN ('%s', '%s')
+    WHERE group_label IN (%s, %s)
 ),
 all_genes AS (
     SELECT DISTINCT %s as gene FROM data_tbl
@@ -2434,7 +2437,7 @@ with_avg_rank AS (
 rank_sums AS (
     SELECT
         gene,
-        SUM(CASE WHEN grp = '%s' THEN avg_rank ELSE 0 END) as R1
+        SUM(CASE WHEN grp = %s THEN avg_rank ELSE 0 END) as R1
     FROM with_avg_rank
     GROUP BY gene
 )
@@ -2446,11 +2449,11 @@ ORDER BY gene
 ",
             base_sql,
             group_tbl_name,
-            left_group, right_group,
+            left_group_sql, right_group_sql,
             row_col,
             data_col, lfc_expr,
             row_col, col_col,
-            left_group,
+            left_group_sql,
             n_left, n_left, n_left, n_right
         )
 

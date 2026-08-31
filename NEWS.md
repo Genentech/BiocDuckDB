@@ -1,3 +1,42 @@
+# BiocDuckDB 0.99.20
+
+## Bug fixes
+
+- `.compute_true_auc_sql_DuckDBMatrix()` (the `scoreMarkers(..., true.auc = TRUE)`
+  path) interpolated group labels, arbitrary user-supplied text from the
+  `groups` factor's levels, straight into raw SQL (`WHERE group_label IN
+  ('...', '...')`) with no escaping. A label containing a single quote (not an
+  exotic case for a cell-type or condition name) produced malformed SQL.
+  Found during an independent code-quality review of the package's `for`
+  loops; every other raw-SQL-building spot in this file only interpolates
+  internal identifiers or integers, never free-text user data, so this was the
+  one place that departed from that safer pattern. Fixed by quoting both
+  group labels with `DBI::dbQuoteString()` before interpolation. Verified
+  with a group label containing an apostrophe.
+
+## Documentation
+
+- Fixed `` `r CRANpkg("airway")` `` to `` `r Biocpkg("airway")` `` in the
+  introduction vignette; `airway` is a Bioconductor experiment-data package,
+  not a CRAN package, so the old macro rendered a broken link.
+- Fixed two comma splices in the introduction and benchmarking vignettes.
+- Added a one-sentence explanation of `DuckDBMatrix()`'s `datacol`/`keycols`
+  arguments where the constructor first appears in the introduction vignette,
+  since neither is explained anywhere else in the vignette.
+
+## Changes
+
+- Vectorized the Monte-Carlo simulation loop in
+  `.generate_poisson_values_DuckDBMatrix()` (used by `modelGeneVarByPoisson`'s
+  trend fitting): one batched `rpois()`/`rnbinom()` draw across all simulation
+  points instead of up to `npts` (default 1000) separate calls.
+- Removed a dead accumulator variable (`gene_means_by_block`) in
+  `.compute_blocked_stats_DuckDBMatrix()` that was written but never read.
+- Collapsed 4 per-group/per-column `for` loops in `numDetectedAcrossFeatures()`,
+  `sumCountsAcrossFeatures()`, and `summarizeAssayByGroup()` (sum and detected
+  branches) in `DuckDBMatrix-scuttle.R` into one-line matrix broadcasts,
+  matching the `t(t(...))` idiom already used elsewhere in the same file.
+
 # BiocDuckDB 0.99.19
 
 ## Bug fixes

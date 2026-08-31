@@ -958,9 +958,7 @@ function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE,
     if (fill != 0 && threshold < fill) {
         count_mat <- .pivotToMatrix(result, "stored_n", feature_col, col_key,
                                     ngroups, ncells, groups, col_keyvals)
-        for (i in seq_len(ngroups)) {
-            out[i, ] <- out[i, ] + (group_sizes[i] - count_mat[i, ])
-        }
+        out <- out + (as.numeric(group_sizes) - count_mat)
     }
 
     if (average) {
@@ -1020,9 +1018,7 @@ function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE, ...) {
     if (fill != 0) {
         count_mat <- .pivotToMatrix(result, "stored_n", feature_col, col_key,
                                     ngroups, ncells, groups, col_keyvals)
-        for (i in seq_len(ngroups)) {
-            out[i, ] <- out[i, ] + (fill * (group_sizes[i] - count_mat[i, ]))
-        }
+        out <- out + (fill * (as.numeric(group_sizes) - count_mat))
     }
 
     if (average) {
@@ -1108,9 +1104,8 @@ function(x, ids, subset.row = NULL, subset.col = NULL,
         if (fill != 0) {
             count_mat <- .pivotToMatrix(result, "stored_n", row_key, "group_id",
                                         ngenes, ngroups, row_keyvals, groups)
-            for (j in seq_len(ngroups)) {
-                stored_sum[, j] <- stored_sum[, j] + (fill * (group_sizes[j] - count_mat[, j]))
-            }
+            stored_sum <- stored_sum +
+                fill * t(as.numeric(group_sizes) - t(count_mat))
         }
         if ("sum" %in% statistics) {
             collected$sum <- stored_sum
@@ -1127,9 +1122,7 @@ function(x, ids, subset.row = NULL, subset.col = NULL,
         if (fill != 0 && threshold < fill) {
             count_mat <- .pivotToMatrix(result, "stored_n", row_key, "group_id",
                                         ngenes, ngroups, row_keyvals, groups)
-            for (j in seq_len(ngroups)) {
-                stored_detected[, j] <- stored_detected[, j] + (group_sizes[j] - count_mat[, j])
-            }
+            stored_detected <- stored_detected + t(as.numeric(group_sizes) - t(count_mat))
         }
         if ("num.detected" %in% statistics) {
             collected$num.detected <- stored_detected
