@@ -431,6 +431,11 @@ function(x, path, ...)
     }
 }
 
+.metadataSkipDetail <- function(res) {
+    cond <- attr(res, "condition")
+    if (is.null(cond)) as.character(res) else trimws(conditionMessage(cond))
+}
+
 #' @importFrom S4Vectors metadata
 .serializeMetadataValue <- function(x, path, name, resources, ...) {
     if (.isMetadataJsonLeaf(x)) {
@@ -444,7 +449,10 @@ function(x, path, ...)
                                 layout = "data_frame", ...),
                    silent = TRUE)
         if (inherits(res, "try-error")) {
-            warning("Skipping metadata item '", name, "': ", res,
+            warning("Skipping metadata item '", name, "' (class '",
+                    paste(class(x), collapse = "/"), "'): failed to write as ",
+                    "a tabular resource (", .metadataSkipDetail(res), "); it ",
+                    "will not be present in the read-back object's metadata().",
                     call. = FALSE)
             return(list(value = NULL, resources = resources,
                         has_parquet = FALSE, skip = TRUE))
@@ -490,8 +498,11 @@ function(x, path, ...)
                             dimension = "unbound", ...),
                silent = TRUE)
     if (inherits(res, "try-error")) {
-        warning("Skipping unsupported metadata item '", name, "': ", res,
-                call. = FALSE)
+        warning("Skipping unsupported metadata item '", name, "' (class '",
+                paste(class(x), collapse = "/"), "'): not representable as ",
+                "JSON, a data frame, or an array-like object, so it cannot ",
+                "be written to Parquet; it will not be present in the ",
+                "read-back object's metadata().", call. = FALSE)
         return(list(value = NULL, resources = resources,
                     has_parquet = FALSE, skip = TRUE))
     }

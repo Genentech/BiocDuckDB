@@ -20,6 +20,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>",
                       error = FALSE, warning = FALSE, message = FALSE)
+has_airway <- requireNamespace("airway", quietly = TRUE)
 ```
 
 # Introduction
@@ -69,7 +70,14 @@ We write a `SummarizedExperiment` to Parquet and read it back as a DuckDB-backed
 object. The `r Biocpkg("airway")` bulk RNA-seq dataset is a `RangedSummarizedExperiment`,
 so it also exercises the genomic-coordinate path.
 
-```{r roundtrip}
+```{r airway-check, echo=FALSE, results='asis'}
+if (!has_airway) {
+    cat("_The `airway` package is not installed; the code below is shown but",
+        "not evaluated._\n")
+}
+```
+
+```{r roundtrip, eval=has_airway}
 data(airway, package = "airway")
 
 se_path <- file.path(tempdir(), "airway_se")
@@ -85,7 +93,7 @@ dim(airway_ddb)
 `writeParquet()` lays out each component as its own Parquet under a
 Frictionless-style directory, described by a `datapackage.json`:
 
-```{r layout}
+```{r layout, eval=has_airway}
 head(list.files(se_path, recursive = TRUE), 10)
 ```
 
@@ -94,18 +102,27 @@ Assays are stored in **coordinate (COO) form**, one row per stored entry with
 sparse matrices typical of single-cell data, and lets DuckDB scan only what a query
 touches.
 
-## Targeting the storage contract
+## Advanced: writing and attaching resources directly
 
-The `datapackage.json` layout is a stable [Frictionless](https://datapackage.org)
-profile; BiocDuckDB's extensions are additive and base-conformant, so any
-producer can *target* it and any consumer can *attach* it. These are the write and
-read halves of an ingest/attach contract, exposed as public functions so a store
-that already holds COO Parquet does not need to reconstruct an in-memory object to
-interoperate with BiocDuckDB.
+The rest of this section is for interoperating with other tools or writing data
+incrementally; skip ahead to "Operations run as SQL" below if you only need the
+`writeParquet()`/`readParquet()` round trip above.
 
-To assemble a manifest from resources written incrementally (a dataset streamed in
-parts, or promoted from another store), collect the descriptors returned by the
-primitive `writeParquet()` methods and call `writeDatapackage()`:
+The `datapackage.json` that `writeParquet()` writes follows the
+[Frictionless Data Package](https://datapackage.org) specification, a widely used,
+language-agnostic way to describe a directory of data files. BiocDuckDB adds a few
+of its own fields on top (`dimension` and `layout`, used below), but the file
+otherwise reads like any other Frictionless package. In practice that means two
+things: another tool, or another language, can write COO Parquet files with a
+matching `datapackage.json` and `readParquet()` will read them directly, with no R
+object involved in producing them; and R code that already has COO Parquet on disk
+from some other process can attach to it directly (below), instead of writing it
+out again through `writeParquet()`.
+
+To build a `datapackage.json` from pieces written separately, for example a
+dataset streamed in one part at a time, or migrated from another store, collect the
+descriptor each `writeParquet()` call returns and pass them all to
+`writeDatapackage()`:
 
 ```{r ingest, eval=FALSE}
 resources <- c(
@@ -134,7 +151,7 @@ each value in the matrix. The documented `model` values and the `dimension` x
 The DuckDB-backed object supports the standard API; component access, subsetting,
 and summaries are pushed to DuckDB:
 
-```{r operations}
+```{r operations, eval=has_airway}
 assay(airway_ddb, "counts")
 colData(airway_ddb)[, 1:3]
 
@@ -146,9 +163,9 @@ colSums(assay(sub, "counts"))
 Because only stored values and the touched columns are read, the in-memory
 footprint of the object stays small relative to the full data:
 
-```{r memory}
-c(in_memory = object.size(airway),
-  duckdb    = object.size(airway_ddb)) |> format(units = "MB")
+```{r memory, eval=has_airway}
+c(in_memory = format(object.size(airway), units = "MB"),
+  duckdb    = format(object.size(airway_ddb), units = "MB"))
 ```
 
 ## Genomic coordinates are preserved
@@ -157,7 +174,7 @@ c(in_memory = object.size(airway),
 `LIST[]` columns, so they come back as a `r Biocpkg("DuckDBGRanges")` list with the
 genomic API intact:
 
-```{r ranges}
+```{r ranges, eval=has_airway}
 rr <- rowRanges(airway_ddb)
 class(rr)
 elementNROWS(rr)[1:8]      # exons per gene, queried from disk

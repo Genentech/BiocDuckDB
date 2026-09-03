@@ -46,7 +46,7 @@ available_cores <- function() {
         x <- suppressWarnings(as.integer(Sys.getenv(v, "")))
         if (length(x) == 1L && !is.na(x) && x > 0L) return(x)
     }
-    np <- tryCatch(as.integer(system("nproc", intern = TRUE, ignore.stderr = TRUE)),
+    np <- tryCatch(as.integer(system2("nproc", stdout = TRUE, stderr = FALSE)),
                    error = function(e) NA_integer_, warning = function(w) NA_integer_)
     if (length(np) == 1L && !is.na(np) && np > 0L) return(np)
     max(1L, parallel::detectCores())

@@ -353,33 +353,48 @@ function(mase, strict = FALSE, conn = acquireDuckDBConn())
         y_col = if (has_geom) NULL else y_col, geom = geom)
 }
 
-#' Spatial join between two elements of a MASE
+#' Spatial join between a points element and a shapes element of a MASE
 #'
-#' Joins two spatial elements (points or shapes, each named
+#' Joins a points element to a shapes element (each named
 #' \code{"<element_type>/<region>"}) by a spatial predicate, pushed to DuckDB
 #' via \pkg{DuckDBSpatial}. When \code{coordinate_system} is given and the MASE
 #' carries transforms, each element is first aligned into that coordinate system
 #' through the coordinate-transform graph
 #' (\code{\link{spatialCoordinateSystems}}), so elements defined in different
 #' intrinsic frames are compared correctly. This generalizes
-#' \code{annotateWithRegions} (point-in-polygon only) to arbitrary
-#' element pairs and predicates.
+#' \code{annotateWithRegions} (point-in-polygon with the default predicate
+#' only) to any \pkg{sf} binary predicate.
 #'
 #' @param mase A \link[MultiAssaySpatialExperiment:MultiAssaySpatialExperiment-class]{MultiAssaySpatialExperiment}.
-#' @param x,y Element specs \code{"<element_type>/<region>"} (e.g.
-#'   \code{"points/centroids"}), or \code{list(element_type=, region=)}.
+#' @param x A points element spec, \code{"points/<region>"} (or
+#'   \code{list(element_type = "points", region = )}).
+#' @param y A shapes element spec, \code{"shapes/<region>"} (or
+#'   \code{list(element_type = "shapes", region = )}).
 #' @param join A spatial predicate function (default
 #'   \code{\link[sf:geos_binary_pred]{st_intersects}}).
 #' @param coordinate_system Optional target coordinate-system name to align both
 #'   elements into before joining.
-#' @param x_col,y_col Coordinate column names for point elements.
+#' @param x_col,y_col Coordinate column names in \code{x}, the points element.
 #' @return The spatial-join result from \pkg{DuckDBSpatial}
-#'   (\code{\link[MultiAssaySpatialExperiment]{spatialMatch}} indices for a
-#'   point/geometry query).
+#'   (\code{\link[MultiAssaySpatialExperiment]{spatialMatch}} indices matching
+#'   each point in \code{x} to a row of \code{y}, \code{NA} where unmatched).
 #' @examples
-#' # spatialElementJoin(mase, "points/centroids", "shapes/cells")
-#' # spatialElementJoin(mase, "points/centroids", "shapes/cells",
-#' #     coordinate_system = "global")
+#' pts <- S4Vectors::DataFrame(x = c(1.5, 2.5, 3.5), y = c(1.5, 2.5, 3.5),
+#'                             instance_id = c("A", "B", "C"))
+#' shp <- S4Vectors::DataFrame(instance_id = c("cell1", "cell2", "cell3"),
+#'     geometry = sf::st_sfc(
+#'         sf::st_polygon(list(matrix(c(1,1,2,1,2,2,1,2,1,1), ncol = 2, byrow = TRUE))),
+#'         sf::st_polygon(list(matrix(c(2,1,3,1,3,2,2,2,2,1), ncol = 2, byrow = TRUE))),
+#'         sf::st_polygon(list(matrix(c(2,2,3,2,3,3,2,3,2,2), ncol = 2, byrow = TRUE)))))
+#' mase <- MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
+#'     experiments = MultiAssayExperiment::ExperimentList(assay1 = matrix(1:9, 3, 3,
+#'         dimnames = list(paste0("G", 1:3), c("A", "B", "C")))),
+#'     colData = S4Vectors::DataFrame(row.names = "s1"),
+#'     sampleMap = S4Vectors::DataFrame(assay = "assay1", primary = "s1",
+#'                                      colname = c("A", "B", "C")),
+#'     points = MultiAssaySpatialExperiment::PointsLayerList(centroids = pts),
+#'     shapes = MultiAssaySpatialExperiment::ShapesLayerList(cells = shp))
+#' spatialElementJoin(mase, "points/centroids", "shapes/cells")
 #' @export
 #' @importFrom MultiAssaySpatialExperiment spatialMatch
 spatialElementJoin <- function(mase, x, y, join = sf::st_intersects,
@@ -388,6 +403,11 @@ spatialElementJoin <- function(mase, x, y, join = sf::st_intersects,
     .requireDuckDBSpatial("spatialElementJoin")
     xl <- .resolveElement(mase, x)
     yl <- .resolveElement(mase, y)
+    if (xl$element_type != "points" || yl$element_type != "shapes") {
+        stop("spatialElementJoin() requires 'x' to be a points element and ",
+             "'y' to be a shapes element (got x = '", xl$element_type, "/",
+             xl$region, "', y = '", yl$element_type, "/", yl$region, "')")
+    }
     if (!is.null(coordinate_system)) {
         g <- .maseCTgraph(mase)
         xl$layer <- .alignLayer(xl$layer, g, xl$key, coordinate_system,
@@ -395,7 +415,6 @@ spatialElementJoin <- function(mase, x, y, join = sf::st_intersects,
         yl$layer <- .alignLayer(yl$layer, g, yl$key, coordinate_system,
                                 x_col = x_col, y_col = y_col)
     }
-    coords <- if (xl$element_type == "points") c(x_col, y_col) else NULL
-    spatialMatch(xl$layer, yl$layer, coords = coords, geom = "geometry",
-                 join = join)
+    spatialMatch(xl$layer, yl$layer, coords = c(x_col, y_col),
+                 geom = "geometry", join = join)
 }

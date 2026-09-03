@@ -1,3 +1,49 @@
+# BiocDuckDB 0.99.21
+
+## Bug fixes
+
+- `c(object.size(x), object.size(y))` strips the `object_size` class, so the
+  introduction vignette's `format(..., units = "MB")` call silently ignored
+  `units` and printed raw byte counts instead. Fixed by formatting each
+  `object.size()` result separately (preserving the class) before combining
+  them into the displayed vector.
+- `spatialElementJoin()`'s documentation claimed it joins "arbitrary element
+  pairs," but the underlying `DuckDBSpatial::layerSpatialMatch()` primitive
+  only ever supports a points element against a shapes/geometry element, never
+  points-vs-points or shapes-vs-shapes. Calling it with an unsupported
+  combination surfaced as a cryptic low-level DuckDB `Binder Error` rather
+  than a clear message.
+- `system("nproc", intern = TRUE, ignore.stderr = TRUE)` in
+  `inst/scripts/run_scran_scuttle_benchmarks.R` replaced with
+  `system2("nproc", stdout = TRUE, stderr = FALSE)`, per Bioconductor's
+  guidance to prefer `system2()`.
+
+## Documentation
+
+- The introduction vignette's `airway` example now guards on
+  `requireNamespace("airway", quietly = TRUE)` so the vignette still compiles
+  when the Suggested `airway` package is not installed.
+- Improved both metadata-skip warning messages in `.serializeMetadataValue()`
+  (`writeParquet.R`) to name the metadata item's class and give a plain-language
+  reason instead of leaking the raw internal S4 dispatch error text. Writing the
+  flagship `airway` example (`writeParquet(airway, se_path)`) emits one of these
+  warnings, since `airway`'s `MIAME` metadata object is not representable as
+  JSON, a data frame, or an array-like object; the warning is expected and the
+  metadata item is correctly skipped, but the old message was confusing.
+- Rewrote the "Targeting the storage contract" section (renamed "Advanced:
+  writing and attaching resources directly") in plain language for a general
+  reader: defined "Frictionless Data Package" concretely instead of assuming
+  familiarity, dropped "base-conformant"/"ingest/attach" jargon, and added a
+  note that first-time readers can skip the section.
+- Reworded the "Results" section's lead sentence to no longer read like a code
+  comment; the ambiguous "consult the rendered table" sentence is clarified;
+  "Main takeaways" is now a "Summary" prose section that explains *why* each
+  result happens instead of restating the table, and answers a reviewer question
+  about performance tips; and the ambiguous "generics run unchanged on disk"
+  phrasing is rewritten rather than repunctuated.
+- Added a real, runnable `@examples` block for `spatialElementJoin()`,
+  replacing the commented-out pseudocode.
+
 # BiocDuckDB 0.99.20
 
 ## Bug fixes

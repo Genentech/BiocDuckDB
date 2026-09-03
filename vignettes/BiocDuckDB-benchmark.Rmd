@@ -111,8 +111,9 @@ each backend.
 
 # Results
 
-Rendered from the bundled offline results (`inst/scripts/benchmark_results.rds`);
-regenerate with `inst/scripts/run_scran_scuttle_benchmarks.R` (see that script's
+The table below reports the offline benchmark's measured timings, bundled with the
+package as `inst/scripts/benchmark_results.rds`. Regenerate it on your own
+hardware with `inst/scripts/run_scran_scuttle_benchmarks.R` (see that script's
 header).
 
 ```{r results, echo=FALSE, results='asis'}
@@ -135,32 +136,38 @@ if (is.null(res)) {
 }
 ```
 
-# Main takeaways
+# Summary
 
-- **The generics run unchanged on disk.** `perCellQCMetrics()`, `modelGeneVar()`,
-  `findMarkers()` and the rest dispatch to SQL-optimized methods for `DuckDBMatrix`,
-  so existing `r Biocpkg("scran")`/`r Biocpkg("scuttle")` code works on a
-  Parquet-backed matrix without changes or realization.
-- **Against the out-of-core baseline, DuckDB wins every operation.** Compared with
-  `r Biocpkg("HDF5Array")`, the fair comparison, since both keep the matrix on
-  disk, DuckDB is faster on all eight operations, from ~1.4x (`findMarkers`) to
-  well over 100x (`correlatePairs`).
-- **QC and normalization beat in-memory too.** `perCellQCMetrics`,
-  `perFeatureQCMetrics`, and `normalizeCounts` are pure `SUM`/`AVG` aggregations and
-  run several times faster than an in-memory `dgCMatrix` while never loading the
-  matrix.
-- **`correlatePairs` is the standout.** Its sparse-aware SQL avoids the dense
-  intermediates the other backends build, making it roughly two orders of magnitude
-  faster than both `r Biocpkg("HDF5Array")` and in-memory.
-- **Some steps still favor in-memory at this scale.** `summarizeAssayByGroup` and
-  `modelGeneVar` are faster in memory (though DuckDB still beats
-  `r Biocpkg("HDF5Array")`); the DuckDB advantage on these grows as data outgrows
-  RAM. Marker detection (`pairwiseTTests`, `findMarkers`) is on par with in-memory,
-  since the per-gene statistics after the SQL `GROUP BY` are the same in every
-  backend.
+`perCellQCMetrics()`, `modelGeneVar()`, `findMarkers()`, and the rest of the
+`r Biocpkg("scran")`/`r Biocpkg("scuttle")` generics used here dispatch to
+SQL-optimized methods for `DuckDBMatrix`. That means existing analysis code that
+calls these generics keeps working when the matrix happens to be Parquet-backed,
+with no code changes and no realization into memory.
 
-Consult the rendered table above for the measured numbers on your build's bundled
-results.
+Against `r Biocpkg("HDF5Array")`, the fair comparison since both keep the matrix on
+disk, DuckDB is faster on every operation measured, from about 1.4x on
+`findMarkers` to well over 100x on `correlatePairs`. `perCellQCMetrics`,
+`perFeatureQCMetrics`, and `normalizeCounts` are pure `SUM`/`AVG` aggregations,
+which DuckDB pushes straight into a columnar scan; that lets them beat even the
+in-memory `dgCMatrix` by several times, without ever loading the matrix.
+`correlatePairs` is the standout: its sparse-aware SQL avoids the dense
+intermediate matrices the other backends build for a pairwise correlation, which
+is what turns the usual disk-vs-memory gap into a roughly two-order-of-magnitude
+speedup over both `r Biocpkg("HDF5Array")` and in-memory.
+
+Some steps still favor in-memory at this scale. `summarizeAssayByGroup` and
+`modelGeneVar` are faster on an in-memory `dgCMatrix` (though DuckDB still beats
+`r Biocpkg("HDF5Array")` on both); a dense in-memory group-by can outrun even a
+single disk scan while the matrix comfortably fits in RAM, and the DuckDB
+advantage should grow as the data outgrows it. Marker detection
+(`pairwiseTTests`, `findMarkers`) lands on par with in-memory, since the per-gene
+statistics computed after the SQL `GROUP BY` are identical work regardless of
+which backend did the aggregation.
+
+For the exact measured numbers on your build's bundled results, see the table in
+the Results section above. There is no per-call tuning needed to get these
+numbers: `DuckDBMatrix` autotunes DuckDB's internal threads up to the available
+core budget on its own. The lever that matters is structural, covered next.
 
 # When this matters
 
