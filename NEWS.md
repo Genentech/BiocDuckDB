@@ -1,3 +1,20 @@
+# BiocDuckDB 0.99.22
+
+## Documentation
+
+- The benchmarking vignette's "your build's bundled results" phrasing wrongly
+  implied the shipped benchmark table could vary per installation. Verified
+  the actual mechanics: `load_vignette_timings()` reads
+  `inst/scripts/benchmark_results.rds` from the *installed package*, while
+  `run_scran_scuttle_benchmarks.R` writes its output to the working directory,
+  not that location, so running the script does not, by itself, change the
+  table; every installation of a given release bundles the same fixed,
+  precomputed results file. Removed the "your build" framing from the
+  Summary section and moved the (now corrected) explanation of how a
+  maintainer would actually refresh the bundled numbers down to "Running
+  your own benchmarks," where the same inaccuracy ("which this vignette
+  renders") was also present and is now fixed.
+
 # BiocDuckDB 0.99.21
 
 ## Bug fixes

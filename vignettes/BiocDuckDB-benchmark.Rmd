@@ -164,10 +164,10 @@ advantage should grow as the data outgrows it. Marker detection
 statistics computed after the SQL `GROUP BY` are identical work regardless of
 which backend did the aggregation.
 
-For the exact measured numbers on your build's bundled results, see the table in
-the Results section above. There is no per-call tuning needed to get these
-numbers: `DuckDBMatrix` autotunes DuckDB's internal threads up to the available
-core budget on its own. The lever that matters is structural, covered next.
+The table in the Results section above has the exact measured numbers. There is
+no per-call tuning needed to get them: `DuckDBMatrix` autotunes DuckDB's internal
+threads up to the available core budget on its own. The lever that matters is
+structural, covered next.
 
 # When this matters
 
@@ -181,11 +181,18 @@ far larger than RAM.
 # Running your own benchmarks
 
 `inst/scripts/run_scran_scuttle_benchmarks.R` reproduces these numbers on your
-hardware (`BENCH_NCELLS`, `BENCH_CORES`; set `BENCH_SYNTHETIC=1` to smoke-test
-without the `EH1039` download). It writes `benchmark_results.rds`, which this
-vignette renders via `inst/scripts/make_timings_table.R`. For the lower-level
-matrix operations (`colSums`, `rowVars`, `rowDeviances`), see the
-`r Biocpkg("DuckDBArray")` benchmarking vignette.
+own hardware (`BENCH_NCELLS`, `BENCH_CORES`; set `BENCH_SYNTHETIC=1` to
+smoke-test without the `EH1039` download). It writes `benchmark_results.rds` to
+your working directory, in the same format `inst/scripts/make_timings_table.R`
+reads to build the table in the Results section above. Running the script does
+not, by itself, change that table: every installation of a given package
+release bundles the same fixed, precomputed `inst/scripts/benchmark_results.rds`,
+regardless of who built it or on what hardware. To have your own run replace the
+bundled numbers, copy your output over `inst/scripts/benchmark_results.rds` in
+the package source and rebuild the package.
+
+For the lower-level matrix operations (`colSums`, `rowVars`, `rowDeviances`), see
+the `r Biocpkg("DuckDBArray")` benchmarking vignette.
 
 # Session information
 
