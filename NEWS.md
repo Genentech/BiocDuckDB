@@ -15,11 +15,14 @@
   `BiocSingular::runIrlbaSVD()` directly on the materialized matrix, verified
   to reproduce identical singular values to the lazy path at roughly 300x the
   speed in this session's testing (0.084s vs 26.2s on a synthetic 3000x500
-  case). Falls back to ordinary `IrlbaParam` behavior whenever the fast path
-  doesn't apply (not a `DuckDBMatrix`, non-zero-filled seed, or over
-  `"memory_limit"`), including reproducing that path's own pre-existing
-  failure modes (e.g. a non-zero-filled seed) identically rather than
-  papering over them.
+  case). Confirmed on the same real 12,500-cell, 200-HVG benchmark that
+  motivated this fix: `calculatePCA` on `DuckDBMatrix` dropped from ~16.2s to
+  ~0.58s, beating `HDF5Array`'s ~4.45s by about 7.6x and landing within 1.8x
+  of the ~0.33s in-memory `dgCMatrix` baseline. Falls back to ordinary
+  `IrlbaParam` behavior whenever the fast path doesn't apply (not a
+  `DuckDBMatrix`, non-zero-filled seed, or over `"memory_limit"`), including
+  reproducing that path's own pre-existing failure modes (e.g. a
+  non-zero-filled seed) identically rather than papering over them.
 - Registered a `beachmat::initializeCpp()` method for `DuckDBArraySeed`
   (`initializeCpp.R`, `initializeOptions.R`, `loadIntoMemory.R`), giving
   compiled C++ code that goes through `beachmat`/`tatami` (e.g.
