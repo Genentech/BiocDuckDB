@@ -62,6 +62,18 @@ Each method is implemented as per-gene / per-group SQL aggregation on the
 | `correlatePairs` | pairwise gene correlations |
 | `pairwiseTTests` / `findMarkers` | pairwise DE and candidate markers |
 
+**Dimensionality reduction is a different kind of case.** `r Biocpkg("BiocSingular")`'s
+`runSVD()`, and so `r Biocpkg("scran")`'s `fixedPCA()` and `r Biocpkg("scater")`'s
+`runPCA()`/`calculatePCA()`, already compute a correct PCA directly on a `DuckDBMatrix`,
+through the SQL-pushdown `%*%`/`crossprod` methods `r Biocpkg("DuckDBArray")` implements
+(no BiocDuckDB-specific PCA code is needed). But unlike the aggregation-only functions
+above, PCA is not itself pure SQL: `irlba`'s Lanczos iteration calls `%*%` once per
+solver step, so the query-planning cost of each call is paid repeatedly rather than
+once. That makes it a solver-loop scalability question, not a correctness one, and it
+is not expected to win the way `correlatePairs` or the QC metrics do. It is included in
+the benchmark below for that reason: to show where composing with the existing
+pushdown is enough, and where it is not (yet) fast.
+
 # A small, live comparison
 
 To show the mechanics without a large download, we build a small sparse matrix and
@@ -106,8 +118,8 @@ the size used by the original comparison. Each operation runs on three
 backends: an in-memory `r CRANpkg("Matrix")` `dgCMatrix`, an
 `r Biocpkg("HDF5Array")`, and a `DuckDBMatrix`. The in-memory and HDF5 backends run
 single-threaded; `DuckDBMatrix` autotunes DuckDB's internal threads up to the core
-budget. The variance and marker operations run on log-normalized counts produced by
-each backend.
+budget. The variance and marker operations, and `calculatePCA` (10 components, top
+200 HVGs), run on log-normalized counts produced by each backend.
 
 # Results
 
@@ -163,6 +175,16 @@ advantage should grow as the data outgrows it. Marker detection
 (`pairwiseTTests`, `findMarkers`) lands on par with in-memory, since the per-gene
 statistics computed after the SQL `GROUP BY` are identical work regardless of
 which backend did the aggregation.
+
+`calculatePCA` is the clearest example of the limits of composing with the
+existing pushdown rather than optimizing for it directly: expect it to be
+markedly slower on `DuckDBMatrix` than on either in-memory or
+`r Biocpkg("HDF5Array")`, for the structural reason given in [What BiocDuckDB
+optimizes], each Lanczos iteration re-pays SQL query-planning overhead that a
+single-scan aggregation only pays once. This is a known, open scalability gap,
+not a correctness issue: the result is numerically identical to the other
+backends (see the *Introduction to BiocDuckDB* vignette's *filter, realize,
+analyze pattern* for the correctness argument), it is simply not yet fast.
 
 The table in the Results section above has the exact measured numbers. There is
 no per-call tuning needed to get them: `DuckDBMatrix` autotunes DuckDB's internal

@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.99.22
-Date: 2026-09-04
+Version: 0.99.23
+Date: 2026-09-09
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -33,6 +33,7 @@ Depends:
 Imports:
     BiocGenerics,
     BiocParallel,
+    Matrix,
     S4Vectors,
     IRanges,
     GenomicRanges,
@@ -44,6 +45,7 @@ Imports:
     MultiAssayExperiment,
     MultiAssaySpatialExperiment,
     metapod,
+    beachmat,
     scran,
     scuttle,
     DBI,
@@ -59,18 +61,19 @@ Suggests:
     testthat,
     jsonvalidate,
     grDevices,
-    Matrix,
     matrixStats,
     nanoparquet,
     png,
     sf,
     sfarrow,
+    BiocSingular,
     S4Arrays,
     SpatialExperiment,
     DuckDBSpatial,
     ExperimentHub,
     HDF5Array,
     ZarrArray,
+    irlba,
     scater,
     airway,
     scRNAseq
@@ -99,6 +102,9 @@ Collate:
     'SingleCellExperiment-pairs.R'
     'SingleCellExperiment-rowTables.R'
     'fieldtypes.R'
+    'initializeCpp.R'
+    'initializeOptions.R'
+    'loadIntoMemory.R'
     'readParquet.R'
     'writeDatapackage.R'
     'writeParquet.R'

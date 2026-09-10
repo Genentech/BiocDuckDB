@@ -242,6 +242,18 @@ Many `r Biocpkg("scran")`/`r Biocpkg("scuttle")` steps can run *directly* on the
 DuckDB-backed object as SQL, before any realization, that is the subject of
 *Benchmarking BiocDuckDB*.
 
+Step 3's `runPCA()` is a partial exception to needing step 2 first:
+`r Biocpkg("BiocSingular")`'s `runSVD()` (and so `scran::fixedPCA()` /
+`scater::runPCA()`) already compute a correct PCA directly on `sce_ddb`, through
+the SQL-pushdown `%*%`/`crossprod` methods `r Biocpkg("DuckDBArray")` implements,
+no realization required for correctness. What full realization still buys you
+here is speed: each step of the underlying iterative solver issues a `%*%` call,
+so on a `DuckDBMatrix` that cost is paid once per solver iteration rather than
+once overall, this is a known, open scalability gap, covered in detail (with
+measured numbers) in *Benchmarking BiocDuckDB*. For a subset that already fits
+comfortably in memory, as after HVG selection here, realizing first is still the
+faster choice; skipping it is a correctness option, not (yet) a performance one.
+
 # Multi-omics
 
 For a `MultiAssayExperiment`, write each experiment to its own directory and read

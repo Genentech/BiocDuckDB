@@ -11,6 +11,15 @@
 #   modelGeneVar                            -- scran variance modelling
 #   correlatePairs                          -- scran pairwise correlations (top HVGs)
 #   pairwiseTTests, findMarkers             -- scran marker detection
+#   calculatePCA                            -- scater PCA (top HVGs), a DIFFERENT
+#                                               kind of op from the rest: it composes
+#                                               correctly on DuckDBMatrix via the
+#                                               existing SQL-pushdown %*%/crossprod,
+#                                               but is not itself pure SQL aggregation
+#                                               (irlba's Lanczos loop calls %*%
+#                                               directly, once per iteration), so it
+#                                               is not expected to win the way the
+#                                               aggregation-only ops above do
 #
 # In-memory dgCMatrix and HDF5Array are single-threaded here; DuckDBMatrix
 # autotunes DuckDB's internal threads. Each timing is wrapped so an
@@ -34,6 +43,8 @@ suppressPackageStartupMessages({
     library(Matrix)
     library(scuttle)
     library(scran)
+    library(scater)
+    library(BiocSingular)
     library(BiocParallel)
     library(DBI)
 })
@@ -139,7 +150,14 @@ ops <- list(
     findMarkers = list(
         function() findMarkers(log_mem, groups = groups, BPPARAM = BPPARAM),
         function() findMarkers(log_hdf5, groups = groups, BPPARAM = BPPARAM),
-        function() findMarkers(log_ddb, groups = groups, BPPARAM = BPPARAM))
+        function() findMarkers(log_ddb, groups = groups, BPPARAM = BPPARAM)),
+    # Not a pure SQL aggregation like the ops above: calculatePCA()'s Lanczos
+    # iteration calls %*% once per step, so this measures the SQL-pushdown
+    # %*%/crossprod path's solver-loop overhead, not a single scan.
+    calculatePCA = list(
+        function() calculatePCA(log_mem[hvg, ], ncomponents = 10, BSPARAM = IrlbaParam()),
+        function() calculatePCA(log_hdf5[hvg, ], ncomponents = 10, BSPARAM = IrlbaParam()),
+        function() calculatePCA(log_ddb[hvg, ], ncomponents = 10, BSPARAM = IrlbaParam()))
 )
 
 backends <- c("InMemory", "HDF5Array", "DuckDB")

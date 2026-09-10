@@ -13,7 +13,9 @@ export("rowTables<-")
 export(colTable)
 export(colTableNames)
 export(colTables)
+export(initializeOptions)
 export(linkSpatialMap)
+export(loadIntoMemory)
 export(readParquet)
 export(rowLoading)
 export(rowLoadingNames)
@@ -51,6 +53,7 @@ exportMethods(colTables)
 exportMethods(correlatePairs)
 exportMethods(findMarkers)
 exportMethods(geometricSizeFactors)
+exportMethods(initializeCpp)
 exportMethods(librarySizeFactors)
 exportMethods(modelGeneCV2)
 exportMethods(modelGeneVar)
@@ -81,6 +84,7 @@ exportMethods(summaryMarkerStats)
 exportMethods(writeParquet)
 import(BiocGenerics)
 import(methods)
+importClassesFrom(DuckDBArray,DuckDBArraySeed)
 importClassesFrom(DuckDBArray,DuckDBMatrix)
 importClassesFrom(DuckDBDataFrame,DuckDBDataFrame)
 importClassesFrom(DuckDBDataFrame,DuckDBSelfHits)
@@ -157,6 +161,7 @@ importFrom(GenomicRanges,
   strand
 )
 importFrom(IRanges,DataFrameList)
+importFrom(Matrix,sparseMatrix)
 importFrom(MatrixGenerics,
   colMeans,
   colSums,
@@ -237,14 +242,19 @@ importFrom(arrow,
   write_dataset,
   write_parquet
 )
+importFrom(beachmat,initializeCpp)
 importFrom(dbplyr,sql_render)
 importFrom(dplyr,
+  all_of,
   collect,
+  count,
   filter,
   group_by,
   left_join,
   mutate,
   n,
+  pull,
+  select,
   sql,
   summarize,
   tbl
