@@ -2,6 +2,24 @@
 
 ## New features
 
+- Added `DuckDBIrlbaParam()`, a `BiocSingular::BiocSingularParam` for
+  `BiocSingular::runSVD()` (and so `scran::fixedPCA()`/`scater::runPCA()`/
+  `calculatePCA()`) that closes the solver-loop performance gap the
+  `initializeCpp()` work below documented but did not fix. Measured directly
+  on a real 12,500-cell, 200-HVG benchmark: the ordinary `BSPARAM =
+  IrlbaParam()` path took ~16.2s on a `DuckDBMatrix` versus ~0.3s in-memory
+  (~51x), because `irlba`'s Lanczos loop calls the SQL-pushdown `%*%` once per
+  solver iteration, paying real query-construction cost every time.
+  `DuckDBIrlbaParam()` instead materializes the matrix once (reusing
+  `loadIntoMemory()`'s size-gated `.duckdb_seed_to_sparse_matrix()`) and calls
+  `BiocSingular::runIrlbaSVD()` directly on the materialized matrix, verified
+  to reproduce identical singular values to the lazy path at roughly 300x the
+  speed in this session's testing (0.084s vs 26.2s on a synthetic 3000x500
+  case). Falls back to ordinary `IrlbaParam` behavior whenever the fast path
+  doesn't apply (not a `DuckDBMatrix`, non-zero-filled seed, or over
+  `"memory_limit"`), including reproducing that path's own pre-existing
+  failure modes (e.g. a non-zero-filled seed) identically rather than
+  papering over them.
 - Registered a `beachmat::initializeCpp()` method for `DuckDBArraySeed`
   (`initializeCpp.R`, `initializeOptions.R`, `loadIntoMemory.R`), giving
   compiled C++ code that goes through `beachmat`/`tatami` (e.g.

@@ -10,6 +10,7 @@ export("rowLoadings<-")
 export("rowTable<-")
 export("rowTableNames<-")
 export("rowTables<-")
+export(DuckDBIrlbaParam)
 export(colTable)
 export(colTableNames)
 export(colTables)
@@ -30,6 +31,7 @@ export(validateSpatialMap)
 export(writeDatapackage)
 export(writeParquet)
 export(writeStreamingResource)
+exportClasses(DuckDBIrlbaParam)
 exportMethods("colPair<-")
 exportMethods("colPairs<-")
 exportMethods("colTable<-")
@@ -72,6 +74,7 @@ exportMethods(rowLoadings)
 exportMethods(rowTable)
 exportMethods(rowTableNames)
 exportMethods(rowTables)
+exportMethods(runSVD)
 exportMethods(scoreMarkers)
 exportMethods(spatialJoin)
 exportMethods(spatialMatch)
@@ -84,6 +87,7 @@ exportMethods(summaryMarkerStats)
 exportMethods(writeParquet)
 import(BiocGenerics)
 import(methods)
+importClassesFrom(BiocSingular,IrlbaParam)
 importClassesFrom(DuckDBArray,DuckDBArraySeed)
 importClassesFrom(DuckDBArray,DuckDBMatrix)
 importClassesFrom(DuckDBDataFrame,DuckDBDataFrame)
@@ -114,6 +118,11 @@ importFrom(BiocParallel,
   SerialParam,
   bpstart,
   bpstop
+)
+importFrom(BiocSingular,
+  ExactParam,
+  runIrlbaSVD,
+  runSVD
 )
 importFrom(DBI,
   dbExecute,

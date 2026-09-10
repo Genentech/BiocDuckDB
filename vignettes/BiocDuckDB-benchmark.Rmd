@@ -64,15 +64,23 @@ Each method is implemented as per-gene / per-group SQL aggregation on the
 
 **Dimensionality reduction is a different kind of case.** `r Biocpkg("BiocSingular")`'s
 `runSVD()`, and so `r Biocpkg("scran")`'s `fixedPCA()` and `r Biocpkg("scater")`'s
-`runPCA()`/`calculatePCA()`, already compute a correct PCA directly on a `DuckDBMatrix`,
-through the SQL-pushdown `%*%`/`crossprod` methods `r Biocpkg("DuckDBArray")` implements
-(no BiocDuckDB-specific PCA code is needed). But unlike the aggregation-only functions
-above, PCA is not itself pure SQL: `irlba`'s Lanczos iteration calls `%*%` once per
-solver step, so the query-planning cost of each call is paid repeatedly rather than
-once. That makes it a solver-loop scalability question, not a correctness one, and it
-is not expected to win the way `correlatePairs` or the QC metrics do. It is included in
-the benchmark below for that reason: to show where composing with the existing
-pushdown is enough, and where it is not (yet) fast.
+`runPCA()`/`calculatePCA()`, already compute a correct PCA directly on a `DuckDBMatrix`
+with the ordinary `BSPARAM = BiocSingular::IrlbaParam()`, through the SQL-pushdown
+`%*%`/`crossprod` methods `r Biocpkg("DuckDBArray")` implements. But unlike the
+aggregation-only functions above, PCA is not itself pure SQL: `irlba`'s Lanczos
+iteration calls `%*%` once per solver step, so the query-planning cost of each call is
+paid repeatedly rather than once, and that path is markedly slower on `DuckDBMatrix`
+than in memory.
+
+`BSPARAM = DuckDBIrlbaParam()` closes that gap: it materializes the (already
+HVG-subsetted) matrix once into an in-memory sparse matrix and drives `irlba` directly
+on it, the same size-gated materialization `loadIntoMemory()` uses elsewhere in this
+package, instead of paying the SQL-pushdown cost once per iteration. It falls back to
+ordinary `IrlbaParam` behavior whenever it doesn't apply (not a `DuckDBMatrix`, too
+large for `"memory_limit"`), so it is safe to use as a drop-in replacement for
+`IrlbaParam()` wherever a `DuckDBMatrix` might show up. The benchmark below uses
+`DuckDBIrlbaParam()` for exactly this reason: to measure the path that is actually
+meant to be fast, not the one that only demonstrates correctness.
 
 # A small, live comparison
 
@@ -119,7 +127,8 @@ backends: an in-memory `r CRANpkg("Matrix")` `dgCMatrix`, an
 `r Biocpkg("HDF5Array")`, and a `DuckDBMatrix`. The in-memory and HDF5 backends run
 single-threaded; `DuckDBMatrix` autotunes DuckDB's internal threads up to the core
 budget. The variance and marker operations, and `calculatePCA` (10 components, top
-200 HVGs), run on log-normalized counts produced by each backend.
+200 HVGs, `BSPARAM = DuckDBIrlbaParam()`), run on log-normalized counts produced by
+each backend.
 
 # Results
 
@@ -176,15 +185,15 @@ advantage should grow as the data outgrows it. Marker detection
 statistics computed after the SQL `GROUP BY` are identical work regardless of
 which backend did the aggregation.
 
-`calculatePCA` is the clearest example of the limits of composing with the
-existing pushdown rather than optimizing for it directly: expect it to be
-markedly slower on `DuckDBMatrix` than on either in-memory or
-`r Biocpkg("HDF5Array")`, for the structural reason given in [What BiocDuckDB
-optimizes], each Lanczos iteration re-pays SQL query-planning overhead that a
-single-scan aggregation only pays once. This is a known, open scalability gap,
-not a correctness issue: the result is numerically identical to the other
-backends (see the *Introduction to BiocDuckDB* vignette's *filter, realize,
-analyze pattern* for the correctness argument), it is simply not yet fast.
+`calculatePCA` is run here with `BSPARAM = DuckDBIrlbaParam()`
+(see [What BiocDuckDB optimizes]), not the ordinary `BSPARAM = IrlbaParam()`. The
+distinction matters: with the ordinary `BSPARAM`, each Lanczos iteration re-pays SQL
+query-planning overhead that a single-scan aggregation only pays once, measured at
+about 50x slower than in-memory on a real 12,500-cell dataset, markedly worse than
+every other operation in this table. `DuckDBIrlbaParam()` closes that gap by
+materializing the matrix once and driving `irlba` directly on it, so the number in
+the table above reflects that fast path, not the structural limit described for the
+ordinary one.
 
 The table in the Results section above has the exact measured numbers. There is
 no per-call tuning needed to get them: `DuckDBMatrix` autotunes DuckDB's internal

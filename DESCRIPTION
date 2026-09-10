@@ -46,6 +46,7 @@ Imports:
     MultiAssaySpatialExperiment,
     metapod,
     beachmat,
+    BiocSingular,
     scran,
     scuttle,
     DBI,
@@ -66,7 +67,6 @@ Suggests:
     png,
     sf,
     sfarrow,
-    BiocSingular,
     S4Arrays,
     SpatialExperiment,
     DuckDBSpatial,
@@ -92,6 +92,9 @@ Collate:
     'MultiAssaySpatialExperiments-internals.R'
     'DuckDBDataFrame-spatial.R'
     'DuckDBDualSubset-class.R'
+    'initializeOptions.R'
+    'initializeCpp.R'
+    'DuckDBIrlbaParam.R'
     'DuckDBMatrix-scran.R'
     'DuckDBMatrix-scuttle.R'
     'MultiAssaySpatialExperiment-query.R'
@@ -102,8 +105,6 @@ Collate:
     'SingleCellExperiment-pairs.R'
     'SingleCellExperiment-rowTables.R'
     'fieldtypes.R'
-    'initializeCpp.R'
-    'initializeOptions.R'
     'loadIntoMemory.R'
     'readParquet.R'
     'writeDatapackage.R'
