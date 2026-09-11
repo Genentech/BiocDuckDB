@@ -11,6 +11,16 @@
 #   modelGeneVar                            -- scran variance modelling
 #   correlatePairs                          -- scran pairwise correlations (top HVGs)
 #   pairwiseTTests, findMarkers             -- scran marker detection
+#   calculatePCA                            -- scater PCA (top HVGs), run with
+#                                              BSPARAM = DuckDBIrlbaParam(): a fast
+#                                              path that materializes the (already
+#                                              HVG-subsetted) matrix once and drives
+#                                              irlba directly, instead of the ordinary
+#                                              BSPARAM = IrlbaParam() path, which calls
+#                                              DuckDBMatrix's SQL-pushdown %*% once per
+#                                              Lanczos iteration and was measured at
+#                                              ~50x slower than in-memory at this scale
+#                                              (see DuckDBIrlbaParam's own docs)
 #
 # In-memory dgCMatrix and HDF5Array are single-threaded here; DuckDBMatrix
 # autotunes DuckDB's internal threads. Each timing is wrapped so an
@@ -34,6 +44,8 @@ suppressPackageStartupMessages({
     library(Matrix)
     library(scuttle)
     library(scran)
+    library(scater)
+    library(BiocSingular)
     library(BiocParallel)
     library(DBI)
 })
@@ -139,7 +151,15 @@ ops <- list(
     findMarkers = list(
         function() findMarkers(log_mem, groups = groups, BPPARAM = BPPARAM),
         function() findMarkers(log_hdf5, groups = groups, BPPARAM = BPPARAM),
-        function() findMarkers(log_ddb, groups = groups, BPPARAM = BPPARAM))
+        function() findMarkers(log_ddb, groups = groups, BPPARAM = BPPARAM)),
+    # DuckDBIrlbaParam() materializes log_ddb[hvg, ] once and drives irlba
+    # directly (see its own docs); it's a strict no-op fallback to ordinary
+    # IrlbaParam behavior for the in-memory/HDF5Array backends, so using it
+    # uniformly here is safe and keeps the three thunks directly comparable.
+    calculatePCA = list(
+        function() calculatePCA(log_mem[hvg, ], ncomponents = 10, BSPARAM = DuckDBIrlbaParam()),
+        function() calculatePCA(log_hdf5[hvg, ], ncomponents = 10, BSPARAM = DuckDBIrlbaParam()),
+        function() calculatePCA(log_ddb[hvg, ], ncomponents = 10, BSPARAM = DuckDBIrlbaParam()))
 )
 
 backends <- c("InMemory", "HDF5Array", "DuckDB")

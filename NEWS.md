@@ -1,3 +1,74 @@
+# BiocDuckDB 0.99.23
+
+## New features
+
+- Added `DuckDBIrlbaParam()`, a `BiocSingular::BiocSingularParam` for
+  `BiocSingular::runSVD()` (and so `scran::fixedPCA()`/`scater::runPCA()`/
+  `calculatePCA()`) that closes the solver-loop performance gap the
+  `initializeCpp()` work below documented but did not fix. Measured directly
+  on a real 12,500-cell, 200-HVG benchmark: the ordinary `BSPARAM =
+  IrlbaParam()` path took ~16.2s on a `DuckDBMatrix` versus ~0.3s in-memory
+  (~51x), because `irlba`'s Lanczos loop calls the SQL-pushdown `%*%` once per
+  solver iteration, paying real query-construction cost every time.
+  `DuckDBIrlbaParam()` instead materializes the matrix once (reusing
+  `loadIntoMemory()`'s size-gated `.duckdb_seed_to_sparse_matrix()`) and calls
+  `BiocSingular::runIrlbaSVD()` directly on the materialized matrix, verified
+  to reproduce identical singular values to the lazy path at roughly 300x the
+  speed in this session's testing (0.084s vs 26.2s on a synthetic 3000x500
+  case). Confirmed on the same real 12,500-cell, 200-HVG benchmark that
+  motivated this fix: `calculatePCA` on `DuckDBMatrix` dropped from ~16.2s to
+  ~0.58s, beating `HDF5Array`'s ~4.45s by about 7.6x and landing within 1.8x
+  of the ~0.33s in-memory `dgCMatrix` baseline. Falls back to ordinary
+  `IrlbaParam` behavior whenever the fast path doesn't apply (not a
+  `DuckDBMatrix`, non-zero-filled seed, or over `"memory_limit"`), including
+  reproducing that path's own pre-existing failure modes (e.g. a
+  non-zero-filled seed) identically rather than papering over them.
+- Registered a `beachmat::initializeCpp()` method for `DuckDBArraySeed`
+  (`initializeCpp.R`, `initializeOptions.R`, `loadIntoMemory.R`), giving
+  compiled C++ code that goes through `beachmat`/`tatami` (e.g.
+  `BiocSingular`'s `compute_center`/`compute_scale`) a fast native path
+  instead of always falling back to `beachmat`'s generic "unknown matrix"
+  block-processing path. Unlike `beachmat.hdf5`/`beachmat.tiledb`, there is
+  no `tatami_duckdb` C++ library for genuine on-demand, out-of-core reads, so
+  this materializes the seed's COO table into an in-memory sparse matrix via
+  a single bulk SQL pull (size-gated by the new `"memory_limit"` option,
+  default 2 GB) and delegates to `beachmat`'s own native
+  `initializeCpp,dgCMatrix-method`. Whenever the fast path doesn't apply (a
+  non-zero-filled seed, more than 2 keyed dimensions, or an estimated size
+  over the limit), it falls back to `beachmat`'s existing generic path rather
+  than erroring, so it can never turn previously-working (if slower) code
+  into a failure. This closes part of the solver-loop performance gap noted
+  below: `initializeCpp` itself is unaffected by it (it never speeds up
+  `irlba`'s Lanczos loop, which calls `%*%` directly), but it does speed up
+  anything that already calls `initializeCpp`.
+- Deliberately does **not** cache the materialized pointer across calls with
+  `beachmat::checkMemoryCache`, unlike `beachmat.hdf5`/`beachmat.tiledb`.
+  Verified empirically that caching here is unsafe: two `DuckDBMatrix`
+  objects built from the same underlying query (the common case, e.g.
+  re-reading the same release twice) render identical SQL and hit the same
+  cache entry, but reusing that cached pointer across a later, logically
+  separate computation silently corrupted results (reproduced directly:
+  running `scran::fixedPCA()` once, then `scater::runPCA()` on a
+  freshly-built `DuckDBMatrix` over the same data, diverged from the dense
+  oracle only when the second call hit the first call's cached pointer, and
+  matched exactly with caching removed). Every call re-materializes instead;
+  this costs a fraction of a second for a `memory_limit`-sized matrix.
+
+## Testing
+
+- Confirmed and locked in with a regression test (`test-DuckDBMatrix-svd.R`)
+  that `BiocSingular::runSVD()`, `scran::fixedPCA()`, and `scater::runPCA()`
+  already compute a numerically correct PCA on a `DuckDBMatrix`, including on
+  a genuinely sparse (COO-encoded, majority implicit-zero) fixture, matching
+  a dense `irlba` oracle to ~1e-8/1e-14 depending on the comparison.
+- Documented a real, unaddressed performance caveat found during this
+  investigation: the per-`%*%`-call query-construction overhead is
+  negligible in isolation (~0.04s/call) but adds up across the ~hundreds of
+  calls an iterative Lanczos solver makes, k=10 on a 3000x500 sparse
+  matrix took ~22s versus ~0.07s to compute center/scale. This is a
+  solver-loop scalability gap worth optimizing for genomics-scale matrices,
+  not a correctness issue.
+
 # BiocDuckDB 0.99.22
 
 ## Documentation

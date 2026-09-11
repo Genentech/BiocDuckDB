@@ -242,6 +242,21 @@ Many `r Biocpkg("scran")`/`r Biocpkg("scuttle")` steps can run *directly* on the
 DuckDB-backed object as SQL, before any realization, that is the subject of
 *Benchmarking BiocDuckDB*.
 
+Step 3's `runPCA()` is a partial exception to needing step 2 first:
+`r Biocpkg("BiocSingular")`'s `runSVD()` (and so `scran::fixedPCA()` /
+`scater::runPCA()`) already compute a correct PCA directly on `sce_ddb`, through
+the SQL-pushdown `%*%`/`crossprod` methods `r Biocpkg("DuckDBArray")` implements,
+no realization required for correctness. Speed is a separate question: the
+ordinary `BSPARAM = BiocSingular::IrlbaParam()` calls `%*%` once per solver
+iteration, so on a `DuckDBMatrix` that cost is paid repeatedly rather than once,
+covered in detail (with measured numbers) in *Benchmarking BiocDuckDB*. Passing
+`BSPARAM = DuckDBIrlbaParam()` instead closes that gap: it materializes just the
+matrix `runPCA()` touches (already filtered and HVG-selected here, not the whole
+`SingleCellExperiment` the way step 2's `as(sce_ddb, "SingleCellExperiment")`
+would) and drives `irlba` directly on it, falling back to the ordinary path
+whenever that materialization doesn't apply. It is a lighter-weight, PCA-specific
+alternative to full realization, not just a slower substitute for it.
+
 # Multi-omics
 
 For a `MultiAssayExperiment`, write each experiment to its own directory and read

@@ -13,6 +13,64 @@ if (requireNamespace("airway", quietly = TRUE)) {
     BiocDuckDB::writeParquet(airway_counts, airway_counts_path)
 }
 
+# Small, genuinely sparse (COO) matrix fixture: most (gene, sample) cells are
+# implicit zero, not just numerically small. Used to prove SVD/PCA methods
+# that compose on top of DuckDBMatrix's %*% pushdown do not silently drop the
+# "-mean" contribution of an absent cell during centering (a real class of
+# bug: centering-then-aggregating only over *present* rows is only correct
+# for a fully materialized grid, not a COO-encoded sparse one).
+#
+# A pure-noise sparse matrix (no underlying signal) has no dominant variance
+# directions, so its top singular values sit close together (empirically,
+# gaps under 1 for this size/density). That makes any iterative Lanczos
+# solver's convergence sensitive to its random starting vector -- different
+# (but individually valid) call paths through the same seed can land on
+# visibly different values for the near-degenerate components. This bit hard:
+# even after separating the top-3 components from EACH OTHER, the k=3 test
+# still diverged, because the boundary that actually matters for a k=3
+# request is the gap between the *last requested* component (#3) and the
+# *first unrequested* one (#4) -- a value near the truncation boundary is the
+# least reliably converged in any Lanczos-based solver. A 3-component low-rank
+# signal (well-separated scales) is added on top of the sparse noise so BOTH
+# gaps are large (empirically, gap(2,3) and gap(3,4) both in the 8-12 range),
+# matching how real correlated expression data behaves and making SVD
+# comparisons robust regardless of exactly how much RNG a given code path
+# consumes before reaching irlba's own random start vector.
+set.seed(20260908)
+sparse_n <- 40L
+sparse_m <- 20L
+sparse_signal_u <- matrix(rnorm(sparse_n * 3), sparse_n, 3)
+sparse_signal_v <- matrix(rnorm(sparse_m * 3), sparse_m, 3)
+sparse_signal <- (sparse_signal_u[, 1] %o% sparse_signal_v[, 1]) * 15 +
+    (sparse_signal_u[, 2] %o% sparse_signal_v[, 2]) * 8 +
+    (sparse_signal_u[, 3] %o% sparse_signal_v[, 3]) * 2
+sparse_dense <- matrix(0, sparse_n, sparse_m)
+sparse_idx <- sample(sparse_n * sparse_m, size = round(0.12 * sparse_n * sparse_m))
+sparse_dense[sparse_idx] <- pmax(0, round(sparse_signal[sparse_idx] +
+    rpois(length(sparse_idx), lambda = 3) + 1))
+rownames(sparse_dense) <- paste0("g", seq_len(sparse_n))
+colnames(sparse_dense) <- paste0("s", seq_len(sparse_m))
+
+sparse_df <- data.frame(
+    `__feature__` = rep(seq_len(sparse_n), times = sparse_m),
+    `__sample__` = rep(seq_len(sparse_m), each = sparse_n),
+    value = as.vector(sparse_dense),
+    check.names = FALSE
+)
+sparse_df <- sparse_df[sparse_df$value != 0, ]
+sparse_counts_path <- tempfile(fileext = ".parquet")
+arrow::write_parquet(sparse_df, sparse_counts_path)
+
+makeSparseDuckDBMatrix <- function() {
+    DuckDBArray::DuckDBMatrix(
+        sparse_counts_path, datacol = "value",
+        keycols = list(
+            `__feature__` = setNames(seq_len(sparse_n), rownames(sparse_dense)),
+            `__sample__` = setNames(seq_len(sparse_m), colnames(sparse_dense))
+        )
+    )
+}
+
 
 # Helper functions
 checkDuckDBTable <- function(object, expected) {

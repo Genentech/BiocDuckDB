@@ -10,10 +10,13 @@ export("rowLoadings<-")
 export("rowTable<-")
 export("rowTableNames<-")
 export("rowTables<-")
+export(DuckDBIrlbaParam)
 export(colTable)
 export(colTableNames)
 export(colTables)
+export(initializeOptions)
 export(linkSpatialMap)
+export(loadIntoMemory)
 export(readParquet)
 export(rowLoading)
 export(rowLoadingNames)
@@ -28,6 +31,7 @@ export(validateSpatialMap)
 export(writeDatapackage)
 export(writeParquet)
 export(writeStreamingResource)
+exportClasses(DuckDBIrlbaParam)
 exportMethods("colPair<-")
 exportMethods("colPairs<-")
 exportMethods("colTable<-")
@@ -51,6 +55,7 @@ exportMethods(colTables)
 exportMethods(correlatePairs)
 exportMethods(findMarkers)
 exportMethods(geometricSizeFactors)
+exportMethods(initializeCpp)
 exportMethods(librarySizeFactors)
 exportMethods(modelGeneCV2)
 exportMethods(modelGeneVar)
@@ -69,6 +74,7 @@ exportMethods(rowLoadings)
 exportMethods(rowTable)
 exportMethods(rowTableNames)
 exportMethods(rowTables)
+exportMethods(runSVD)
 exportMethods(scoreMarkers)
 exportMethods(spatialJoin)
 exportMethods(spatialMatch)
@@ -81,6 +87,8 @@ exportMethods(summaryMarkerStats)
 exportMethods(writeParquet)
 import(BiocGenerics)
 import(methods)
+importClassesFrom(BiocSingular,IrlbaParam)
+importClassesFrom(DuckDBArray,DuckDBArraySeed)
 importClassesFrom(DuckDBArray,DuckDBMatrix)
 importClassesFrom(DuckDBDataFrame,DuckDBDataFrame)
 importClassesFrom(DuckDBDataFrame,DuckDBSelfHits)
@@ -110,6 +118,11 @@ importFrom(BiocParallel,
   SerialParam,
   bpstart,
   bpstop
+)
+importFrom(BiocSingular,
+  ExactParam,
+  runIrlbaSVD,
+  runSVD
 )
 importFrom(DBI,
   dbExecute,
@@ -157,6 +170,7 @@ importFrom(GenomicRanges,
   strand
 )
 importFrom(IRanges,DataFrameList)
+importFrom(Matrix,sparseMatrix)
 importFrom(MatrixGenerics,
   colMeans,
   colSums,
@@ -237,14 +251,19 @@ importFrom(arrow,
   write_dataset,
   write_parquet
 )
+importFrom(beachmat,initializeCpp)
 importFrom(dbplyr,sql_render)
 importFrom(dplyr,
+  all_of,
   collect,
+  count,
   filter,
   group_by,
   left_join,
   mutate,
   n,
+  pull,
+  select,
   sql,
   summarize,
   tbl
