@@ -9,7 +9,12 @@
 #'   \item{\code{correlatePairs(x, subset.row = NULL, pairings = NULL,
 #'     use.names = TRUE, BPPARAM = SerialParam())}:}{
 #'     Compute pairwise Pearson correlations between genes using sparse-aware
-#'     SQL aggregation. Only \code{fill = 0} is supported.
+#'     SQL aggregation, with a standard t-test significance for each
+#'     correlation (\code{p.value}, BH-adjusted as \code{FDR}). Only
+#'     \code{fill = 0} is supported. This is Pearson's r on \code{x} as given
+#'     (typically log-normalized values), not \pkg{scran}'s Spearman's rho on
+#'     ranked expression -- results are not expected to numerically match
+#'     \code{scran::correlatePairs()}.
 #'     \describe{
 #'       \item{\code{subset.row}}{rows (genes) to correlate; required for >1000 genes}
 #'       \item{\code{pairings}}{optional matrix specifying specific gene pairs}
@@ -222,7 +227,8 @@
 #'
 #' @return
 #' These methods mirror their \pkg{scran} generics. \code{correlatePairs()}
-#' returns a \code{DataFrame} of gene pairs with correlations and significance.
+#' returns a \code{DataFrame} of gene pairs with columns \code{gene1}, \code{gene2},
+#' \code{rho} (Pearson's r), \code{p.value}, and \code{FDR}.
 #' \code{modelGeneVar()}, \code{modelGeneVarByPoisson()}, and
 #' \code{modelGeneCV2()} return a \code{DataFrame} of per-gene variance
 #' statistics, with the fitted mean-variance trend in \code{metadata()}.
@@ -266,10 +272,16 @@ NULL
 # Returns the view name for use in joins
 # OPTIMIZATION: Avoids copying data via left_join(..., copy = TRUE)
 #' @importFrom duckdb duckdb_register duckdb_unregister
+.temp_table_counter_env <- new.env(parent = emptyenv())
+.temp_table_counter_env$n <- 0L
+
+.next_temp_table_suffix <- function() {
+    .temp_table_counter_env$n <- .temp_table_counter_env$n + 1L
+    paste0(Sys.getpid(), "_", .temp_table_counter_env$n)
+}
+
 .register_temp_table <- function(db_conn, df, prefix = "temp") {
-    # Generate unique table name to avoid collisions
-    table_name <- paste0(prefix, "_", as.integer(Sys.time()), "_",
-                         sample.int(10000, 1))
+    table_name <- paste0(prefix, "_", .next_temp_table_suffix())
     duckdb::duckdb_register(db_conn, table_name, df, overwrite = TRUE)
     table_name
 }
@@ -2365,16 +2377,21 @@ function(x, groups, group_levels, pairs, lfc)
 
     ngenes <- nrow(x)
     npairs <- nrow(pairs)
+    row_keyvals <- unname(meta$row_keycol)
 
     # Register groups as temporary table (zero-copy)
     group_df <- data.frame(
         cell_id = seq_along(groups),
         group_label = as.character(groups)
     )
-    group_tbl_name <- paste0("auc_groups_", format(Sys.time(), "%H%M%S"),
-                             "_", sample.int(10000, 1))
-    duckdb::duckdb_register(con, group_tbl_name, group_df, overwrite = TRUE)
-    on.exit(duckdb::duckdb_unregister(con, group_tbl_name), add = TRUE)
+    group_tbl_name <- .register_temp_table(con, group_df, "auc_groups")
+    temp_tables <- group_tbl_name
+
+    # Register the full universe of raw gene keys as a temporary table
+    genes_df <- data.frame(gene = row_keyvals)
+    genes_tbl_name <- .register_temp_table(con, genes_df, "auc_genes")
+    temp_tables <- c(temp_tables, genes_tbl_name)
+    on.exit(.unregister_temp_tables(con, temp_tables), add = TRUE)
 
     # Initialize result matrix
     auc_matrix <- matrix(NA_real_, nrow = ngenes, ncol = npairs)
@@ -2396,8 +2413,15 @@ function(x, groups, group_levels, pairs, lfc)
 
         # SQL for rank-based AUC computation
         # Uses window functions: O(n log n) per gene instead of O(n1*n2)
-        lfc_expr <- if (lfc != 0) sprintf("- %f", lfc) else ""
-        
+        # A threshold shift must move the two groups relative to each other
+        # (P(left > right + lfc)), not shift every value by the same amount
+        val_expr <- if (lfc != 0) {
+            sprintf("CASE WHEN c.grp = %s THEN COALESCE(d.%s, 0) - %.10f ELSE COALESCE(d.%s, 0) END",
+                    left_group_sql, data_col, lfc, data_col)
+        } else {
+            sprintf("COALESCE(d.%s, 0)", data_col)
+        }
+
         sql <- sprintf("
 WITH data_tbl AS (%s),
 all_cells_pair AS (
@@ -2406,14 +2430,14 @@ all_cells_pair AS (
     WHERE group_label IN (%s, %s)
 ),
 all_genes AS (
-    SELECT DISTINCT %s as gene FROM data_tbl
+    SELECT gene FROM %s
 ),
 -- Full outer join to get all (gene, cell) combinations with zeros for sparse data
 full_data AS (
     SELECT
         g.gene,
         c.cell_id as cell,
-        COALESCE(d.%s, 0) %s as val,
+        %s as val,
         c.grp
     FROM all_genes g
     CROSS JOIN all_cells_pair c
@@ -2450,8 +2474,8 @@ ORDER BY gene
             base_sql,
             group_tbl_name,
             left_group_sql, right_group_sql,
-            row_col,
-            data_col, lfc_expr,
+            genes_tbl_name,
+            val_expr,
             row_col, col_col,
             left_group_sql,
             n_left, n_left, n_left, n_right
@@ -2460,7 +2484,7 @@ ORDER BY gene
         result <- DBI::dbGetQuery(con, sql)
 
         # Map results back to matrix (handle potentially missing genes)
-        gene_idx <- match(result$gene, seq_len(ngenes))
+        gene_idx <- match(result$gene, row_keyvals)
         if (any(!is.na(gene_idx))) {
             auc_matrix[gene_idx[!is.na(gene_idx)], p] <- result$auc[!is.na(gene_idx)]
         }
@@ -2874,6 +2898,7 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     as.data.frame(result)
 }
 
+#' @importFrom stats pt p.adjust
 .compute_sparse_pearson <- function(row_stats, pair_stats, row_key,
                                      row_keycol, ncells, pairings)
 {
@@ -2943,9 +2968,19 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     # Handle edge cases (zero variance)
     pair_stats$rho <- ifelse(denominator > 0, numerator / denominator, NA_real_)
 
+    # Significance of the Pearson correlation via the standard t-test:
+    # t = rho * sqrt((k-2) / (1-rho^2)), df = k-2. |rho| == 1 (a perfect,
+    # degenerate correlation) makes the t-statistic formula divide by zero;
+    # such a correlation is definitionally significant for k > 2 cells.
+    df <- k - 2
+    tstat <- pair_stats$rho * sqrt(df / (1 - pair_stats$rho^2))
+    pair_stats$p.value <- ifelse(abs(pair_stats$rho) >= 1, 0, 2 * pt(-abs(tstat), df = df))
+    pair_stats$p.value[df <= 0] <- NA_real_
+    pair_stats$FDR <- p.adjust(pair_stats$p.value, method = "BH")
+
     # Return ordered by gene1, gene2
     pair_stats <- pair_stats[order(pair_stats$gene1, pair_stats$gene2),
-                             c("gene1", "gene2", "rho"), drop = FALSE]
+                             c("gene1", "gene2", "rho", "p.value", "FDR"), drop = FALSE]
     rownames(pair_stats) <- NULL
 
     pair_stats

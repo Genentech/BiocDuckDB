@@ -1,3 +1,53 @@
+# BiocDuckDB 0.99.24
+
+## Bug fixes
+
+- Found while independently verifying `scoreMarkers,DuckDBMatrix-method`'s
+  `true.auc = TRUE` path against a from-scratch oracle: three bugs in
+  `.compute_true_auc_sql_DuckDBMatrix()`. First, it matched its SQL results back to
+  R by raw row-key value against `seq_len(ngenes)`, which only coincide when `x`
+  is the full, unsubsetted matrix. On a row-subsetted `DuckDBMatrix`
+  (`scoreMarkers(..., subset.row = ..., true.auc = TRUE)`), this either left
+  genes as `NA` or silently mapped a result to the wrong output row entirely.
+  Fixed to match against the actual row-key-to-position mapping, the same
+  pattern already used elsewhere in this file.
+- The same function's threshold (`lfc`) shift was applied identically to
+  every cell's value regardless of group, which is a no-op on rank order --
+  `lfc` silently had zero effect on the computed AUC for any non-zero value.
+  Fixed to shift only the "left" group's values, matching the
+  `P(left > right + lfc)` definition used everywhere else in this package's
+  effect-size code.
+- The same function derived its gene universe from `SELECT DISTINCT` over
+  only the *stored* rows of the COO table, so a gene with zero stored values
+  across the *entire* matrix (a fully implicit-zero row, common in sparse
+  single-cell data) never appeared in the output at all -- silently `NA`
+  instead of the correct all-ties AUC of `0.5`. Fixed by registering the full
+  set of row keys as the gene universe instead of deriving it from the data.
+- `.register_temp_table()`'s unique-name generation (used by 7+ call sites across
+  this file for zero-copy join temp tables) drew its "unique" suffix from
+  `sample.int()`, which pulls from R's global RNG stream and only combined with
+  second-level wall-clock resolution -- empirically, only ~43% of 20000 draws were
+  unique. Because `duckdb_register(..., overwrite = TRUE)` silently overwrites
+  rather than erroring, a collision (e.g. two calls within the same wall-clock
+  second under a seeded/reproducible pipeline) could silently corrupt results
+  instead of failing loudly -- the same anti-pattern independently found and fixed
+  in the sibling `DuckDBArray` package (0.99.9, `dbplyr::unique_table_name()`).
+  Fixed to a monotonic, PID-qualified counter, and `.compute_true_auc_sql_DuckDBMatrix()`'s
+  two hand-rolled temp-table registrations (one pre-existing, one added for the
+  gene-universe fix above) now go through this shared, fixed helper instead of
+  duplicating the same vulnerable naming scheme inline.
+- `correlatePairs,DuckDBMatrix-method` computed its Pearson correlation
+  (`rho`) but never the significance test its own documented return value
+  ("a `DataFrame` of gene pairs with correlations and significance") promised
+  -- output had no `p.value`/`FDR` at all. Added the standard Pearson
+  correlation t-test (`t = rho * sqrt((k-2)/(1-rho^2))`, `df = k-2`) plus
+  BH-adjusted `FDR`, verified to match `cor.test(..., method = "pearson")`
+  exactly. Documentation also now says plainly that this is Pearson's r on
+  `x` as given, not `scran::correlatePairs()`'s Spearman's rho on ranked
+  expression, so results are not expected to numerically match scran's own
+  method (the existing tests already knew and tested for this; only the
+  package-level docs previously implied more compatibility than is true).
+
 # BiocDuckDB 0.99.23
 
 ## New features

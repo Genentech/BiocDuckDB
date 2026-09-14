@@ -14,7 +14,8 @@
 \title{DuckDBMatrix scran methods}
 \value{
 These methods mirror their \pkg{scran} generics. \code{correlatePairs()}
-returns a \code{DataFrame} of gene pairs with correlations and significance.
+returns a \code{DataFrame} of gene pairs with columns \code{gene1}, \code{gene2},
+\code{rho} (Pearson's r), \code{p.value}, and \code{FDR}.
 \code{modelGeneVar()}, \code{modelGeneVarByPoisson()}, and
 \code{modelGeneCV2()} return a \code{DataFrame} of per-gene variance
 statistics, with the fitted mean-variance trend in \code{metadata()}.
@@ -49,7 +50,12 @@ The following pairwise correlation methods have optimized DuckDBMatrix implement
   \item{\code{correlatePairs(x, subset.row = NULL, pairings = NULL,
     use.names = TRUE, BPPARAM = SerialParam())}:}{
     Compute pairwise Pearson correlations between genes using sparse-aware
-    SQL aggregation. Only \code{fill = 0} is supported.
+    SQL aggregation, with a standard t-test significance for each
+    correlation (\code{p.value}, BH-adjusted as \code{FDR}). Only
+    \code{fill = 0} is supported. This is Pearson's r on \code{x} as given
+    (typically log-normalized values), not \pkg{scran}'s Spearman's rho on
+    ranked expression -- results are not expected to numerically match
+    \code{scran::correlatePairs()}.
     \describe{
       \item{\code{subset.row}}{rows (genes) to correlate; required for >1000 genes}
       \item{\code{pairings}}{optional matrix specifying specific gene pairs}

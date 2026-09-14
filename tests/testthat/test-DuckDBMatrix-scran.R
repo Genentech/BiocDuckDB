@@ -72,6 +72,32 @@ test_that("correlatePairs matches R cor() for Pearson correlation", {
     }
 })
 
+test_that("correlatePairs computes p.value/FDR matching cor.test()'s Pearson test", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+
+    log_ddb <- normalizeCounts(pqmat)
+    log_mat <- as.matrix(log_ddb)
+    var_genes <- which(apply(log_mat, 1, var) > 0)[1:15]
+
+    ddb_result <- scran::correlatePairs(log_ddb, subset.row = var_genes)
+    expect_true(all(c("p.value", "FDR") %in% colnames(ddb_result)))
+    expect_true(all(ddb_result$p.value >= 0 & ddb_result$p.value <= 1))
+    expect_true(all(ddb_result$FDR >= 0 & ddb_result$FDR <= 1))
+    expect_equal(ddb_result$FDR, p.adjust(ddb_result$p.value, method = "BH"))
+
+    for (i in seq_len(nrow(ddb_result))) {
+        g1 <- ddb_result$gene1[i]
+        g2 <- ddb_result$gene2[i]
+        ct <- cor.test(log_mat[g1, ], log_mat[g2, ], method = "pearson")
+        expect_equal(ddb_result$rho[i], unname(ct$estimate), tolerance = 1e-8)
+        expect_equal(ddb_result$p.value[i], ct$p.value, tolerance = 1e-8,
+                    label = paste("p.value for", g1, "-", g2))
+    }
+})
+
 test_that("correlatePairs errors for non-zero fill", {
     names(dimnames(airway_counts)) <- c("index1", "index2")
 
@@ -373,6 +399,51 @@ test_that("scoreMarkers true.auc computes exact rank-based AUC", {
     approx_auc <- result_approx[[1]][["mean.AUC"]]
     true_auc <- result_true[[1]][["mean.AUC"]]
     expect_true(cor(approx_auc, true_auc, use = "complete.obs") > 0.5)
+})
+
+# Brute-force Mann-Whitney/Wilcoxon AUC, the definition
+# .compute_true_auc_sql_DuckDBMatrix computes via SQL ranks. lfc shifts the
+# left group's values down, i.e. tests P(left > right + lfc).
+.bruteForceAUC <- function(left, right, lfc = 0) {
+    left <- left - lfc
+    mean(outer(left, right, ">")) + 0.5 * mean(outer(left, right, "=="))
+}
+
+test_that(".compute_true_auc_sql_DuckDBMatrix matches a row-subsetted oracle under subset.row", {
+    # Regression test: the SQL grouped results by the table's raw row-key
+    # values and matched them against seq_len(ngenes), which only coincide
+    # when 'x' is the full, unsubsetted matrix. A row-subsetted DuckDBMatrix
+    # has raw keys outside 1:ngenes, silently NA-ing or misassigning rows.
+    pqmat <- makeSparseDuckDBMatrix()
+    groups <- factor(rep(c("a", "b"), length.out = sparse_m))
+    sub <- 3:15
+
+    pairs <- data.frame(left = 1L, right = 2L)
+    res <- BiocDuckDB:::.compute_true_auc_sql_DuckDBMatrix(
+        pqmat[sub, , drop = FALSE], groups, levels(groups), pairs, 0)
+
+    oracle <- sapply(sub, function(i) {
+        .bruteForceAUC(sparse_dense[i, groups == "a"], sparse_dense[i, groups == "b"])
+    })
+    expect_equal(unname(res[, 1L]), unname(oracle), tolerance = 1e-8)
+})
+
+test_that(".compute_true_auc_sql_DuckDBMatrix's lfc actually shifts the AUC", {
+    # Regression test: the threshold shift was applied identically to both
+    # groups' values (a CASE-free suffix on every row), which is a no-op on
+    # rank order -- 'lfc' silently had zero effect on the resulting AUC.
+    pqmat <- makeSparseDuckDBMatrix()
+    groups <- factor(rep(c("a", "b"), length.out = sparse_m))
+    pairs <- data.frame(left = 1L, right = 2L)
+
+    auc0 <- BiocDuckDB:::.compute_true_auc_sql_DuckDBMatrix(pqmat, groups, levels(groups), pairs, 0)
+    auc1 <- BiocDuckDB:::.compute_true_auc_sql_DuckDBMatrix(pqmat, groups, levels(groups), pairs, 1)
+    expect_false(isTRUE(all.equal(auc0[, 1L], auc1[, 1L])))
+
+    oracle1 <- sapply(seq_len(sparse_n), function(i) {
+        .bruteForceAUC(sparse_dense[i, groups == "a"], sparse_dense[i, groups == "b"], lfc = 1)
+    })
+    expect_equal(unname(auc1[, 1L]), unname(oracle1), tolerance = 1e-8)
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
