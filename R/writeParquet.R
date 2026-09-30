@@ -189,6 +189,33 @@
 #' \code{arrowtype}, and \code{max_dim} are forwarded via \code{...} and
 #' documented on the \code{writeCoordArray} help page.
 #'
+#' \strong{Streaming a hive-partitioned coordinate array from a source with no
+#' natural in-memory array representation} (a database cursor, an API page,
+#' etc.): there is no dedicated streaming writer for this case, but
+#' \code{append = TRUE} already supports it. Accumulate each batch into a
+#' small in-memory array slab (e.g. a \code{Matrix::sparseMatrix} or
+#' \code{SparseArray::COO_SparseArray}) covering one or more NEW partition
+#' groups, and call \code{writeParquet(slab, path, grid = <grid for this
+#' slab>, append = TRUE, along = <the growing dimension>, offset =
+#' <cumulative extent written so far>, group_offset = <cumulative partition
+#' groups written so far>)} once per slab. Offsets and group offsets are
+#' running counters with no requirement that slabs be a regular size, so an
+#' irregular (calibration-based) flush schedule is fine. One real restriction
+#' to plan around: \code{append = TRUE} requires \code{length(grid) > 1L} for
+#' the slab's own grid (see \code{?writeCoordArray}), so a slab that only
+#' grows a single partition group in the streamed dimension must still split
+#' some other, non-growing dimension into \eqn{\ge}{>=} 2 grid cells purely to
+#' satisfy that check. BiocDuckDB's own writers always pass
+#' \code{existing_data_behavior = "error"} through to
+#' \code{\link[arrow]{write_dataset}} (never \code{"delete_matching"}), and
+#' \code{writeCoordArray}'s pre-write check refuses to write into a partition
+#' directory that already exists -- the silent-data-loss failure mode of
+#' \code{arrow::write_dataset(existing_data_behavior = "delete_matching")}
+#' (which deletes every existing file in any partition directory a call
+#' touches, not just same-named ones) only applies to code that bypasses
+#' \code{writeCoordArray}/\code{writeParquet} and calls
+#' \code{arrow::write_dataset} directly with that flag.
+#'
 #' \strong{Flat table append (\code{data.frame} / \code{DataFrame}):} Use
 #' \code{part}, \code{part_digits}, \code{append}, and \code{offset} to stream
 #' chunked sample or feature tables as \code{part-0.parquet}, \code{part-1.parquet},
@@ -239,6 +266,29 @@
 #' metadata tables flat and SQL-queryable. The original nested columns are
 #' removed from \code{rowData()}/\code{colData()} after extraction. This
 #' behavior is automatic and requires no user intervention.
+#'
+#' \strong{\code{Assays} objects:} Writes each assay in \code{x} to its own
+#' \code{assay_<name>/} subdirectory of \code{path}; the Frictionless
+#' resource \code{name} recorded in \code{datapackage.json} is the bare
+#' assay name (e.g. \code{"counts"}) -- only the on-disk directory carries
+#' the \code{assay_} prefix, so a resource's \code{name} and its \code{path}
+#' are not the same string. Before delegating to the array writer, each
+#' assay matrix is transposed and \code{indexcols} (together with
+#' \code{indexrefs} and the partitioning \code{grid}) are reversed to
+#' match: a feature \eqn{\times} sample matrix, written with
+#' \code{indexcols = c("__feature__", "__sample__")}, is stored as
+#' sample \eqn{\times} feature, with \code{indexcols} effectively
+#' \code{c("__sample__", "__feature__")} for that call. The practical
+#' consequence is the on-disk partition nesting order: a hive-partitioned
+#' assay is laid out \code{__sample__group__=.../__feature__group__=...}
+#' (sample outer, feature inner), not the feature-major order its own
+#' \code{indexcols} argument would suggest in isolation. \code{readParquet}
+#' transposes back on read, so the round trip through
+#' \code{writeParquet}/\code{readParquet} hides all of this; it only
+#' matters to code that partitions or writes a coordinate array directly
+#' without going through \code{writeParquet} on an in-memory \code{Assays}
+#' object -- see the "Advanced: writing and attaching resources directly"
+#' vignette section for that path.
 #'
 #' \strong{\code{SummarizedExperiment} objects:} Writes multi-assay experiments
 #' with separate paths for feature data, sample data, and assay data.
@@ -295,14 +345,20 @@
 #'   \item \code{schema} - Field definitions including types, primary key,
 #'     sort order, and foreign key references
 #' }
-#' See the BiocDuckDB storage patterns documentation for the full
-#' \code{model} table and \code{dimension} + \code{layout} dispatch table.
+#' See the "Supported Object Types" section of \code{?readParquet} for the
+#' full \code{model} table and \code{dimension} + \code{layout} dispatch
+#' table.
 #'
 #' @author Patrick Aboyoun
 #'
 #' @seealso
 #' \itemize{
-#'   \item \code{\link{readParquet}} for reading Bioconductor objects from parquet
+#'   \item \code{\link{readParquet}} for reading Bioconductor objects from
+#'     parquet, including the "Supported Object Types" table of per-\code{model}
+#'     resource names/paths
+#'   \item \code{\link{writeStreamingResource}} for streaming a flat
+#'     (non-array) resource from a block-producing callback instead of an
+#'     in-memory table
 #'   \item \code{\link[DuckDBArray]{writeCoordArray}} for coord-array layout,
 #'     hive partitioning, and array append (\code{append}, \code{along},
 #'     \code{offset}, \code{group_offset})

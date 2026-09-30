@@ -131,6 +131,37 @@ resources <- c(
 writeDatapackage("summarized_experiment", resources, dir)
 ```
 
+### Streaming a flat resource from a cursor
+
+The pattern above assumes each piece already exists as a real in-memory object
+(a `data.frame`, an array). A source with no natural in-memory array
+representation -- a database cursor, an API page, anything read in a loop --
+is a different case, and `writeStreamingResource()` is the dedicated writer
+for it: it owns the offset/part/append bookkeeping, types the row index wide
+enough for a resource that will end up over 2^31 rows (`index_max`), and
+writes an `_INCOMPLETE` marker so a crash mid-stream can never be read back as
+a complete resource by mistake.
+
+```{r stream, eval=FALSE}
+cur <- DBI::dbSendQuery(con, "SELECT * FROM samples")
+res <- writeStreamingResource(
+    blocks = function(i) {
+        chunk <- DBI::dbFetch(cur, n = 10000)
+        if (nrow(chunk) == 0) NULL else chunk   # NULL signals end of stream
+    },
+    path = file.path(dir, "samples"), dimension = "sample",
+    index_max = expected_row_count)
+```
+
+`blocks()` is called with the 1-based part index and must return the next
+block as a `data.frame`, or `NULL` once exhausted; empty blocks are skipped
+without consuming a part number. This covers a flat (non-array) resource --
+for a hive-partitioned coordinate array (a sparse assay) streamed from the
+same kind of source, see the "Streaming a hive-partitioned coordinate array"
+paragraph on `?writeParquet`, which documents the equivalent
+`writeParquet(slab, ..., append = TRUE, along = , offset = , group_offset = )`
+recipe.
+
 Going the other way, the `DuckDBMatrix()` / `DuckDBArray()` / `DuckDBTable()`
 constructors attach an existing COO Parquet in place, wrapping it as a lazy,
 out-of-core object without copying or materializing it:

@@ -82,7 +82,15 @@
 #'     Feature metadata from \code{features/}, sample metadata from
 #'     \code{samples/}, and assays from flat \code{assay_<name>/} directories.
 #'     Any complex objects stored in \code{metadata()} are written to
-#'     \code{unbound_<name>/} directories and restored on read.
+#'     \code{unbound_<name>/} directories and restored on read. When the
+#'     assay is hive-partitioned, \code{features/} and \code{samples/} each
+#'     carry a matching \code{__feature__group__}/\code{__sample__group__}
+#'     column (a \code{dimtbl}, from the same grid the assay is partitioned
+#'     by) so a reader can prune the dimension tables in step with the fact
+#'     table. The assay's own partition nesting is
+#'     \code{__sample__group__=.../__feature__group__=...} (sample outer,
+#'     feature inner) -- see \code{?writeParquet}'s \code{Assays} objects
+#'     section for why.
 #'   }
 #'   \item{\code{RangedSummarizedExperiment}}{
 #'     As \code{SummarizedExperiment}, with \code{rowRanges} reconstructed as a
@@ -95,7 +103,11 @@
 #'     row/column tables from flat \code{feature_table_<name>/} and
 #'     \code{sample_table_<name>/} directories; row/column pairwise graphs from
 #'     flat \code{feature_graph_<name>/} and \code{sample_graph_<name>/}
-#'     directories.
+#'     directories. Unlike \code{features/}/\code{samples/},
+#'     \code{sample_embeddings/} and \code{feature_embeddings/} never carry a
+#'     \code{__sample__group__}/\code{__feature__group__} \code{dimtbl}
+#'     column -- that partitioning-alignment metadata lives on the dimension
+#'     tables alone, not duplicated onto the embeddings.
 #'   }
 #'   \item{\code{MultiAssayExperiment}}{
 #'     Experiments written directly to root as \code{experiment_<name>/}

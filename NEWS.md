@@ -1,3 +1,45 @@
+# BiocDuckDB 0.99.25
+
+## Documentation
+
+- `writeParquet()`'s `Assays`-class method transposes each assay matrix and
+  reverses `indexcols`/`indexrefs`/`grid` before writing (so a
+  hive-partitioned assay is laid out sample-major,
+  `__sample__group__=.../__feature__group__=...`), and prefixes each assay's
+  on-disk directory with `assay_` while keeping the Frictionless resource
+  `name` as the bare assay name -- neither was documented anywhere outside an
+  inline code comment. Added a `\strong{Assays objects:}` paragraph to
+  `writeParquet()`'s `@details` covering both, found while a downstream
+  project ported the write path to a new (non-array, streaming) source and
+  had to reverse-engineer this from source to get partition nesting right.
+- Documented, on the same help page, the existing (but previously unwritten)
+  recipe for streaming a hive-partitioned coordinate array from a source
+  with no natural in-memory array representation: accumulate each batch into
+  a small array slab and call `writeParquet(slab, ..., append = TRUE, along
+  = , offset = , group_offset = )` repeatedly. Also documented the one real
+  restriction to plan around (`append = TRUE` requires `length(grid) > 1L`
+  for the slab's own grid) and that BiocDuckDB's own writers always pass
+  `existing_data_behavior = "error"` through to `arrow::write_dataset`
+  (never the data-losing `"delete_matching"`), so the corruption case only
+  arises for code that bypasses `writeCoordArray`/`writeParquet` entirely.
+- `writeStreamingResource()` -- an existing, exported, and already
+  thoroughly-documented function for streaming a flat resource from a
+  block-producing callback -- was not referenced from `writeParquet()`'s or
+  `writeDatapackage()`'s `@seealso`, nor from the vignette, making it
+  effectively undiscoverable outside its own help page. Added the
+  cross-references, and a new "Streaming a flat resource from a cursor"
+  vignette subsection using it in place of the vignette's previous
+  from-memory-only example.
+- `readParquet()`'s "Supported Object Types" section now notes, per model,
+  which resources carry a `__feature__group__`/`__sample__group__` `dimtbl`
+  column (`features`/`samples` do; `sample_embeddings`/`feature_embeddings`
+  never do) and the assay's partition nesting order -- previously
+  undocumented, and the closest thing to a per-model "resource contract"
+  reference this package has. `writeDatapackage()`'s `@param model` pointed
+  at "the storage-layout vignette" for this table, but the vignette's
+  storage-layout section never contained one; retargeted that pointer at
+  this section instead, since it already had the right shape.
+
 # BiocDuckDB 0.99.24
 
 ## Bug fixes

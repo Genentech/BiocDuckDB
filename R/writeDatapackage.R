@@ -34,8 +34,9 @@
 #' @param model Character(1) package-level schema identifier that selects the
 #'   \code{\link{readParquet}} reader used to reconstruct the container (e.g.
 #'   \code{"summarized_experiment"}, \code{"single_cell_experiment"},
-#'   \code{"multi_assay_experiment"}). See the storage-layout vignette for the
-#'   documented \code{model} values.
+#'   \code{"multi_assay_experiment"}). See the "Supported Object Types"
+#'   section of \code{?readParquet} for the documented \code{model} values
+#'   and their per-resource directory/\code{dimtbl}/partitioning conventions.
 #' @param resources A list of Frictionless resource descriptors (each a list),
 #'   as returned/accumulated from \code{\link{writeParquet}}. \code{NULL} entries
 #'   are removed.
@@ -61,7 +62,9 @@
 #' writeDatapackage("summarized_experiment", resources, tf)
 #' cat(readLines(file.path(tf, "datapackage.json")), sep = "\n")
 #'
-#' @seealso \code{\link{writeParquet}} for writing resources, and
+#' @seealso \code{\link{writeParquet}} for writing resources,
+#'   \code{\link{writeStreamingResource}} for streaming a flat resource from a
+#'   block-producing callback when accumulating descriptors piecemeal, and
 #'   \code{\link{readParquet}} for reading a written package (the
 #'   \code{DuckDBMatrix}/\code{DuckDBArray}/\code{DuckDBTable} constructors attach
 #'   an existing coord-array in place).
