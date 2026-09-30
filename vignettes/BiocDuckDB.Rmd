@@ -162,6 +162,22 @@ paragraph on `?writeParquet`, which documents the equivalent
 `writeParquet(slab, ..., append = TRUE, along = , offset = , group_offset = )`
 recipe.
 
+Each slab's own `grid` still defaults to a dense element budget, so for a
+sparse slab call `setAutoBlockSize()`/`setAutoBlockShape("scale")` *before*
+that `writeParquet()` call, not after -- `grid = NULL` sizes itself from
+whatever is currently set:
+
+```{r stream-grid, eval=FALSE}
+density <- Matrix::nnzero(slab) / prod(dim(slab))
+setAutoBlockSize(target_bytes_per_partition / density)
+setAutoBlockShape("scale")
+writeParquet(slab, path, append = TRUE, along = , offset = , group_offset = )
+```
+
+See `?writeCoordArray`'s "Sizing grid for large or sparse arrays" section for
+why the default needs this correction and the hard ceiling on how far it can
+be pushed.
+
 Going the other way, the `DuckDBMatrix()` / `DuckDBArray()` / `DuckDBTable()`
 constructors attach an existing COO Parquet in place, wrapping it as a lazy,
 out-of-core object without copying or materializing it:

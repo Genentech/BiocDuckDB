@@ -524,6 +524,15 @@ touches, not just same-named ones) only applies to code that bypasses
 \code{writeCoordArray}/\code{writeParquet} and calls
 \code{arrow::write_dataset} directly with that flag.
 
+Sizing each slab's \code{grid} (and, for a non-streamed array write, the
+top-level \code{grid} argument) for a large or sparse array is not
+automatic: the default, \code{defaultAutoGrid(COO_SparseArray(dim(x)))},
+budgets partitions from \code{dim(x)} alone, as if \code{x} were fully
+dense. See \code{\link[DuckDBArray]{writeCoordArray}}'s "Sizing
+\code{grid} for large or sparse arrays" section for the density
+correction (\code{setAutoBlockSize()} / \code{setAutoBlockShape()}) and
+the hard ceiling on how far it can be pushed.
+
 \strong{Flat table append (\code{data.frame} / \code{DataFrame}):} Use
 \code{part}, \code{part_digits}, \code{append}, and \code{offset} to stream
 chunked sample or feature tables as \code{part-0.parquet}, \code{part-1.parquet},
@@ -675,6 +684,19 @@ state_grid <- RegularArrayGrid(dim(state.x77), c(10, 4))
 writeParquet(state.x77, file.path(tf3, "state"), grid = state_grid)
 dimtbls <- createDimTables(state.x77, grid = state_grid)
 list.files(tf3, full.names = TRUE, recursive = TRUE)
+
+# For a large, sparse matrix left to its default grid (grid = NULL), size
+# partitions off the real (sparse) data volume instead of the dense
+# default: setAutoBlockSize()/setAutoBlockShape() must be called before
+# writeParquet(), since grid = NULL computes the grid internally from
+# whatever is currently set (see ?writeCoordArray, "Sizing grid for
+# large or sparse arrays").
+sparse_mat <- Matrix::rsparsematrix(2000, 500, density = 0.01)
+density <- Matrix::nnzero(sparse_mat) / prod(dim(sparse_mat))
+setAutoBlockSize(1e6 / density)
+setAutoBlockShape("scale")
+tf4 <- tempfile()
+writeParquet(sparse_mat, tf4)
 
 }
 \seealso{

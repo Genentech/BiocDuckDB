@@ -50,6 +50,14 @@
   at "the storage-layout vignette" for this table, but the vignette's
   storage-layout section never contained one; retargeted that pointer at
   this section instead, since it already had the right shape.
+- Documented that `writeCoordArray()`'s default `grid` (used whenever
+  `writeParquet()` delegates to it for an array write) budgets partitions
+  from `dim(x)` alone, as if `x` were fully dense, and cross-referenced
+  `DuckDBArray::writeCoordArray`'s new "Sizing `grid` for large or sparse
+  arrays" section for the density correction
+  (`setAutoBlockSize()`/`setAutoBlockShape()`) and its hard ceiling. Added a
+  third `@examples` entry and a matching vignette snippet showing those
+  calls made before `writeParquet()` on a sparse matrix.
 
 # BiocDuckDB 0.99.24
 
