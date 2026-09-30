@@ -294,7 +294,11 @@
 #' with separate paths for feature data, sample data, and assay data.
 #'
 #' \strong{\code{RangedSummarizedExperiment} objects:} Extends
-#' \code{SummarizedExperiment} functionality with genomic ranges for features.
+#' \code{SummarizedExperiment} functionality with genomic ranges for
+#' features. \code{rowRanges(x)} is written only when at least one feature
+#' has a non-empty range; otherwise \code{rowData(x)} is used, since
+#' \code{is(x, "RangedSummarizedExperiment")} alone is \code{TRUE} for every
+#' \code{SingleCellExperiment} even with no ranges ever provided.
 #'
 #' \strong{\code{SingleCellExperiment} objects:} Extends
 #' \code{SummarizedExperiment} with single-cell specific data. All collections
@@ -1522,6 +1526,13 @@ function(x,
 ### SummarizedExperiment objects
 ###
 
+# TRUE only if x has a non-empty rowRanges -- is(x, "RangedSummarizedExperiment") alone
+# is TRUE for every SingleCellExperiment even with no ranges ever provided.
+.hasRealRowRanges <- function(x) {
+    is(x, "RangedSummarizedExperiment") &&
+        !all(S4Vectors::elementNROWS(SummarizedExperiment::rowRanges(x)) == 0L)
+}
+
 #' @export
 #' @importClassesFrom SummarizedExperiment RangedSummarizedExperiment
 #' @importClassesFrom SummarizedExperiment SummarizedExperiment
@@ -1535,7 +1546,7 @@ setMethod("writeParquet", "SummarizedExperiment",
 function(x,
          path,
          indexcols = c("__feature__", "__sample__"),
-         package = list(model = ifelse(is(x, "RangedSummarizedExperiment"),
+         package = list(model = ifelse(.hasRealRowRanges(x),
                                        "ranged_summarized_experiment",
                                        "summarized_experiment"),
                         resources = list()),
@@ -1556,7 +1567,7 @@ function(x,
                                grid_suffix = grid_suffix)
 
     # Feature Data
-    if (is(x, "RangedSummarizedExperiment")) {
+    if (.hasRealRowRanges(x)) {
         features <- rowRanges(x)
     } else {
         features <- rowData(x)

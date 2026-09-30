@@ -1,5 +1,16 @@
 # BiocDuckDB 0.99.25
 
+## Bug fixes
+
+- `writeParquet,SummarizedExperiment-method` chose `rowRanges(x)` vs.
+  `rowData(x)` for the `features` resource using `is(x,
+  "RangedSummarizedExperiment")` alone, which is `TRUE` for every
+  `SingleCellExperiment` regardless of whether real ranges were ever
+  provided -- silently discarding real `rowData` in favor of an empty
+  `genomic_ranges_list`. Fixed to check for a non-empty `rowRanges(x)`
+  instead; the same check now also drives the `model` default. Added a
+  regression test.
+
 ## Documentation
 
 - `writeParquet()`'s `Assays`-class method transposes each assay matrix and

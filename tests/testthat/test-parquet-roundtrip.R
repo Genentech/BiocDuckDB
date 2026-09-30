@@ -115,6 +115,43 @@ test_that("RangedSummarizedExperiment with GenomicRanges works", {
     unlink(tmpdir, recursive = TRUE)
 })
 
+test_that("SingleCellExperiment with only rowData (no rowRanges) preserves rowData", {
+    set.seed(102)
+    ncells <- 20L
+    ngenes <- 15L
+
+    counts <- matrix(rpois(ngenes * ncells, 8), nrow = ngenes, ncol = ncells)
+    rownames(counts) <- paste0("Gene", seq_len(ngenes))
+    colnames(counts) <- paste0("Cell", seq_len(ncells))
+
+    sce <- SingleCellExperiment(
+        assays = list(counts = counts),
+        rowData = DataFrame(
+            ensemblID = paste0("ENSG", sprintf("%011d", seq_len(ngenes))),
+            biotype = sample(c("protein_coding", "lncRNA"), ngenes, replace = TRUE)
+        )
+    )
+
+    expect_true(is(sce, "RangedSummarizedExperiment"))
+    expect_true(all(elementNROWS(rowRanges(sce)) == 0L))
+
+    tmpdir <- tempfile()
+    writeParquet(sce, tmpdir)
+
+    # features must be data_frame, not genomic_ranges_list -- checked against
+    # datapackage.json directly, not just the round-tripped object.
+    pkg <- jsonlite::fromJSON(file.path(tmpdir, "datapackage.json"), simplifyVector = FALSE)
+    features_resource <- Find(function(r) identical(r$name, "features"), pkg$resources)
+    expect_identical(features_resource$layout, "data_frame")
+
+    sce2 <- readParquet(tmpdir)
+    expect_s4_class(sce2, "SingleCellExperiment")
+    checkDuckDBDataFrame(rowData(sce2), as.data.frame(rowData(sce)))
+    expect_identical(rownames(sce2), rownames(sce))
+
+    unlink(tmpdir, recursive = TRUE)
+})
+
 # ==============================================================================
 # SingleCellExperiment Tests
 # ==============================================================================

@@ -252,8 +252,8 @@ writeParquet(x, path, ...)
   x,
   path,
   indexcols = c("__feature__", "__sample__"),
-  package = list(model = ifelse(is(x, "RangedSummarizedExperiment"),
-    "ranged_summarized_experiment", "summarized_experiment"), resources = list()),
+  package = list(model = ifelse(.hasRealRowRanges(x), "ranged_summarized_experiment",
+    "summarized_experiment"), resources = list()),
   ...
 )
 
@@ -602,7 +602,11 @@ vignette section for that path.
 with separate paths for feature data, sample data, and assay data.
 
 \strong{\code{RangedSummarizedExperiment} objects:} Extends
-\code{SummarizedExperiment} functionality with genomic ranges for features.
+\code{SummarizedExperiment} functionality with genomic ranges for
+features. \code{rowRanges(x)} is written only when at least one feature
+has a non-empty range; otherwise \code{rowData(x)} is used, since
+\code{is(x, "RangedSummarizedExperiment")} alone is \code{TRUE} for every
+\code{SingleCellExperiment} even with no ranges ever provided.
 
 \strong{\code{SingleCellExperiment} objects:} Extends
 \code{SummarizedExperiment} with single-cell specific data. All collections
