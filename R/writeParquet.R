@@ -2082,6 +2082,10 @@ function(x,
             el_path <- file.path(lbls_dir, nm)
             if (is.matrix(el) || is.array(el)) {
                 coo_path <- file.path(el_path, "coord")
+                # ANY only records categories when dimnames predate its own synthetic ones
+                if (is.null(dimnames(el))) {
+                    dimnames(el) <- lapply(dim(el), function(d) as.character(seq_len(d)))
+                }
                 schema <- callGeneric(el, path = coo_path,
                                       indexcols = c("row", "col"),
                                       datacol = "value")[[1L]][["schema"]]

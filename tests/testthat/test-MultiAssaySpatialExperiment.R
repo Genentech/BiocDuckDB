@@ -192,3 +192,36 @@ test_that("a matrix-backed label round-trips through writeParquet/readParquet", 
     expect_s4_class(lbls[["mylabel"]], "DuckDBMatrix")
     expect_equal(as.matrix(lbls[["mylabel"]]), label_mat, check.attributes = FALSE)
 })
+
+test_that("a matrix-backed label with an all-zero trailing row/column keeps its true extent", {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+
+    # Only row 1/col 1 is nonzero, so the sparse COO write never observes the
+    # trailing all-zero row or column; the schema's categories are what let
+    # the reader recover the true 2x3 shape rather than the 1x1 it would
+    # otherwise infer from the single stored entry.
+    label_mat <- matrix(c(1L, 0L, 0L, 0L, 0L, 0L), nrow = 2L)
+
+    se <- SummarizedExperiment::SummarizedExperiment(
+        assays = list(counts = matrix(1:6, 3, 2)),
+        colData = S4Vectors::DataFrame(row.names = c("c1", "c2")))
+    smap <- S4Vectors::DataFrame(assay = factor(rep("RNA", 2)),
+                                 primary = c("s1", "s1"),
+                                 colname = c("c1", "c2"))
+    m <- MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
+        experiments = MultiAssayExperiment::ExperimentList(list(RNA = se)),
+        colData = S4Vectors::DataFrame(row.names = "s1"),
+        sampleMap = smap,
+        labels = MultiAssaySpatialExperiment::RasterLayerList(
+            list(mylabel = label_mat)))
+
+    tmpdir <- tempfile()
+    on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+    writeParquet(m, tmpdir)
+    back <- readParquet(tmpdir)
+
+    lbl <- MultiAssaySpatialExperiment::spatialLabels(back)[["mylabel"]]
+    expect_s4_class(lbl, "DuckDBMatrix")
+    expect_equal(dim(lbl), dim(label_mat))
+    expect_equal(as.matrix(lbl), label_mat, check.attributes = FALSE)
+})

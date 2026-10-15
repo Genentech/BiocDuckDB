@@ -18,10 +18,22 @@
   with no datacol or keycols at all. Fixed by writing the label matrix
   through the existing, already-schema-correct `writeParquet,ANY-method`
   (the same path used for every other array-like object) instead of a
-  bespoke COO assembly, which fixes both problems by construction. Removed
-  the now-dead `.matrixToCoordLabel()`. Added a round-trip regression test
-  (`writeParquet()` + `readParquet()` a matrix-valued label, assert it comes
-  back as a `DuckDBMatrix` with the original values).
+  bespoke COO assembly, which fixes both problems by construction. That fix
+  still left a gap, though: `writeParquet,ANY` only attaches `categories`
+  (the full index->label map a reader uses to recover the true axis size)
+  when the array already has `dimnames` at the point it captures them,
+  before synthesizing `seq_len()` dimnames for the physical write; a
+  `spatialLabels()` matrix is normally dimname-less, so no `categories` were
+  recorded, and a label whose last row or column was entirely zero (dropped
+  by the sparse COO write) came back smaller than the original. Fixed by
+  synthesizing `dimnames` on the matrix (the same `seq_len()` values `ANY`
+  would assign internally anyway) before writing it, so `categories` are
+  always attached regardless of what the input happened to have. Removed
+  the now-dead `.matrixToCoordLabel()`. Added round-trip regression tests:
+  one asserting a matrix-valued label comes back as a `DuckDBMatrix` with
+  the original values, and one using a label whose only nonzero entry is at
+  row 1/col 1 to catch the trailing all-zero row/column gap (the first test
+  alone has a nonzero in both the last row and last column, masking it).
 
 # BiocDuckDB 0.99.25
 
