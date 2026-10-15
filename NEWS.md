@@ -1,3 +1,28 @@
+# BiocDuckDB 0.99.26
+
+## Bug fixes
+
+- The `spatial_label_coord` write path for a matrix/array-valued
+  `spatialLabels()` entry (`writeParquet,MultiAssaySpatialExperiment-method`)
+  was broken and had never been exercised by any test or fixture. The
+  internal `.matrixToCoordLabel()` built a COO triples `data.frame` (`row`,
+  `col`, `value` columns) and passed it to `DuckDBArray::writeCoordArray()`
+  along with `row=`/`col=` arguments -- `writeCoordArray()` has no such
+  parameters (they belong to the unrelated `DuckDBMatrix()` constructor), so
+  they were silently swallowed by `...`, and the COO `data.frame` itself was
+  passed as the array to write, whose `dim()` is `(nnz, 3)` rather than the
+  original matrix's `(nrow, ncol)`. Separately, the resource dict for this
+  layout carried no `schema` field, unlike every other array writer, so
+  `.readParquetArray()` could never detect the 2 keycols needed to dispatch
+  to `DuckDBMatrix()` on read and silently fell back to `DuckDBArray()`
+  with no datacol or keycols at all. Fixed by writing the label matrix
+  through the existing, already-schema-correct `writeParquet,ANY-method`
+  (the same path used for every other array-like object) instead of a
+  bespoke COO assembly, which fixes both problems by construction. Removed
+  the now-dead `.matrixToCoordLabel()`. Added a round-trip regression test
+  (`writeParquet()` + `readParquet()` a matrix-valued label, assert it comes
+  back as a `DuckDBMatrix` with the original values).
+
 # BiocDuckDB 0.99.25
 
 ## Bug fixes

@@ -113,18 +113,3 @@ replaceSlots <- BiocGenerics:::replaceSlots
                auto_unbox = TRUE, pretty = TRUE)
     invisible(meta)
 }
-
-.matrixToCoordLabel <- function(mat, path) {
-    if (!dir.exists(path))
-        dir.create(path, recursive = TRUE)
-    nr <- nrow(mat)
-    nc <- ncol(mat)
-    rows <- rep(seq_len(nr), times = nc)
-    cols <- rep(seq_len(nc), each = nr)
-    vals <- as.vector(mat)
-    keep <- !is.na(vals) & vals != 0L
-    df <- data.frame(row = rows[keep], col = cols[keep], value = vals[keep])
-    DuckDBArray::writeCoordArray(df, path,
-        row = list(row = seq_len(max(rows[keep], 0L))),
-        col = list(col = seq_len(max(cols[keep], 0L))))
-}

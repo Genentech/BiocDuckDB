@@ -2082,14 +2082,17 @@ function(x,
             el_path <- file.path(lbls_dir, nm)
             if (is.matrix(el) || is.array(el)) {
                 coo_path <- file.path(el_path, "coord")
-                .matrixToCoordLabel(el, coo_path)
+                schema <- callGeneric(el, path = coo_path,
+                                      indexcols = c("row", "col"),
+                                      datacol = "value")[[1L]][["schema"]]
                 lab_resources <- c(lab_resources, list(list(
                     name = paste0("sample_labels_", nm),
                     path = file.path("labels", nm, "coord"),
                     dimension = "sample",
                     layout = "spatial_label_coord",
                     format = "parquet",
-                    mediatype = "application/vnd.apache.parquet")))
+                    mediatype = "application/vnd.apache.parquet",
+                    schema = schema)))
             } else {
                 .writeRasterRef(el, el_path, nm, type = "label")
                 lab_resources <- c(lab_resources, list(list(

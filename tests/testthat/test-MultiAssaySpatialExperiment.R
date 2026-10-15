@@ -163,3 +163,32 @@ test_that("a raster-backed label is not also loaded as an image", {
     expect_identical(names(MultiAssaySpatialExperiment::spatialLabels(back)),
                      "mylabel")
 })
+
+test_that("a matrix-backed label round-trips through writeParquet/readParquet", {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+
+    label_mat <- matrix(c(1L, 2L, 0L, 4L, 0L, 6L), nrow = 2L)
+
+    se <- SummarizedExperiment::SummarizedExperiment(
+        assays = list(counts = matrix(1:6, 3, 2)),
+        colData = S4Vectors::DataFrame(row.names = c("c1", "c2")))
+    smap <- S4Vectors::DataFrame(assay = factor(rep("RNA", 2)),
+                                 primary = c("s1", "s1"),
+                                 colname = c("c1", "c2"))
+    m <- MultiAssaySpatialExperiment::MultiAssaySpatialExperiment(
+        experiments = MultiAssayExperiment::ExperimentList(list(RNA = se)),
+        colData = S4Vectors::DataFrame(row.names = "s1"),
+        sampleMap = smap,
+        labels = MultiAssaySpatialExperiment::RasterLayerList(
+            list(mylabel = label_mat)))
+
+    tmpdir <- tempfile()
+    on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
+    writeParquet(m, tmpdir)
+    back <- readParquet(tmpdir)
+
+    lbls <- MultiAssaySpatialExperiment::spatialLabels(back)
+    expect_identical(names(lbls), "mylabel")
+    expect_s4_class(lbls[["mylabel"]], "DuckDBMatrix")
+    expect_equal(as.matrix(lbls[["mylabel"]]), label_mat, check.attributes = FALSE)
+})
