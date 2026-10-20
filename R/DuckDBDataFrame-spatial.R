@@ -25,7 +25,7 @@ NULL
 #'   }
 #'   \item{\code{spatialJoin(x, y, join = st_intersects, sparse = TRUE)}:}{
 #'     Spatial join between lazy layers. When \code{sparse = TRUE}, returns a
-#'     sparse pair table via \code{\link[DuckDBSpatial]{st_intersects_table}};
+#'     sparse pair table via \code{\link[DuckDBSpatial]{st_join_table}};
 #'     otherwise uses \code{\link[sf:st_join]{st_join}}.
 #'   }
 #' }
@@ -105,7 +105,7 @@ setMethod("spatialJoin", c("DuckDBDataFrame", "DuckDBDataFrame"),
 function(x, y, join = sf::st_intersects, sparse = TRUE, ...) {
     .requireDuckDBSpatial("spatialJoin on DuckDBDataFrame")
     if (isTRUE(sparse))
-        DuckDBSpatial::st_intersects_table(x, y)
+        DuckDBSpatial::st_join_table(x, y, join = join)
     else
         sf::st_join(x, y, join = join, ...)
 })

@@ -32,7 +32,7 @@ lazily over the DuckDB-backed layers.
   }
   \item{\code{spatialJoin(x, y, join = st_intersects, sparse = TRUE)}:}{
     Spatial join between lazy layers. When \code{sparse = TRUE}, returns a
-    sparse pair table via \code{\link[DuckDBSpatial]{st_intersects_table}};
+    sparse pair table via \code{\link[DuckDBSpatial]{st_join_table}};
     otherwise uses \code{\link[sf:st_join]{st_join}}.
   }
 }

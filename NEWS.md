@@ -1,3 +1,18 @@
+# BiocDuckDB 0.99.27
+
+## Bug fixes
+
+- `spatialJoin(DuckDBDataFrame, DuckDBDataFrame)` with its default
+  `sparse = TRUE` called `DuckDBSpatial::st_intersects_table(x, y)`, which
+  only ever accepted `y` as a single scalar geometry (`sfc`/`sfg`/WKT); it
+  always errored with "unsupported geometry type: DuckDBDataFrame" when
+  both sides were out-of-core, defeating the whole point of the sparse,
+  stay-lazy path (the `sparse = FALSE` branch, a full attribute join via
+  `sf::st_join()`, worked fine already). Fixed by switching to
+  `DuckDBSpatial::st_join_table()` (new in DuckDBSpatial 0.99.8), a real
+  two-table SQL join producing a sparse `(id_x, id_y)` pair table instead
+  of embedding `y` as a literal.
+
 # BiocDuckDB 0.99.26
 
 ## Bug fixes
