@@ -6,6 +6,8 @@
 \alias{spatialMatch,DuckDBDataFrame,DataFrame-method}
 \alias{spatialMatch,DuckDBDataFrame,DuckDBDataFrame-method}
 \alias{spatialJoin,DuckDBDataFrame,DuckDBDataFrame-method}
+\alias{spatialJoin,DuckDBDataFrame,DataFrame-method}
+\alias{spatialJoin,DataFrame,DuckDBDataFrame-method}
 \title{DuckDBDataFrame spatial methods}
 \value{
 \code{spatialOverlaps()} returns the pairwise spatial-overlap result between

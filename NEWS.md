@@ -1,3 +1,23 @@
+# BiocDuckDB 0.99.28
+
+## Bug fixes
+
+- `spatialJoin` was missing the mixed-type method pair
+  (`c("DuckDBDataFrame", "DataFrame")`/`c("DataFrame", "DuckDBDataFrame")`)
+  that `spatialMatch` already has. A call with one out-of-core
+  `DuckDBDataFrame` side and one in-memory `DataFrame` side (in either
+  order) therefore had no applicable method more specific than
+  `MultiAssaySpatialExperiment`'s own `c("DataFrame", "DataFrame")`
+  fallback, which materializes both sides' geometries fully into memory
+  via `st_as_sfc()` -- silently defeating the out-of-core path for exactly
+  the mixed case a caller joining a lazy layer against a small in-memory
+  one would hit. Found via user feedback flagging that geometries were
+  still loading into memory. Fixed by adding the missing method pair,
+  delegating to `DuckDBSpatial::st_join_table()`/`sf::st_join()` the same
+  way the existing `c("DuckDBDataFrame", "DuckDBDataFrame")` method does
+  (both already accept a mixed lazy/in-memory pair as of `DuckDBSpatial`
+  0.99.8). Added a regression test covering both argument orders.
+
 # BiocDuckDB 0.99.27
 
 ## Bug fixes

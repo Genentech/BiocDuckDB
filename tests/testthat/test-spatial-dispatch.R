@@ -1,5 +1,5 @@
-# Tests that spatialOverlaps and spatialMatch dispatch correctly for
-# DuckDBDataFrame and produce results identical to the DataFrame (sf) path.
+# Tests that spatialOverlaps, spatialMatch, and spatialJoin dispatch correctly
+# for DuckDBDataFrame and produce results identical to the DataFrame (sf) path.
 # library(testthat); library(BiocDuckDB); source("setup.R"); source("test-spatial-dispatch.R")
 
 skip_if_not_installed("MultiAssaySpatialExperiment")
@@ -123,4 +123,27 @@ test_that("spatialMatch assigns correct region indices", {
     expect_identical(result[1L], 1L)
     expect_identical(result[3L], 2L)
     expect_identical(result[4L], 3L)
+})
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### spatialJoin
+###
+
+# A DuckDBDataFrame joined against a plain in-memory S4Vectors DataFrame (on
+# either side) must dispatch to the DuckDBSpatial-backed method, not silently
+# fall through to MultiAssaySpatialExperiment's own in-memory
+# DataFrame,DataFrame method (which forces both sides fully into memory).
+test_that("spatialJoin dispatches to the DuckDB-backed method for a mixed DuckDBDataFrame/DataFrame pair", {
+    spatial_path <- system.file("extdata", "spatial", package = "DuckDBSpatial")
+    shapes_ddb <- DuckDBDataFrame(spatial_path)
+    shapes_ddb <- shapes_ddb[!is.na(shapes_ddb$type), ]
+    shapes_mem <- .make_shapes_df()
+
+    forward <- spatialJoin(shapes_ddb, shapes_mem)
+    expect_s4_class(forward, "DuckDBDataFrame")
+    expect_true(nrow(forward) > 0L)
+
+    backward <- spatialJoin(shapes_mem, shapes_ddb)
+    expect_s4_class(backward, "DuckDBDataFrame")
+    expect_identical(nrow(forward), nrow(backward))
 })
