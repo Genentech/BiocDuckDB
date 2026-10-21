@@ -17,6 +17,20 @@
   way the existing `c("DuckDBDataFrame", "DuckDBDataFrame")` method does
   (both already accept a mixed lazy/in-memory pair as of `DuckDBSpatial`
   0.99.8). Added a regression test covering both argument orders.
+- Same gap, one level deeper: `spatialMatch`/`spatialJoin` also had no
+  method for a plain `sf` object (an `sf` is a base S3 class, `c("sf",
+  "data.frame")`, not an `S4Vectors::DataFrame`, so the `DataFrame`-
+  signature methods above never matched it; calling either with a real
+  `sf` object errored with "unable to find an inherited method" rather
+  than falling through to anything). This is purely a missing signature,
+  not an S3/S4 dispatch limitation: `setMethod(generic, c(..., "sf"),
+  ...)` dispatches on the class vector directly, no `setOldClass()`
+  bridging needed. Fixed by adding `c("DuckDBDataFrame", "sf")` for
+  `spatialMatch`, and both `c("DuckDBDataFrame", "sf")`/`c("sf",
+  "DuckDBDataFrame")` for `spatialJoin`, delegating to the same existing
+  `DuckDBSpatial` calls (which already handle `sf` input correctly as of
+  `DuckDBSpatial` 0.99.8). Added regression tests for all three new
+  signatures.
 
 # BiocDuckDB 0.99.27
 

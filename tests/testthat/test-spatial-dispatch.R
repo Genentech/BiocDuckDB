@@ -47,6 +47,13 @@ library(MultiAssaySpatialExperiment)
     DataFrame(geometry = st_as_sfc(wkt))
 }
 
+.make_shapes_sf <- function() {
+    wkt <- c("POLYGON((0 0, 6 0, 6 6, 0 6, 0 0))",
+             "POLYGON((7 7, 12 7, 12 12, 7 12, 7 7))",
+             "POLYGON((40 40, 60 40, 60 60, 40 60, 40 40))")
+    st_sf(id = seq_along(wkt), geometry = st_as_sfc(wkt))
+}
+
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### spatialOverlaps
 ###
@@ -125,6 +132,16 @@ test_that("spatialMatch assigns correct region indices", {
     expect_identical(result[4L], 3L)
 })
 
+# 'sf' is a base S3 class (c("sf", "data.frame")), not an S4Vectors DataFrame,
+# so the DataFrame-signature methods above never apply to it; a dedicated
+# 'sf'-signature method is required for S4 dispatch to find it at all.
+test_that("spatialMatch dispatches to the DuckDB-backed method for a plain sf table", {
+    ddb <- .make_points_ddb()
+    mem_result <- spatialMatch(.make_points_df(), .make_shapes_df(), coords = c("x", "y"))
+    sf_result <- spatialMatch(ddb, .make_shapes_sf(), coords = c("x", "y"))
+    expect_identical(sf_result, mem_result)
+})
+
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### spatialJoin
 ###
@@ -144,6 +161,25 @@ test_that("spatialJoin dispatches to the DuckDB-backed method for a mixed DuckDB
     expect_true(nrow(forward) > 0L)
 
     backward <- spatialJoin(shapes_mem, shapes_ddb)
+    expect_s4_class(backward, "DuckDBDataFrame")
+    expect_identical(nrow(forward), nrow(backward))
+})
+
+# Same gap, but for 'sf' specifically: it's a base S3 class, not an
+# S4Vectors DataFrame, so it needs its own signature for S4 dispatch to
+# find a method at all (it previously errored with "unable to find an
+# inherited method" rather than falling through to an in-memory default).
+test_that("spatialJoin dispatches to the DuckDB-backed method for a mixed DuckDBDataFrame/sf pair", {
+    spatial_path <- system.file("extdata", "spatial", package = "DuckDBSpatial")
+    shapes_ddb <- DuckDBDataFrame(spatial_path)
+    shapes_ddb <- shapes_ddb[!is.na(shapes_ddb$type), ]
+    shapes_sf <- .make_shapes_sf()
+
+    forward <- spatialJoin(shapes_ddb, shapes_sf)
+    expect_s4_class(forward, "DuckDBDataFrame")
+    expect_true(nrow(forward) > 0L)
+
+    backward <- spatialJoin(shapes_sf, shapes_ddb)
     expect_s4_class(backward, "DuckDBDataFrame")
     expect_identical(nrow(forward), nrow(backward))
 })

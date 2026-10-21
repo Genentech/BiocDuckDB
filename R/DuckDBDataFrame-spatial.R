@@ -67,9 +67,12 @@ NULL
 #' @aliases spatialOverlaps,DuckDBDataFrame-method
 #' @aliases spatialMatch,DuckDBDataFrame,DataFrame-method
 #' @aliases spatialMatch,DuckDBDataFrame,DuckDBDataFrame-method
+#' @aliases spatialMatch,DuckDBDataFrame,sf-method
 #' @aliases spatialJoin,DuckDBDataFrame,DuckDBDataFrame-method
 #' @aliases spatialJoin,DuckDBDataFrame,DataFrame-method
 #' @aliases spatialJoin,DataFrame,DuckDBDataFrame-method
+#' @aliases spatialJoin,DuckDBDataFrame,sf-method
+#' @aliases spatialJoin,sf,DuckDBDataFrame-method
 #'
 #' @name DuckDBDataFrame-spatial
 NULL
@@ -95,6 +98,14 @@ function(x, table, coords, geom = "geometry", join = NULL, ...) {
 
 #' @export
 setMethod("spatialMatch", c("DuckDBDataFrame", "DuckDBDataFrame"),
+function(x, table, coords, geom = "geometry", join = NULL, ...) {
+    .requireDuckDBSpatial("spatialMatch on DuckDBDataFrame")
+    DuckDBSpatial::layerSpatialMatch(x, table, coords = coords, geom = geom, join = join)
+})
+
+#' @export
+#' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
+setMethod("spatialMatch", c("DuckDBDataFrame", "sf"),
 function(x, table, coords, geom = "geometry", join = NULL, ...) {
     .requireDuckDBSpatial("spatialMatch on DuckDBDataFrame")
     DuckDBSpatial::layerSpatialMatch(x, table, coords = coords, geom = geom, join = join)
@@ -128,6 +139,28 @@ function(x, y, join = sf::st_intersects, sparse = TRUE, ...) {
 #' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
 #' @importClassesFrom S4Vectors DataFrame
 setMethod("spatialJoin", c("DataFrame", "DuckDBDataFrame"),
+function(x, y, join = sf::st_intersects, sparse = TRUE, ...) {
+    .requireDuckDBSpatial("spatialJoin on DuckDBDataFrame")
+    if (isTRUE(sparse))
+        DuckDBSpatial::st_join_table(x, y, join = join)
+    else
+        sf::st_join(x, y, join = join, ...)
+})
+
+#' @export
+#' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
+setMethod("spatialJoin", c("DuckDBDataFrame", "sf"),
+function(x, y, join = sf::st_intersects, sparse = TRUE, ...) {
+    .requireDuckDBSpatial("spatialJoin on DuckDBDataFrame")
+    if (isTRUE(sparse))
+        DuckDBSpatial::st_join_table(x, y, join = join)
+    else
+        sf::st_join(x, y, join = join, ...)
+})
+
+#' @export
+#' @importClassesFrom DuckDBDataFrame DuckDBDataFrame
+setMethod("spatialJoin", c("sf", "DuckDBDataFrame"),
 function(x, y, join = sf::st_intersects, sparse = TRUE, ...) {
     .requireDuckDBSpatial("spatialJoin on DuckDBDataFrame")
     if (isTRUE(sparse))
