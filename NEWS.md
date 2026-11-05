@@ -1,3 +1,59 @@
+# BiocDuckDB 0.99.30
+
+## Enhancements
+
+- `modelGeneVar()`/`modelGeneVarByPoisson()`, `modelGeneCV2()`, and
+  `pairwiseTTests()`/`findMarkers()` on `DuckDBMatrix` no longer compute
+  per-gene/per-block means and variances with two separate SQL passes (one
+  for means, one that rejoined them to sum squared deviations). Both are
+  now fused into a single `GROUP BY` query using DuckDB's native
+  `VAR_SAMP()`; the sparse "fill" population is folded in afterward with a
+  closed-form correction, so no raw sum-of-squares is ever computed.
+  Verified bit-exact against the previous output, including an adversarial
+  high-mean/low-variance gene. About 2.3-6.3x faster depending on call
+  site.
+- `perCellQCMetrics()`, `perFeatureQCMetrics()`, `numDetectedAcrossFeatures()`,
+  `sumCountsAcrossFeatures()`, and `summarizeAssayByGroup()` on `DuckDBMatrix`
+  dropped a filter that ran immediately before an already-equivalent join
+  (the filter's predicate and the join always select the same rows). This
+  also avoids inlining a potentially million-entry `IN (...)` list into the
+  generated SQL at this package's documented million-cell benchmark scale.
+  Output is unchanged. About 1.2x faster at typical scale; negligible to no
+  benefit at larger cell counts.
+- `normalizeCounts()`'s default path (also used by `logNormCounts()`), and
+  the equivalent default paths of `calculateAverage()`/`calculateCPM()`,
+  now compute library-size normalization in one query (two chained window
+  functions) instead of collecting the per-cell size factors into R and
+  rejoining them. Output is unchanged, including existing NA-propagation
+  behavior. **This simplifies the query plan but is not a speedup**:
+  measured 1.3-1.7x *slower* than the previous implementation across a
+  range of matrix shapes, likely because of the window operator's own
+  cost. Kept for the simpler, join-free query plan; if you rely on
+  `normalizeCounts()` throughput, benchmark on your own data before
+  upgrading.
+
+## Bug fixes
+
+- **Correctness: `correlatePairs()` on `DuckDBMatrix` could silently
+  return Pearson correlations outside `[-1, 1]`, or `NaN`, on
+  non-log-normalized or large-magnitude input** (raw counts, pseudobulk
+  sums, proteomics/imaging intensities). The old formula computed
+  correlation from raw sums and sums-of-squares, which loses precision
+  catastrophically once values sit far from zero. If you saw `rho` values
+  outside `[-1, 1]` or `NaN`, this is why. Replaced with a numerically
+  stable, sparse-aware computation built on DuckDB's native
+  `VAR_SAMP()`/`COVAR_SAMP()`; verified against R's own `cor()`/`cov()`
+  across realistic and deliberately adversarial scales, with no
+  regression on typical log-normalized data. About 15% slower than the
+  old (incorrect) implementation.
+- `.duckdb_seed_to_sparse_matrix()`'s `memory_limit` guard underestimated
+  its real transient memory cost (assumed 16 bytes/nonzero; measured
+  92-214 bytes/nonzero for string-keyed data, the common case when reading
+  a COO Parquet file written by another tool). The guard could therefore
+  let through a materialization that used several times more memory than
+  the configured limit. Now uses a conservative 256 bytes/nonzero
+  estimate.
+
 # BiocDuckDB 0.99.29
 
 ## Bug fixes

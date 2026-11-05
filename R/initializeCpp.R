@@ -105,7 +105,42 @@ NULL
 
     conn <- tblconn(table, select = TRUE)
     nnz <- as.numeric(pull(collect(count(conn)), 1L))
-    est_bytes <- nnz * 16  # 1 double value + 2 integer keys, rough
+    # Bytes-per-nonzero guard constant, derivation:
+    #
+    # The transient peak this guards is `df` (the row_key/col_key/datacol
+    # data.frame from collect(), below) coexisting with the sparse matrix
+    # sparseMatrix() is building from it -- in particular, match()'s output
+    # `i`/`j` integer index vectors, which exist alongside `df`'s own
+    # row_key/col_key columns before `df` can be garbage collected.
+    #
+    # A naive "1 double value + 2 integer keys" count (8 + 4 + 4 = 16
+    # bytes/nonzero) assumes row_key/col_key are already integers and
+    # ignores that `df` and the freshly-built `i`/`j` vectors coexist. Both
+    # assumptions are wrong for this package's own documented usage
+    # pattern (see `scanKeycols()`): a COO Parquet file produced by another
+    # tool, read via `DuckDBMatrix(path, keycols = scanKeycols(path, ...))`,
+    # has row_key/col_key SQL columns holding the distinct key VALUES
+    # directly -- e.g. character gene symbols or cell barcodes, not a
+    # synthetic integer remap -- so `df$row_key`/`df$col_key` collect() as R
+    # character vectors, not integers.
+    #
+    # Measured empirically (R's own gc(reset = TRUE) peak-heap tracking
+    # immediately around this function, isolating its own transient
+    # allocation from the rest of the process) on synthetic COO fixtures at
+    # several sizes and key-column types:
+    #   string-keyed,  5M nonzeros (1000 genes x 50000 cells):  ~214 bytes/nonzero
+    #   string-keyed, 10M nonzeros (2000 genes x 50000 cells):  ~139 bytes/nonzero
+    #   string-keyed, 20M nonzeros (4000 genes x 50000 cells):   ~92 bytes/nonzero
+    #   integer-keyed,10M nonzeros (2000 genes x 50000 cells):  ~120 bytes/nonzero
+    # All four measurements exceed the naive 16 bytes/nonzero estimate by
+    # 6-13x (not just the ~2.3x previously reported for a single
+    # string-keyed case), and the ratio is scale- and
+    # cardinality-dependent rather than a clean constant, so this uses one
+    # single conservative constant -- comfortably above every measurement
+    # above, string- or integer-keyed -- rather than a type-aware estimate
+    # that would need its own per-type validation.
+    bytes_per_nnz <- 256
+    est_bytes <- nnz * bytes_per_nnz
     if (!isSingleNumber(memory_limit) || est_bytes > memory_limit) {
         stop(sprintf("estimated %.0f MB exceeds 'memory_limit' (%.0f MB)",
                       est_bytes / 1024^2, memory_limit / 1024^2))

@@ -125,6 +125,101 @@ test_that("correlatePairs requires subset.row for large matrices", {
                  "subset.row is required")
 })
 
+# Regression test for a correctness bug in the previous one-pass raw-moment
+# formula (SS = sum_sq - sum^2/k, numerator = sum_prod - sum1*sum2/k): at
+# large-magnitude/non-log-normalized scale, catastrophic cancellation in
+# that formula produced |rho| > 1 or NaN. The existing correlatePairs tests
+# above only ever exercise log-normalized scRNA-seq scale, where the old
+# formula happened to be numerically fine (~1e-8 relative error) -- this
+# test specifically exercises the adversarial regime the old formula got
+# wrong, so a future regression to a raw-moment-style formula is caught.
+test_that("correlatePairs stays numerically stable at large-magnitude scale", {
+    makeLargeMagnitudeDuckDBMatrix <- function(mat) {
+        idx <- which(mat != 0, arr.ind = TRUE)
+        df <- data.frame(gene = idx[, 1L], cell = idx[, 2L], value = mat[idx])
+        path <- tempfile(fileext = ".parquet")
+        arrow::write_parquet(df, path)
+        DuckDBMatrix(path, datacol = "value",
+                     keycols = list(
+                         gene = setNames(seq_len(nrow(mat)), rownames(mat)),
+                         cell = setNames(seq_len(ncol(mat)), colnames(mat))
+                     ))
+    }
+
+    set.seed(20261105)
+    k <- 10000L
+    rho_true <- 0.09
+    z1 <- rnorm(k)
+    z2 <- rho_true * z1 + sqrt(1 - rho_true^2) * rnorm(k)
+    z3 <- rnorm(k)
+
+    for (offset in c(1e5, 1e9, 1e10)) {
+        mat <- rbind(geneA = offset + z1, geneB = offset + z2, geneC = offset + z3)
+        colnames(mat) <- paste0("cell", seq_len(k))
+        ddb <- makeLargeMagnitudeDuckDBMatrix(mat)
+
+        res <- scran::correlatePairs(ddb, pairings = NULL)
+        dense <- cor(t(mat))
+
+        expect_true(all(abs(res$rho) <= 1 + 1e-9),
+                   label = sprintf("offset = %.0e", offset))
+        expect_false(any(is.nan(res$rho)), label = sprintf("offset = %.0e", offset))
+        for (i in seq_len(nrow(res))) {
+            expect_equal(res$rho[i], dense[res$gene1[i], res$gene2[i]],
+                        tolerance = 1e-6,
+                        label = sprintf("offset = %.0e, %s-%s", offset,
+                                        res$gene1[i], res$gene2[i]))
+        }
+    }
+})
+
+# Regression test for sparse/implicit-fill correctness: a gene pair with NO
+# overlapping explicitly-stored cells, and a gene that is entirely implicit
+# fill, must still be handled correctly (not silently dropped or NA'd out
+# incorrectly) by the stable formula's 4-population decomposition.
+test_that("correlatePairs handles disjoint support and all-fill genes", {
+    makeDuckDBMatrixFromDense <- function(mat) {
+        idx <- which(mat != 0, arr.ind = TRUE)
+        df <- data.frame(gene = idx[, 1L], cell = idx[, 2L], value = mat[idx])
+        path <- tempfile(fileext = ".parquet")
+        arrow::write_parquet(df, path)
+        DuckDBMatrix(path, datacol = "value",
+                     keycols = list(
+                         gene = setNames(seq_len(nrow(mat)), rownames(mat)),
+                         cell = setNames(seq_len(ncol(mat)), colnames(mat))
+                     ))
+    }
+
+    set.seed(20261105)
+    nc <- 100L
+    mat <- matrix(0, nrow = 4L, ncol = nc)
+    rownames(mat) <- c("A", "B", "C", "AllZero")
+    colnames(mat) <- paste0("cell", seq_len(nc))
+    mat["A", 1:50] <- rnorm(50, 10, 2)
+    mat["B", 51:100] <- rnorm(50, 10, 2)  # A and B share zero stored cells
+    mat["C", ] <- rnorm(nc, 10, 2)        # C overlaps both A and B
+
+    ddb <- makeDuckDBMatrixFromDense(mat)
+    res <- scran::correlatePairs(ddb, pairings = NULL)
+    dense <- suppressWarnings(cor(t(mat)))
+
+    expect_true(all(abs(res$rho[!is.na(res$rho)]) <= 1 + 1e-9))
+    for (i in seq_len(nrow(res))) {
+        truth <- dense[res$gene1[i], res$gene2[i]]
+        if (is.na(truth)) {
+            expect_true(is.na(res$rho[i]))
+        } else {
+            expect_equal(res$rho[i], truth, tolerance = 1e-6,
+                        label = paste(res$gene1[i], res$gene2[i]))
+        }
+    }
+    # AllZero has zero explicitly-stored cells; its correlation with
+    # anything is undefined (zero variance), not silently dropped.
+    all_zero_rows <- res[res$gene1 == "AllZero" | res$gene2 == "AllZero", ]
+    expect_equal(nrow(all_zero_rows), 3L)
+    expect_true(all(is.na(all_zero_rows$rho)))
+})
+
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### scran modelGeneVarByPoisson tests
 ###
@@ -485,4 +580,194 @@ test_that("summaryMarkerStats works on DuckDBMatrix", {
         expect_equal(ddb_result[[g]]$self.detected, mat_result[[g]]$self.detected,
                      tolerance = 1e-4)
     }
+})
+
+# Regression tests for the fused single-pass mean/variance computation shared
+# by .compute_blocked_stats_DuckDBMatrix() (modelGeneVar/modelGeneVarByPoisson),
+# .compute_blocked_stats_normalized_DuckDBMatrix() (modelGeneCV2), and
+# .compute_group_stats_DuckDBMatrix() (pairwiseTTests/findMarkers), via the
+# shared `.fused_group_variance_stats()` primitive.
+#
+# Each test compares the DuckDBMatrix result against an independent R oracle
+# (mean()/var() on a densified matrix), rather than against the historical
+# two-pass SQL implementation, which no longer exists in this file -- an
+# oracle that is both an independent check and a permanent, standalone
+# regression test.
+
+test_that(".compute_blocked_stats_DuckDBMatrix matches R's mean()/var() oracle (fill = 0)", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+
+    res <- .compute_blocked_stats_DuckDBMatrix(m)
+
+    expect_equal(unname(res$means[, 1]), unname(rowMeans(dense)))
+    expect_equal(unname(res$vars[, 1]), unname(apply(dense, 1, var)))
+})
+
+test_that(".compute_blocked_stats_DuckDBMatrix matches the oracle for a nonzero fill", {
+    m <- makeSparseDuckDBMatrix() + 5
+    expect_equal(m@seed@fill, 5)
+    dense <- as.matrix(m)
+
+    res <- .compute_blocked_stats_DuckDBMatrix(m)
+
+    expect_equal(unname(res$means[, 1]), unname(rowMeans(dense)))
+    expect_equal(unname(res$vars[, 1]), unname(apply(dense, 1, var)))
+})
+
+test_that(".compute_blocked_stats_DuckDBMatrix matches the oracle per block", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+
+    set.seed(1)
+    block <- factor(sample(c("A", "B"), ncol(m), replace = TRUE))
+    res <- .compute_blocked_stats_DuckDBMatrix(m, block = block)
+
+    for (b in 1:2) {
+        lvl <- levels(block)[b]
+        sub <- dense[, block == lvl, drop = FALSE]
+        expect_equal(unname(res$means[, b]), unname(rowMeans(sub)))
+        expect_equal(unname(res$vars[, b]), unname(apply(sub, 1, var)))
+    }
+})
+
+test_that(".compute_blocked_stats_DuckDBMatrix is numerically stable for a high-mean, low-relative-variance gene", {
+    # Adversarial case for catastrophic cancellation: mean ~1e8, variance O(1).
+    # A hand-rolled sum-of-squares (sum(x^2)/n - mean^2) would lose most
+    # significant digits here; DuckDB's native VAR_SAMP should not.
+    set.seed(3)
+    ncell <- 200L
+    vals <- 1e8 + round(rnorm(ncell, sd = 2), 0)
+    m <- matrix(vals, nrow = 1, ncol = ncell)
+    dimnames(m) <- list("g1", paste0("c", seq_len(ncell)))
+    names(dimnames(m)) <- c("index1", "index2")
+    tf <- tempfile()
+    BiocDuckDB::writeParquet(m, tf)
+    pqmat <- DuckDBArray::DuckDBMatrix(tf, datacol = "value",
+        keycols = lapply(dimnames(m), function(x) setNames(seq_along(x), x)))
+    expect_equal(pqmat@seed@fill, 0)
+
+    res <- .compute_blocked_stats_DuckDBMatrix(pqmat)
+
+    expect_equal(unname(res$means[1, 1]), mean(vals))
+    # Tight absolute tolerance given the huge mean: this would fail hard
+    # (off by O(1) or worse) under catastrophic cancellation.
+    expect_equal(unname(res$vars[1, 1]), var(vals), tolerance = 1e-6)
+})
+
+test_that(".compute_blocked_stats_DuckDBMatrix correctly handles the integer64 COUNT(*) gotcha", {
+    # DuckDB returns COUNT(*)/n() as bit64::integer64 via collect(); this
+    # fixture (40 genes x 20 cells, each gene with its own count/sum/variance)
+    # exercises the per-group aggregation broadly enough that an un-cast
+    # integer64 count (silently wrong arithmetic when mixed with doubles)
+    # would blow up the comparison against the R oracle well beyond float
+    # noise. Manually verified during development: reverting the
+    # as.double(result$stored_n) cast in .fused_group_variance_stats() makes
+    # this comparison fail catastrophically (Inf/NaN), confirming this test
+    # is sensitive to that regression.
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+
+    res <- .compute_blocked_stats_DuckDBMatrix(m)
+
+    expect_equal(unname(res$means[, 1]), unname(rowMeans(dense)))
+    expect_equal(unname(res$vars[, 1]), unname(apply(dense, 1, var)))
+})
+
+test_that(".compute_group_stats_DuckDBMatrix matches the oracle, including NA-excluded cells", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+
+    set.seed(1)
+    groups <- sample(c("A", "B"), ncol(m), replace = TRUE)
+    groups[1:3] <- NA
+
+    res <- .compute_group_stats_DuckDBMatrix(m, groups = groups)
+
+    for (lvl in c("A", "B")) {
+        cols <- which(!is.na(groups) & groups == lvl)
+        sub <- dense[, cols, drop = FALSE]
+        expect_equal(unname(res$means[, lvl]), unname(rowMeans(sub)))
+        expect_equal(unname(res$vars[, lvl]), unname(apply(sub, 1, var)))
+    }
+})
+
+test_that(".compute_group_stats_DuckDBMatrix matches the oracle for a nonzero fill", {
+    m <- makeSparseDuckDBMatrix() + 5
+    dense <- as.matrix(m)
+
+    set.seed(1)
+    groups <- sample(c("A", "B"), ncol(m), replace = TRUE)
+
+    res <- .compute_group_stats_DuckDBMatrix(m, groups = groups)
+
+    for (lvl in c("A", "B")) {
+        cols <- which(groups == lvl)
+        sub <- dense[, cols, drop = FALSE]
+        expect_equal(unname(res$means[, lvl]), unname(rowMeans(sub)))
+        expect_equal(unname(res$vars[, lvl]), unname(apply(sub, 1, var)))
+    }
+})
+
+test_that(".compute_blocked_stats_normalized_DuckDBMatrix matches the oracle (fill = 0)", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+
+    set.seed(2)
+    sf <- runif(ncol(m), 0.5, 1.5)
+    norm_dense <- sweep(dense, 2, sf, "/")
+
+    res <- .compute_blocked_stats_normalized_DuckDBMatrix(m, size.factors = sf)
+
+    expect_equal(unname(res$means[, 1]), unname(rowMeans(norm_dense)))
+    expect_equal(unname(res$vars[, 1]), unname(apply(norm_dense, 1, var)))
+})
+
+test_that(".compute_blocked_stats_normalized_DuckDBMatrix matches the oracle for a nonzero fill", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+    m5 <- m + 5
+    dense5 <- as.matrix(m5)
+    stored_mask <- dense != 0
+
+    set.seed(2)
+    sf <- runif(ncol(m), 0.5, 1.5)
+    norm_fill5 <- 5 / mean(sf)
+
+    # Oracle: stored cells normalize per-cell (value / sf); the implicit fill
+    # population approximates with norm_fill (fill / mean(sf)), matching the
+    # historical implementation's approximation (the true per-cell sf for an
+    # absent cell is unknown).
+    oracle <- matrix(norm_fill5, nrow(dense5), ncol(dense5), dimnames = dimnames(dense5))
+    oracle[stored_mask] <- (dense5 / matrix(sf, nrow(dense5), ncol(dense5), byrow = TRUE))[stored_mask]
+
+    res <- .compute_blocked_stats_normalized_DuckDBMatrix(m5, size.factors = sf)
+
+    expect_equal(unname(res$means[, 1]), unname(rowMeans(oracle)))
+    expect_equal(unname(res$vars[, 1]), unname(apply(oracle, 1, var)))
+})
+
+test_that("modelGeneVar/modelGeneCV2/pairwiseTTests end-to-end still match scran's own matrix path", {
+    skip_if_not_installed("airway")
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    mat <- as.matrix(pqmat)
+    subset_genes <- 1:100
+
+    log_ddb <- normalizeCounts(pqmat)
+    log_mat <- as.matrix(log_ddb)
+
+    ddb_mgv <- scran::modelGeneVar(log_ddb, subset.row = subset_genes)
+    mat_mgv <- scran::modelGeneVar(log_mat, subset.row = subset_genes)
+    expect_equal(ddb_mgv$mean, mat_mgv$mean, tolerance = 1e-6)
+    expect_equal(ddb_mgv$total, mat_mgv$total, tolerance = 1e-6)
+
+    set.seed(42)
+    groups <- sample(c("g1", "g2", "g3"), ncol(pqmat), replace = TRUE)
+    ddb_pt <- scran::pairwiseTTests(pqmat, groups = groups, subset.row = subset_genes)
+    mat_pt <- scran::pairwiseTTests(mat, groups = groups, subset.row = subset_genes)
+    expect_equal(ddb_pt$statistics[[1]]$logFC, mat_pt$statistics[[1]]$logFC, tolerance = 1e-6)
+    expect_equal(ddb_pt$statistics[[1]]$p.value, mat_pt$statistics[[1]]$p.value, tolerance = 1e-4)
 })

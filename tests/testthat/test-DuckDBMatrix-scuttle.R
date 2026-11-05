@@ -246,3 +246,250 @@ test_that("summarizeAssayByGroup works as expected for a DuckDBMatrix", {
     expect_equal(SummarizedExperiment::assay(object, "sum"),
                  SummarizedExperiment::assay(expected, "sum"))
 })
+
+# Regression tests for the simplification shared by perCellQCMetrics(),
+# perFeatureQCMetrics(), numDetectedAcrossFeatures(), sumCountsAcrossFeatures(),
+# and summarizeAssayByGroup() on DuckDBMatrix: the historical
+# filter(key %in% known_ids) |> left_join(membership_df) pattern was replaced
+# with a bare inner_join(membership_df), since membership_df's key column is
+# always exactly the set used in the filter. Each test compares against the
+# scuttle oracle computed on a plain in-memory matrix, across single-subset,
+# multi-subset, a small fraction of genes/cells, and full-coverage cases.
+
+test_that("perCellQCMetrics matches the oracle across subset shapes", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    mat <- as.matrix(pqmat)
+
+    single_subset <- list(Group1 = 1:50)
+    multi_subset <- list(Group1 = 1:100, Group2 = 101:300, Group3 = 301:500)
+    small_fraction <- list(Tiny = 1:5)
+    full_coverage <- list(All = seq_len(nrow(pqmat)))
+
+    for (subsets in list(single_subset, multi_subset, small_fraction, full_coverage)) {
+        expect_equal(perCellQCMetrics(pqmat, subsets = subsets),
+                     perCellQCMetrics(mat, subsets = subsets))
+    }
+})
+
+test_that("perFeatureQCMetrics matches the oracle across subset shapes", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    mat <- as.matrix(pqmat)
+    ncell <- ncol(pqmat)
+
+    # airway_counts has only 8 samples (cells), so subset indices must stay
+    # within 1:8.
+    cell_single <- list(SetA = 1:4)
+    cell_multi <- list(SetA = 1:2, SetB = 3:5, SetC = 6:ncell)
+    cell_small <- list(Tiny = 1L)
+    cell_full <- list(All = seq_len(ncell))
+
+    for (subsets in list(cell_single, cell_multi, cell_small, cell_full)) {
+        expect_equal(perFeatureQCMetrics(pqmat, subsets = subsets),
+                     perFeatureQCMetrics(mat, subsets = subsets))
+    }
+})
+
+test_that("numDetectedAcrossFeatures/sumCountsAcrossFeatures match the oracle across gene-set shapes", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    mat <- as.matrix(pqmat)
+
+    gene_sets_single <- list(SetA = 1:50)
+    gene_sets_multi <- list(SetA = 1:100, SetB = 101:300, SetC = 301:500)
+    gene_sets_small <- list(Tiny = 1:3)
+    gene_sets_full <- list(All = seq_len(nrow(pqmat)))
+    vector_ids_full_coverage <- rep(paste0("Group", 1:100), length.out = nrow(pqmat))
+
+    for (ids in list(gene_sets_single, gene_sets_multi, gene_sets_small,
+                     gene_sets_full, vector_ids_full_coverage)) {
+        object <- numDetectedAcrossFeatures(pqmat, ids)
+        expected <- numDetectedAcrossFeatures(mat, ids)[rownames(object), , drop = FALSE]
+        expect_equal(object, expected)
+
+        object <- sumCountsAcrossFeatures(pqmat, ids)
+        expected <- sumCountsAcrossFeatures(mat, ids)[rownames(object), , drop = FALSE]
+        expect_equal(object, expected)
+    }
+
+    # NA-excluded vector ids (membership_df is a strict, non-contiguous subset).
+    ids_na <- vector_ids_full_coverage
+    ids_na[c(1, 50, 100)] <- NA
+    object <- sumCountsAcrossFeatures(pqmat, ids_na)
+    expected <- sumCountsAcrossFeatures(mat, ids_na)[rownames(object), , drop = FALSE]
+    expect_equal(object, expected)
+})
+
+test_that("summarizeAssayByGroup matches the oracle for single- and multi-group assignments", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    mat <- as.matrix(pqmat)
+
+    # "Single group" = full coverage with one group (exercises the inner_join
+    # fix when membership_df spans every column).
+    groups_single <- rep("OnlyGroup", ncol(pqmat))
+    object <- summarizeAssayByGroup(pqmat, groups_single, statistics = "sum")
+    expected <- summarizeAssayByGroup(mat, groups_single, statistics = "sum")
+    expect_equal(SummarizedExperiment::assay(object, "sum"),
+                 SummarizedExperiment::assay(expected, "sum"))
+
+    groups_multi <- rep(LETTERS[1:4], length.out = ncol(pqmat))
+    object <- summarizeAssayByGroup(pqmat, groups_multi,
+                                    statistics = c("sum", "mean", "num.detected", "prop.detected"))
+    expected <- summarizeAssayByGroup(mat, groups_multi,
+                                      statistics = c("sum", "mean", "num.detected", "prop.detected"))
+    for (stat in c("sum", "mean", "num.detected", "prop.detected")) {
+        expect_equal(SummarizedExperiment::assay(object, stat),
+                     SummarizedExperiment::assay(expected, stat))
+    }
+
+    # Small-fraction-of-columns: most cells excluded via subset.col (ids is
+    # still full-length, matching the generic's contract).
+    small_cols <- 1:3
+    object <- summarizeAssayByGroup(pqmat, groups_multi,
+                                    subset.col = small_cols, statistics = "sum")
+    expected <- summarizeAssayByGroup(mat, groups_multi,
+                                      subset.col = small_cols, statistics = "sum")
+    expect_equal(SummarizedExperiment::assay(object, "sum"),
+                 SummarizedExperiment::assay(expected, "sum"))
+})
+
+# Regression tests for the window-function fusion of normalizeCounts()
+# (and the shared .fused_normalize_by_libsize_DuckDBMatrix() primitive it and
+# calculateAverage()/calculateCPM() use when size.factors is NULL). The
+# historical path was librarySizeFactors(x) -> colSums(x) [collect()] ->
+# sweep(x, 2L, size.factors, "/") [left_join(..., copy = TRUE)]; the fused
+# path computes the same normalized values in one query via two chained
+# window functions. Each test compares against a from-scratch R oracle, and
+# also reconstructs the pre-fusion two-step path inline for a direct
+# before/after comparison.
+
+.old_normalizeCounts_path <- function(x, ...) {
+    sf <- librarySizeFactors(x)
+    DelayedArray::sweep(x, 2L, sf, FUN = "/")
+}
+
+test_that("normalizeCounts default path matches the oracle (fill = 0)", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+
+    out <- as.matrix(normalizeCounts(m, transform = "none"))
+    sf <- colSums(dense)
+    sf <- sf / mean(sf)
+    oracle <- sweep(dense, 2, sf, "/")
+    expect_equal(out, oracle)
+
+    # Direct before/after comparison against the removed two-pass path.
+    old_out <- as.matrix(.old_normalizeCounts_path(m))
+    expect_equal(out, old_out)
+})
+
+test_that("normalizeCounts default path matches a hand NA-propagation oracle", {
+    m <- matrix(c(1, 2, 3, 4, 5, 6, NA, 8, 9, 10, 11, 12), nrow = 3, ncol = 4, byrow = TRUE)
+    dimnames(m) <- list(paste0("g", 1:3), paste0("c", 1:4))
+    names(dimnames(m)) <- c("index1", "index2")
+    tf <- tempfile()
+    BiocDuckDB::writeParquet(m, tf)
+    pqmat <- DuckDBArray::DuckDBMatrix(tf, datacol = "value",
+        keycols = lapply(dimnames(m), function(x) setNames(seq_along(x), x)))
+
+    # mean(colSums(x)) without na.rm propagates NA from a single missing
+    # value to every size factor, and hence to the entire output matrix --
+    # not just the column containing the NA. Confirmed against the removed
+    # two-pass implementation before writing this fused replacement.
+    out <- as.matrix(normalizeCounts(pqmat, transform = "none"))
+    expect_true(all(is.na(out)))
+
+    old_out <- as.matrix(.old_normalizeCounts_path(pqmat))
+    expect_equal(out, old_out)
+})
+
+test_that("normalizeCounts default path is unaffected when there are no NAs", {
+    m <- matrix(1:12, nrow = 3, ncol = 4)
+    dimnames(m) <- list(paste0("g", 1:3), paste0("c", 1:4))
+    names(dimnames(m)) <- c("index1", "index2")
+    tf <- tempfile()
+    BiocDuckDB::writeParquet(m, tf)
+    pqmat <- DuckDBArray::DuckDBMatrix(tf, datacol = "value",
+        keycols = lapply(dimnames(m), function(x) setNames(seq_along(x), x)))
+
+    out <- as.matrix(normalizeCounts(pqmat, transform = "none"))
+    sf <- colSums(m)
+    sf <- sf / mean(sf)
+    oracle <- sweep(m, 2, sf, "/")
+    expect_equal(out, oracle)
+})
+
+test_that("logNormCounts() end-to-end output is unaffected by the fusion", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+
+    log_ddb <- scuttle::logNormCounts(
+        SingleCellExperiment::SingleCellExperiment(assays = list(counts = m)))
+    log_mat <- scuttle::logNormCounts(
+        SingleCellExperiment::SingleCellExperiment(assays = list(counts = dense)))
+
+    expect_equal(
+        as.matrix(SummarizedExperiment::assay(log_ddb, "logcounts")),
+        as.matrix(SummarizedExperiment::assay(log_mat, "logcounts"))
+    )
+})
+
+test_that("calculateAverage()/calculateCPM() default paths match the oracle and the old path", {
+    m <- makeSparseDuckDBMatrix()
+    dense <- as.matrix(m)
+    sf <- colSums(dense)
+    sf <- sf / mean(sf)
+
+    avg <- calculateAverage(m)
+    oracle_avg <- rowMeans(sweep(dense, 2, sf, "/"))
+    expect_equal(unname(as.vector(avg)), unname(oracle_avg))
+
+    old_avg <- rowMeans(as.matrix(.old_normalizeCounts_path(m)))
+    expect_equal(unname(as.vector(avg)), unname(old_avg))
+
+    cpm <- as.matrix(calculateCPM(m))
+    oracle_cpm <- sweep(dense, 2, colSums(dense) / 1e6, "/")
+    expect_equal(cpm, oracle_cpm)
+
+    # calculateCPM()'s explicit size.factors branch is untouched by Fix 3;
+    # confirm it still works correctly alongside the fused default path.
+    set.seed(11)
+    sf2 <- runif(ncol(m), 0.5, 1.5)
+    cpm2 <- as.matrix(calculateCPM(m, size.factors = sf2))
+    lib.sizes <- colSums(dense) / 1e6
+    lib.sizes2 <- sf2 / mean(sf2) * mean(lib.sizes)
+    oracle_cpm2 <- sweep(dense, 2, lib.sizes2, "/")
+    expect_equal(cpm2, oracle_cpm2)
+})
+
+test_that(".fused_normalize_by_libsize_DuckDBMatrix() refuses a nonzero fill, matching sweep()", {
+    m5 <- makeSparseDuckDBMatrix() + 5
+    expect_equal(m5@seed@fill, 5)
+    expect_error(normalizeCounts(m5), "zero-filled")
+    expect_error(calculateAverage(m5), "zero-filled")
+    expect_error(calculateCPM(m5), "zero-filled")
+})
+
+test_that("the fused normalize query plan scans the base table once with no join", {
+    m <- makeSparseDuckDBMatrix()
+    out <- normalizeCounts(m, transform = "none")
+    table <- out@seed@table
+    sql_text <- dbplyr::sql_render(DuckDBDataFrame::tblconn(table, select = TRUE))
+    db_conn <- DuckDBDataFrame::tblconn(table, select = FALSE)$src$con
+    plan <- DBI::dbGetQuery(db_conn, paste("EXPLAIN", sql_text))
+    plan_text <- paste(plan[[2]], collapse = "\n")
+
+    expect_equal(lengths(regmatches(plan_text, gregexpr("Read Parquet", plan_text))), 1L)
+    expect_false(grepl("Join", plan_text))
+    expect_true(grepl("Window", plan_text))
+})

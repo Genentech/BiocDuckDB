@@ -252,13 +252,17 @@ importFrom(arrow,
   write_parquet
 )
 importFrom(beachmat,initializeCpp)
-importFrom(dbplyr,sql_render)
+importFrom(dbplyr,
+  sql_render,
+  translate_sql
+)
 importFrom(dplyr,
   all_of,
   collect,
   count,
   filter,
   group_by,
+  inner_join,
   left_join,
   mutate,
   n,

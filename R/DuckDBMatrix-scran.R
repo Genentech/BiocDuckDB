@@ -375,13 +375,121 @@ NULL
     )
 }
 
-# Compute per-gene means and variances, optionally by block
-# Uses numerically stable two-pass algorithm:
-#   Pass 1: Compute means
-#   Pass 2: Compute sum of squared deviations from mean
-# OPTIMIZATION: Uses duckdb_register for zero-copy joins instead of copy = TRUE
+# Shared primitive: fused single-pass computation of per-gene means and
+# variances within named groups (blocks, or group x block combinations),
+# including the implicit "fill" population (cells absent from the sparse
+# table).
+#
+# This used to be a numerically-stable but wasteful two-pass algorithm
+# (Pass 1: SQL to get per-group means; Pass 2: re-join those means and sum
+# squared deviations in SQL). It is now fused into ONE GROUP BY query that
+# computes, per (gene, group), only quantities over the STORED rows:
+#   n = COUNT(*), sum_y = SUM(y), S2 = COALESCE(VAR_SAMP(y), 0)
+# using DuckDB's own numerically stable VAR_SAMP -- never a hand-rolled
+# sum-of-squares. The implicit "fill" population (cells absent from the
+# sparse table, k - n of them per group, where k is the group size known
+# from the assignment rather than the database) is then folded in
+# afterwards, in R, via the Chan et al. parallel-variance-combination
+# identity:
+#
+#   Sigma(y - mu)^2 over k  =  Sigma(y - ybar)^2 over n
+#                            + n * (ybar - mu)^2
+#                            + (k - n) * (fill - mu)^2
+#
+# where mu is the TRUE overall mean including the implicit fill cells:
+#   mu = (sum_y + fill * (k - n)) / k
+# The stable (n - 1) * S2 term comes straight from DuckDB's VAR_SAMP; the two
+# correction terms are each a small count times a squared difference of
+# already-stable means, so no raw sum-of-squares of individual values is
+# ever computed. Setting fill = 0 recovers exactly the single-pass fast path
+# already used by DuckDBArray's `.marginVars()` fill == 0 branch (see
+# DuckDBTable-matrixStats.R) -- this is the same algebra, generalized to a
+# nonzero fill.
+#
+# `skip_empty_groups` controls behaviour for a group with k == 0 cells: when
+# FALSE (blocks, which by construction cover every cell), the division by k
+# is allowed to run and naturally yields NaN, matching the historical
+# blocked-stats behaviour for an empty block level; when TRUE (groups, which
+# can be empty after NA exclusion), the group is skipped and its mean/
+# variance stay NA, matching the historical group-stats behaviour.
+#' @importFrom dplyr collect group_by inner_join left_join mutate summarize tbl
+.fused_group_variance_stats <-
+function(conn, db_conn, row_key, col_key, value_expr, assign_df, id_col,
+         col_ids, group_sizes, col_names, ngenes, rnames, row_keyvals,
+         fill, inner = FALSE, mutate_expr = NULL, skip_empty_groups = FALSE)
+{
+    assign_tbl_name <- .register_temp_table(db_conn, assign_df, "assign")
+    on.exit(.unregister_temp_tables(db_conn, assign_tbl_name), add = TRUE)
+
+    row_sym <- as.name(row_key)
+    id_sym <- as.name(id_col)
+
+    joined <- if (inner) {
+        inner_join(conn, tbl(db_conn, assign_tbl_name), by = col_key)
+    } else {
+        left_join(conn, tbl(db_conn, assign_tbl_name), by = col_key)
+    }
+    if (!is.null(mutate_expr)) {
+        joined <- mutate(joined, !!!mutate_expr)
+    }
+
+    # Single fused GROUP BY: n, sum, and DuckDB's native VAR_SAMP together.
+    aggr <- list(
+        stored_n = call("n"),
+        sum_y = call("sum", value_expr, na.rm = TRUE),
+        S2 = call("coalesce", call("var_samp", value_expr), 0)
+    )
+    result <- group_by(joined, !!row_sym, !!id_sym)
+    result <- summarize(result, !!!aggr, .groups = "drop")
+    result <- collect(result)
+
+    # GOTCHA: DuckDB returns COUNT(*)/n() as a bit64::integer64 via collect().
+    # Arithmetic on the uncast integer64 silently yields WRONG variances (not
+    # float noise -- ~1.0-1.4 absolute error was measured), so cast to
+    # double immediately, before any arithmetic below.
+    result$stored_n <- as.double(result$stored_n)
+
+    means <- matrix(NA_real_, nrow = ngenes, ncol = length(col_ids),
+                    dimnames = list(rnames, col_names))
+    vars <- matrix(NA_real_, nrow = ngenes, ncol = length(col_ids),
+                   dimnames = list(rnames, col_names))
+
+    for (pos in seq_along(col_ids)) {
+        g <- col_ids[pos]
+        k <- group_sizes[[pos]]
+        if (skip_empty_groups && k == 0L) next
+
+        sub <- result[result[[id_col]] == g, , drop = FALSE]
+        n <- numeric(ngenes)
+        sum_y <- numeric(ngenes)
+        S2 <- numeric(ngenes)
+        if (nrow(sub) > 0L) {
+            row_idx <- match(sub[[row_key]], row_keyvals)
+            n[row_idx] <- sub$stored_n
+            sum_y[row_idx] <- sub$sum_y
+            S2[row_idx] <- sub$S2
+        }
+
+        mu <- (sum_y + fill * (k - n)) / k
+        means[, pos] <- mu
+
+        if (k <= 1L) {
+            vars[, pos] <- NA_real_
+            next
+        }
+
+        ybar <- ifelse(n > 0, sum_y / n, fill)
+        sum_sq_dev_full <- (n - 1) * S2 + n * (ybar - mu)^2 + (k - n) * (fill - mu)^2
+        vars[, pos] <- sum_sq_dev_full / (k - 1)
+    }
+
+    list(means = means, vars = vars)
+}
+
+# Compute per-gene means and variances, optionally by block.
+# Backs modelGeneVar()/modelGeneVarByPoisson(). Delegates to the shared
+# fused single-pass primitive, `.fused_group_variance_stats()` (see above).
 #' @importFrom DuckDBDataFrame tblconn
-#' @importFrom dplyr collect filter group_by left_join mutate summarize tbl
 #' @importFrom stats setNames
 .compute_blocked_stats_DuckDBMatrix <-
 function(x, block = NULL, subset.row = NULL)
@@ -408,7 +516,6 @@ function(x, block = NULL, subset.row = NULL)
     block_info <- .prepare_block_factor(block, ncells)
     block <- block_info$block
     bnames <- block_info$bnames
-    nblocks <- block_info$nblocks
     block_ncells <- block_info$block_ncells
 
     # Create block assignment data frame
@@ -421,131 +528,24 @@ function(x, block = NULL, subset.row = NULL)
 
     conn <- tblconn(ddb_table, select = FALSE)
     db_conn <- conn$src$con
-    row_sym <- as.name(row_key)
-    block_sym <- as.name("block_id")
-
-    # Register block_df as temporary table (OPTIMIZATION: zero-copy)
-    block_tbl_name <- .register_temp_table(db_conn, block_df, "block")
-    temp_tables <- block_tbl_name
-    on.exit(.unregister_temp_tables(db_conn, temp_tables), add = TRUE)
-
-    # Pass 1: Compute means per gene per block
-    mean_aggr <- list(
-        stored_sum = call("sum", datacol, na.rm = TRUE),
-        stored_n = call("n")
-    )
-
-    mean_result <- conn
-    mean_result <- left_join(mean_result, tbl(db_conn, block_tbl_name), by = col_key)
-    mean_result <- group_by(mean_result, !!row_sym, !!block_sym)
-    mean_result <- summarize(mean_result, !!!mean_aggr, .groups = "drop")
-    mean_result <- collect(mean_result)
-    mean_result$stored_n <- as.integer(mean_result$stored_n)
-
-    # Pivot to matrices and compute means
     row_keyvals <- unname(row_keycol)
-    means <- matrix(0, nrow = ngenes, ncol = nblocks,
-                    dimnames = list(rnames, bnames))
-    vars <- matrix(0, nrow = ngenes, ncol = nblocks,
-                   dimnames = list(rnames, bnames))
 
-    # First compute all means (needed for pass 2)
-    for (b in seq_len(nblocks)) {
-        block_name <- levels(block)[b]
-        block_n <- block_ncells[b]
-        block_result <- mean_result[mean_result$block_id == block_name, , drop = FALSE]
-        row_idx <- match(block_result[[row_key]], row_keyvals)
-
-        stored_sum <- rep(fill * block_n, ngenes)
-        stored_sum[row_idx] <- block_result$stored_sum +
-            fill * (block_n - block_result$stored_n)
-        means[, b] <- stored_sum / block_n
-    }
-
-    # Pass 2: Compute sum of squared deviations using two-pass algorithm
-    # Create mean lookup table for SQL join
-    mean_lookup <- data.frame(
-        row_key = rep(row_keyvals, nblocks),
-        block_id = rep(levels(block), each = ngenes),
-        gene_mean = as.vector(means),
-        stringsAsFactors = FALSE
+    stats <- .fused_group_variance_stats(
+        conn, db_conn, row_key, col_key, datacol, block_df, "block_id",
+        col_ids = levels(block), group_sizes = block_ncells,
+        col_names = bnames, ngenes = ngenes, rnames = rnames,
+        row_keyvals = row_keyvals, fill = fill,
+        inner = FALSE, skip_empty_groups = FALSE
     )
-    names(mean_lookup)[1L] <- row_key
 
-    # Register mean_lookup as temporary table (OPTIMIZATION: zero-copy)
-    mean_tbl_name <- .register_temp_table(db_conn, mean_lookup, "means")
-    temp_tables <- c(temp_tables, mean_tbl_name)
-
-    # SQL: compute sum of (x - mean)^2 per gene per block
-    dev_sq_sym <- as.name("dev_sq")
-    mean_sym <- as.name("gene_mean")
-
-    conn2 <- tblconn(ddb_table, select = FALSE)
-    conn2 <- left_join(conn2, tbl(db_conn, block_tbl_name), by = col_key)
-    conn2 <- left_join(conn2, tbl(db_conn, mean_tbl_name), by = c(row_key, "block_id"))
-
-    # Compute (x - mean)^2
-    dev_sq_expr <- list(dev_sq = call("*",
-                                      call("-", datacol, mean_sym),
-                                      call("-", datacol, mean_sym)))
-    conn2 <- mutate(conn2, !!!dev_sq_expr)
-
-    # Sum squared deviations per gene per block
-    var_aggr <- list(
-        sum_dev_sq = call("sum", dev_sq_sym, na.rm = TRUE),
-        stored_n = call("n")
-    )
-    var_result <- group_by(conn2, !!row_sym, !!block_sym)
-    var_result <- summarize(var_result, !!!var_aggr, .groups = "drop")
-    var_result <- collect(var_result)
-    var_result$stored_n <- as.integer(var_result$stored_n)
-
-    # Compute variances with fill value contribution
-    for (b in seq_len(nblocks)) {
-        block_name <- levels(block)[b]
-        block_n <- block_ncells[b]
-
-        if (block_n <= 1L) {
-            vars[, b] <- NA_real_
-            next
-        }
-
-        block_var_result <- var_result[var_result$block_id == block_name, , drop = FALSE]
-        row_idx <- match(block_var_result[[row_key]], row_keyvals)
-
-        # Initialize with fill value contribution
-        # For genes not in result, all values are fill, so variance contribution is 0
-        # (fill - mean)^2 * n, but mean = fill when all values are fill
-        gene_mean <- means[, b]
-        n_fill <- block_n  # Start with all fill values
-        sum_dev_sq <- (fill - gene_mean)^2 * n_fill
-
-        # Update with actual data
-        if (nrow(block_var_result) > 0L) {
-            actual_n <- block_var_result$stored_n
-            actual_sum_dev_sq <- block_var_result$sum_dev_sq
-            n_fill_actual <- block_n - actual_n
-
-            # Total sum of squared deviations =
-            #   sum_dev_sq from actual values + (fill - mean)^2 * n_fill
-            sum_dev_sq[row_idx] <- actual_sum_dev_sq +
-                (fill - gene_mean[row_idx])^2 * n_fill_actual
-        }
-
-        # Sample variance with Bessel's correction
-        vars[, b] <- sum_dev_sq / (block_n - 1L)
-    }
-
-    list(means = means, vars = vars, ncells = block_ncells)
+    list(means = stats$means, vars = stats$vars, ncells = block_ncells)
 }
 
-# Compute per-gene means and variances by group (for t-tests)
-# Uses numerically stable two-pass algorithm:
-#   Pass 1: Compute means
-#   Pass 2: Compute sum of squared deviations from mean
-# OPTIMIZATION: Uses duckdb_register for zero-copy joins instead of copy = TRUE
+# Compute per-gene means and variances by group (for t-tests).
+# Backs pairwiseTTests()/findMarkers(). Delegates to the shared fused
+# single-pass primitive, `.fused_group_variance_stats()` (see above
+# `.compute_blocked_stats_DuckDBMatrix` for the algorithm derivation).
 #' @importFrom DuckDBDataFrame tblconn
-#' @importFrom dplyr collect filter group_by left_join mutate summarize tbl
 #' @importFrom stats setNames
 .compute_group_stats_DuckDBMatrix <-
 function(x, groups, block = NULL, subset.row = NULL)
@@ -595,125 +595,27 @@ function(x, groups, block = NULL, subset.row = NULL)
 
     conn <- tblconn(ddb_table, select = FALSE)
     db_conn <- conn$src$con
-    row_sym <- as.name(row_key)
-    group_sym <- as.name("group_id")
-
-    # Register group_df as temporary table (OPTIMIZATION: zero-copy)
-    group_tbl_name <- .register_temp_table(db_conn, group_df, "group")
-    temp_tables <- group_tbl_name
-    on.exit(.unregister_temp_tables(db_conn, temp_tables), add = TRUE)
-
-    # Pass 1: Compute means per gene per group
-    mean_aggr <- list(
-        stored_sum = call("sum", datacol, na.rm = TRUE),
-        stored_n = call("n")
-    )
-
-    mean_result <- conn
-    mean_result <- filter(mean_result, !!as.name(col_key) %in% local(group_df[[col_key]]))
-    mean_result <- left_join(mean_result, tbl(db_conn, group_tbl_name), by = col_key)
-    mean_result <- group_by(mean_result, !!row_sym, !!group_sym)
-    mean_result <- summarize(mean_result, !!!mean_aggr, .groups = "drop")
-    mean_result <- collect(mean_result)
-    mean_result$stored_n <- as.integer(mean_result$stored_n)
-
-    # Pivot to matrices and compute means
     row_keyvals <- unname(row_keycol)
-    means <- matrix(NA_real_, nrow = ngenes, ncol = length(combined_levels),
-                    dimnames = list(rnames, combined_levels))
-    vars <- matrix(NA_real_, nrow = ngenes, ncol = length(combined_levels),
-                   dimnames = list(rnames, combined_levels))
 
-    # First compute all means (needed for pass 2)
-    for (g in combined_levels) {
-        group_n <- group_sizes[g]
-        if (group_n == 0L) next
-
-        group_mean_result <- mean_result[mean_result$group_id == g, , drop = FALSE]
-        row_idx <- match(group_mean_result[[row_key]], row_keyvals)
-
-        stored_sum <- rep(fill * group_n, ngenes)
-        if (nrow(group_mean_result) > 0L) {
-            stored_sum[row_idx] <- group_mean_result$stored_sum +
-                fill * (group_n - group_mean_result$stored_n)
-        }
-        means[, g] <- stored_sum / group_n
-    }
-
-    # Pass 2: Compute sum of squared deviations using two-pass algorithm
-    # Create mean lookup table for SQL join
-    mean_lookup <- data.frame(
-        row_key = rep(row_keyvals, length(combined_levels)),
-        group_id = rep(combined_levels, each = ngenes),
-        gene_mean = as.vector(means),
-        stringsAsFactors = FALSE
+    # group_df already contains exactly the cells with a non-NA group
+    # assignment, so an inner join on it is equivalent to the historical
+    # filter(col_key %in% group_df[[col_key]]) |> left_join(...): no row can
+    # pass that filter without also matching group_df, so the inner join
+    # subsumes it (and avoids ever materializing a large literal IN (...)
+    # list in the generated SQL).
+    stats <- .fused_group_variance_stats(
+        conn, db_conn, row_key, col_key, datacol, group_df, "group_id",
+        col_ids = combined_levels, group_sizes = group_sizes,
+        col_names = combined_levels, ngenes = ngenes, rnames = rnames,
+        row_keyvals = row_keyvals, fill = fill,
+        inner = TRUE, skip_empty_groups = TRUE
     )
-    names(mean_lookup)[1L] <- row_key
-
-    # Register mean_lookup as temporary table (OPTIMIZATION: zero-copy)
-    mean_tbl_name <- .register_temp_table(db_conn, mean_lookup, "means")
-    temp_tables <- c(temp_tables, mean_tbl_name)
-
-    # SQL: compute sum of (x - mean)^2 per gene per group
-    dev_sq_sym <- as.name("dev_sq")
-    mean_sym <- as.name("gene_mean")
-
-    conn2 <- tblconn(ddb_table, select = FALSE)
-    conn2 <- filter(conn2, !!as.name(col_key) %in% local(group_df[[col_key]]))
-    conn2 <- left_join(conn2, tbl(db_conn, group_tbl_name), by = col_key)
-    conn2 <- left_join(conn2, tbl(db_conn, mean_tbl_name), by = c(row_key, "group_id"))
-
-    # Compute (x - mean)^2
-    dev_sq_expr <- list(dev_sq = call("*",
-                                      call("-", datacol, mean_sym),
-                                      call("-", datacol, mean_sym)))
-    conn2 <- mutate(conn2, !!!dev_sq_expr)
-
-    # Sum squared deviations per gene per group
-    var_aggr <- list(
-        sum_dev_sq = call("sum", dev_sq_sym, na.rm = TRUE),
-        stored_n = call("n")
-    )
-    var_result <- group_by(conn2, !!row_sym, !!group_sym)
-    var_result <- summarize(var_result, !!!var_aggr, .groups = "drop")
-    var_result <- collect(var_result)
-    var_result$stored_n <- as.integer(var_result$stored_n)
-
-    # Compute variances with fill value contribution
-    for (g in combined_levels) {
-        group_n <- group_sizes[g]
-        if (group_n == 0L || group_n <= 1L) {
-            vars[, g] <- NA_real_
-            next
-        }
-
-        group_var_result <- var_result[var_result$group_id == g, , drop = FALSE]
-        row_idx <- match(group_var_result[[row_key]], row_keyvals)
-
-        # Initialize with fill value contribution
-        gene_mean <- means[, g]
-        n_fill <- group_n
-        sum_dev_sq <- (fill - gene_mean)^2 * n_fill
-
-        # Update with actual data
-        if (nrow(group_var_result) > 0L) {
-            actual_n <- group_var_result$stored_n
-            actual_sum_dev_sq <- group_var_result$sum_dev_sq
-            n_fill_actual <- group_n - actual_n
-
-            sum_dev_sq[row_idx] <- actual_sum_dev_sq +
-                (fill - gene_mean[row_idx])^2 * n_fill_actual
-        }
-
-        # Sample variance with Bessel's correction
-        vars[, g] <- sum_dev_sq / (group_n - 1L)
-    }
 
     if (is.null(block)) {
-        list(means = means, vars = vars, ncells = group_sizes)
+        list(means = stats$means, vars = stats$vars, ncells = group_sizes)
     } else {
         # Reshape into block structure
-        list(means = means, vars = vars, ncells = group_sizes,
+        list(means = stats$means, vars = stats$vars, ncells = group_sizes,
              ngroups = ngroups, nblocks = nblocks, group_levels = group_levels)
     }
 }
@@ -1981,10 +1883,13 @@ function(x.means, x.vars, fit.means, fit.vars, ncells, ...)
 ###
 
 # Compute per-gene means and variances on size-factor normalized data
-# Uses two-pass algorithm with size factor normalization incorporated in SQL
-# OPTIMIZATION: Uses duckdb_register for zero-copy joins instead of copy = TRUE
+# (operates on the derived column value/sf). Backs modelGeneCV2(). Delegates
+# to the shared fused single-pass primitive, `.fused_group_variance_stats()`
+# (see above `.compute_blocked_stats_DuckDBMatrix` for the algorithm
+# derivation); the normalization division is folded in as a `mutate_expr`
+# applied inside the same single GROUP BY query, so there is still only one
+# physical table scan.
 #' @importFrom DuckDBDataFrame tblconn
-#' @importFrom dplyr collect filter group_by left_join mutate summarize tbl
 #' @importFrom stats setNames
 .compute_blocked_stats_normalized_DuckDBMatrix <-
 function(x, size.factors, block = NULL, subset.row = NULL)
@@ -2011,7 +1916,6 @@ function(x, size.factors, block = NULL, subset.row = NULL)
     block_info <- .prepare_block_factor(block, ncells)
     block <- block_info$block
     bnames <- block_info$bnames
-    nblocks <- block_info$nblocks
     block_ncells <- block_info$block_ncells
 
     # Create block and size factor assignment data frame
@@ -2025,130 +1929,25 @@ function(x, size.factors, block = NULL, subset.row = NULL)
 
     conn <- tblconn(ddb_table, select = FALSE)
     db_conn <- conn$src$con
-    row_sym <- as.name(row_key)
-    block_sym <- as.name("block_id")
-    sf_sym <- as.name("sf")
-
-    # Register sf_df as temporary table (OPTIMIZATION: zero-copy)
-    sf_tbl_name <- .register_temp_table(db_conn, sf_df, "sf")
-    temp_tables <- sf_tbl_name
-    on.exit(.unregister_temp_tables(db_conn, temp_tables), add = TRUE)
-
-    # Compute normalized value: value / sf
-    norm_val_expr <- list(norm_val = call("/", datacol, sf_sym))
-
-    # Pass 1: Compute means of normalized values per gene per block
-    mean_aggr <- list(
-        stored_sum = call("sum", as.name("norm_val"), na.rm = TRUE),
-        stored_n = call("n")
-    )
-
-    mean_result <- conn
-    mean_result <- left_join(mean_result, tbl(db_conn, sf_tbl_name), by = col_key)
-    mean_result <- mutate(mean_result, !!!norm_val_expr)
-    mean_result <- group_by(mean_result, !!row_sym, !!block_sym)
-    mean_result <- summarize(mean_result, !!!mean_aggr, .groups = "drop")
-    mean_result <- collect(mean_result)
-    mean_result$stored_n <- as.integer(mean_result$stored_n)
-
-    # Pivot to matrices and compute means
     row_keyvals <- unname(row_keycol)
-    means <- matrix(0, nrow = ngenes, ncol = nblocks,
-                    dimnames = list(rnames, bnames))
-    vars <- matrix(0, nrow = ngenes, ncol = nblocks,
-                   dimnames = list(rnames, bnames))
 
-    # Normalized fill value (fill / mean(sf) approximately, but we use 0 for sparse)
+    # Normalized fill value for the implicit "fill" population: since each
+    # missing cell's true size factor is unknown, approximate with the mean
+    # size factor across all cells (matches the historical implementation).
     norm_fill <- fill / mean(size.factors)
 
-    # First compute all means (needed for pass 2)
-    for (b in seq_len(nblocks)) {
-        block_name <- levels(block)[b]
-        block_n <- block_ncells[b]
-        block_result <- mean_result[mean_result$block_id == block_name, , drop = FALSE]
-        row_idx <- match(block_result[[row_key]], row_keyvals)
+    # Compute normalized value (value / sf) as part of the single fused query.
+    mutate_expr <- list(norm_val = call("/", datacol, as.name("sf")))
 
-        stored_sum <- rep(norm_fill * block_n, ngenes)
-        if (nrow(block_result) > 0L) {
-            stored_sum[row_idx] <- block_result$stored_sum +
-                norm_fill * (block_n - block_result$stored_n)
-        }
-        means[, b] <- stored_sum / block_n
-    }
-
-    # Pass 2: Compute sum of squared deviations using two-pass algorithm
-    # Create mean lookup table for SQL join
-    mean_lookup <- data.frame(
-        row_key = rep(row_keyvals, nblocks),
-        block_id = rep(levels(block), each = ngenes),
-        gene_mean = as.vector(means),
-        stringsAsFactors = FALSE
+    stats <- .fused_group_variance_stats(
+        conn, db_conn, row_key, col_key, as.name("norm_val"), sf_df, "block_id",
+        col_ids = levels(block), group_sizes = block_ncells,
+        col_names = bnames, ngenes = ngenes, rnames = rnames,
+        row_keyvals = row_keyvals, fill = norm_fill,
+        inner = FALSE, mutate_expr = mutate_expr, skip_empty_groups = FALSE
     )
-    names(mean_lookup)[1L] <- row_key
 
-    # Register mean_lookup as temporary table (OPTIMIZATION: zero-copy)
-    mean_tbl_name <- .register_temp_table(db_conn, mean_lookup, "means")
-    temp_tables <- c(temp_tables, mean_tbl_name)
-
-    # SQL: compute sum of (norm_val - mean)^2 per gene per block
-    dev_sq_sym <- as.name("dev_sq")
-    mean_sym <- as.name("gene_mean")
-    norm_val_sym <- as.name("norm_val")
-
-    conn2 <- tblconn(ddb_table, select = FALSE)
-    conn2 <- left_join(conn2, tbl(db_conn, sf_tbl_name), by = col_key)
-    conn2 <- mutate(conn2, !!!norm_val_expr)
-    conn2 <- left_join(conn2, tbl(db_conn, mean_tbl_name), by = c(row_key, "block_id"))
-
-    # Compute (norm_val - mean)^2
-    dev_sq_expr <- list(dev_sq = call("*",
-                                      call("-", norm_val_sym, mean_sym),
-                                      call("-", norm_val_sym, mean_sym)))
-    conn2 <- mutate(conn2, !!!dev_sq_expr)
-
-    # Sum squared deviations per gene per block
-    var_aggr <- list(
-        sum_dev_sq = call("sum", dev_sq_sym, na.rm = TRUE),
-        stored_n = call("n")
-    )
-    var_result <- group_by(conn2, !!row_sym, !!block_sym)
-    var_result <- summarize(var_result, !!!var_aggr, .groups = "drop")
-    var_result <- collect(var_result)
-    var_result$stored_n <- as.integer(var_result$stored_n)
-
-    # Compute variances with fill value contribution
-    for (b in seq_len(nblocks)) {
-        block_name <- levels(block)[b]
-        block_n <- block_ncells[b]
-
-        if (block_n <= 1L) {
-            vars[, b] <- NA_real_
-            next
-        }
-
-        block_var_result <- var_result[var_result$block_id == block_name, , drop = FALSE]
-        row_idx <- match(block_var_result[[row_key]], row_keyvals)
-
-        # Initialize with fill value contribution
-        gene_mean <- means[, b]
-        n_fill <- block_n
-        sum_dev_sq <- (norm_fill - gene_mean)^2 * n_fill
-
-        # Update with actual data
-        if (nrow(block_var_result) > 0L) {
-            actual_n <- block_var_result$stored_n
-            actual_sum_dev_sq <- block_var_result$sum_dev_sq
-            n_fill_actual <- block_n - actual_n
-
-            sum_dev_sq[row_idx] <- actual_sum_dev_sq +
-                (norm_fill - gene_mean[row_idx])^2 * n_fill_actual
-        }
-
-        # Sample variance with Bessel's correction
-        vars[, b] <- sum_dev_sq / (block_n - 1L)
-    }
-
-    list(means = means, vars = vars, ncells = block_ncells)
+    list(means = stats$means, vars = stats$vars, ncells = block_ncells)
 }
 
 #' @export
@@ -2786,16 +2585,18 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     col_keycol <- meta$col_keycol
     datacol <- meta$datacol
 
-    # Compute row statistics: sum, sum_sq for each gene
-    row_stats <- .compute_row_stats_for_cor(table, row_key, datacol)
+    # Compute row statistics: n, sum, and DuckDB's native VAR_SAMP for each
+    # gene, over the explicitly-stored cells only.
+    row_stats <- .compute_row_stats_for_cor(table, row_key, datacol, row_keycol)
 
-    # Compute pairwise sum of products via self-join
+    # Compute pairwise "both explicitly stored" statistics via self-join:
+    # n11, the two sub-sums, and DuckDB's native COVAR_SAMP.
     pair_stats <- .compute_pair_products(table, row_key, col_key, datacol,
                                          pairings, row_keycol)
 
-    # Compute correlations using sparse-aware formula
-    result <- .compute_sparse_pearson(row_stats, pair_stats, row_key,
-                                       row_keycol, ncells, pairings)
+    # Compute correlations using a numerically-stable sparse-aware formula
+    result <- .compute_sparse_pearson(row_stats, pair_stats,
+                                       row_keycol, ncells, pairings, fill)
 
     # Format output
     if (use.names && !is.null(rnames)) {
@@ -2808,25 +2609,48 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
 
 #' @importFrom dplyr collect group_by summarize
 #' @importFrom DuckDBDataFrame tblconn
-.compute_row_stats_for_cor <- function(table, row_key, datacol)
+.compute_row_stats_for_cor <- function(table, row_key, datacol, row_keycol)
 {
     # Use select = TRUE to get the transformed datacol values
     conn <- tblconn(table)
     row_sym <- as.name(row_key)
     datacol_name <- as.name(names(table@datacols)[1L])
 
-    # Compute sum and sum of squares per gene
+    # Per-gene statistics over the EXPLICITLY STORED cells only: n (count),
+    # sum_val (SUM), and S2 (DuckDB's native, numerically stable VAR_SAMP).
+    # Deliberately NOT SUM(value * value): see the long comment above
+    # .compute_sparse_pearson() for why that raw-moment formula is unsafe.
     aggr <- list(
+        n = call("n"),
         sum_val = call("sum", datacol_name, na.rm = TRUE),
-        sum_sq = call("sum", call("*", datacol_name, datacol_name), na.rm = TRUE)
+        S2 = call("coalesce", call("var_samp", datacol_name), 0)
     )
 
     result <- conn
     result <- group_by(result, !!row_sym)
     result <- summarize(result, !!!aggr, .groups = "drop")
     result <- collect(result)
+    result <- as.data.frame(result)
 
-    as.data.frame(result)
+    # GOTCHA (same as .fused_group_variance_stats()): DuckDB returns
+    # COUNT(*)/n() as bit64::integer64 via collect(). Cast to double before
+    # any arithmetic, or downstream arithmetic silently goes wrong.
+    result$n <- as.double(result$n)
+    names(result)[names(result) == row_key] <- "gene"
+
+    # A gene with ZERO explicitly-stored cells (an all-fill/all-zero row)
+    # never produces a group in a GROUP BY result. Reindex over the full
+    # requested gene set so every gene has a row (n = 0, sum_val = 0,
+    # S2 = 0); the mean/variance formulas in .compute_sparse_pearson()
+    # handle n = 0 correctly (the gene is then just a constant at `fill`).
+    all_genes <- unname(row_keycol)
+    missing_genes <- setdiff(all_genes, result$gene)
+    if (length(missing_genes) > 0L) {
+        result <- rbind(result, data.frame(gene = missing_genes, n = 0,
+                                           sum_val = 0, S2 = 0))
+    }
+
+    result
 }
 
 #' @importFrom dplyr collect group_by summarize sql
@@ -2837,10 +2661,17 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     # Use select = TRUE to get the transformed datacol values
     conn <- tblconn(table)
 
-    # Build self-join query for pairwise products
-    # SELECT a.gene as gene1, b.gene as gene2, SUM(a.value * b.value) as sum_prod
-    # FROM data a JOIN data b ON a.cell = b.cell AND a.gene < b.gene
-    # GROUP BY a.gene, b.gene
+    # Build self-join query for the "both genes explicitly stored at this
+    # cell" population (the only one of the 4 sparse sub-populations used
+    # by .compute_sparse_pearson() that requires an actual join):
+    #   SELECT a.gene AS gene1, b.gene AS gene2,
+    #          COUNT(*) AS n11,
+    #          SUM(a.value) AS sumA11, SUM(b.value) AS sumB11,
+    #          COVAR_SAMP(a.value, b.value) AS cov11
+    #   FROM data a JOIN data b ON a.cell = b.cell AND a.gene < b.gene
+    #   GROUP BY a.gene, b.gene
+    # COVAR_SAMP() is DuckDB's own numerically stable covariance aggregate
+    # (never a hand-rolled SUM(a.value * b.value) raw cross-product).
 
     # Get underlying connection
     db_conn <- conn$src$con
@@ -2848,17 +2679,21 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     # Build SQL directly for self-join (dbplyr doesn't handle self-joins well)
     # Get the SQL for the base table
     base_sql <- dbplyr::sql_render(conn)
+    datacol_name <- names(table@datacols)[1L]
 
     if (is.null(pairings)) {
         # All pairs
         query <- sprintf("
             SELECT a.\"%s\" as gene1, b.\"%s\" as gene2,
-                   SUM(a.\"%s\" * b.\"%s\") as sum_prod
+                   COUNT(*) as n11,
+                   SUM(a.\"%s\") as sumA11,
+                   SUM(b.\"%s\") as sumB11,
+                   COVAR_SAMP(a.\"%s\", b.\"%s\") as cov11
             FROM (%s) a
             JOIN (%s) b ON a.\"%s\" = b.\"%s\" AND a.\"%s\" < b.\"%s\"
             GROUP BY a.\"%s\", b.\"%s\"
         ", row_key, row_key,
-           names(table@datacols)[1L], names(table@datacols)[1L],
+           datacol_name, datacol_name, datacol_name, datacol_name,
            base_sql, base_sql,
            col_key, col_key, row_key, row_key,
            row_key, row_key)
@@ -2877,7 +2712,10 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
         query <- sprintf("
             WITH pairs AS (SELECT * FROM (VALUES %s) AS t(g1, g2))
             SELECT a.\"%s\" as gene1, b.\"%s\" as gene2,
-                   SUM(a.\"%s\" * b.\"%s\") as sum_prod
+                   COUNT(*) as n11,
+                   SUM(a.\"%s\") as sumA11,
+                   SUM(b.\"%s\") as sumB11,
+                   COVAR_SAMP(a.\"%s\", b.\"%s\") as cov11
             FROM (%s) a
             JOIN (%s) b ON a.\"%s\" = b.\"%s\"
             JOIN pairs p ON (a.\"%s\" = p.g1 AND b.\"%s\" = p.g2)
@@ -2886,7 +2724,7 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
             GROUP BY a.\"%s\", b.\"%s\"
         ", pairs_values,
            row_key, row_key,
-           names(table@datacols)[1L], names(table@datacols)[1L],
+           datacol_name, datacol_name, datacol_name, datacol_name,
            base_sql, base_sql,
            col_key, col_key,
            row_key, row_key, row_key, row_key,
@@ -2895,74 +2733,152 @@ function(x, subset.row = NULL, pairings = NULL, use.names = TRUE,
     }
 
     result <- DBI::dbGetQuery(db_conn, query)
-    as.data.frame(result)
+    result <- as.data.frame(result)
+
+    # GOTCHA (same as elsewhere in this file): BIGINT COUNT(*) comes back
+    # as bit64::integer64 from a raw DBI query too. Cast before arithmetic.
+    result$n11 <- as.double(result$n11)
+
+    result
 }
 
 #' @importFrom stats pt p.adjust
-.compute_sparse_pearson <- function(row_stats, pair_stats, row_key,
-                                     row_keycol, ncells, pairings)
+#
+# .compute_sparse_pearson(): numerically-stable sparse Pearson correlation.
+#
+# HISTORY / WHY THE OLD FORMULA WAS UNSAFE:
+# The original implementation computed, per gene, a raw-moment pair
+# (sum(x), sum(x^2)) and, per gene pair, a raw cross-product sum
+# sum(x * y) over the explicitly-stored cells, then recovered
+# sum-of-squared-deviations and sum-of-cross-product-deviations via
+#   SS  = sum(x^2) - sum(x)^2 / k
+#   num = sum(x*y) - sum(x) * sum(y) / k
+# This is the textbook "naive"/two-pass-avoiding formula for variance and
+# covariance, and it is well known to be numerically unstable: when the
+# data sit far from zero (large counts, pseudobulk sums, intensities, or
+# just a nonzero `fill`), sum(x^2) and sum(x)^2/k are each huge and nearly
+# equal, so their difference (the true, much smaller, sum of squared
+# deviations) is computed as the difference of two large floating-point
+# numbers -- catastrophic cancellation. In production this measurably
+# produced |rho| > 1 and even NaN (from SS going NEGATIVE, which is
+# mathematically impossible for a true sum of squared deviations) on
+# realistic large-magnitude input. At small/log-normalized scale the old
+# formula was fine, which is exactly what made this dangerous: it shipped
+# silently wrong numbers only outside the regime the existing tests
+# happened to exercise.
+#
+# THE STABLE REPLACEMENT:
+# For a gene pair (A, B), partition the k cells into 4 disjoint
+# populations by which of A/B has an EXPLICITLY STORED (non-fill) value
+# at that cell:
+#   11 = both stored      10 = A stored, B implicit (fill)
+#   01 = A implicit, B stored      00 = both implicit (fill)
+# The classic ANOVA-style decomposition of a cross-product sum into
+# within-group + between-group pieces (the covariance generalization of
+# the Chan et al. parallel-variance-combination identity; see
+# https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance) gives
+#
+#   Sum[(x - mu1)(y - mu2)] over k  =  Sum_g C_g
+#                      + Sum_g n_g * (xbar_g - mu1) * (ybar_g - mu2)
+#
+# where C_g = Sum[(x - xbar_g)(y - ybar_g)] within group g, and mu1/mu2
+# are the TRUE overall means over all k cells (stored + implicit), derived
+# per-gene using the same stable Chan-et-al. fill-correction already used
+# for modelGeneVar()/modelGeneVarByPoisson() (.fused_group_variance_stats()
+# above): split into the n explicitly-stored cells (whose variance comes
+# straight from DuckDB's native VAR_SAMP) and the (k - n) implicit cells
+# pinned at the known constant `fill`.
+#
+# Three of the four C_g are EXACTLY ZERO: group 10 has gene B pinned at
+# the constant `fill` for every cell in it, so gene B's within-group
+# deviation is identically 0 there (and symmetrically for group 01's gene
+# A); group 00 is pinned at `fill` for BOTH genes. Only C_11 -- the
+# explicitly-stored/explicitly-stored population -- can be nonzero, and it
+# comes straight from DuckDB's native COVAR_SAMP() over a real inner join
+# (.compute_pair_products() above). No raw SUM(x * y) is ever computed,
+# and no term below is ever a difference of two large near-equal numbers:
+# every cross term is a count times a difference of two already-stable
+# means, exactly the same algebraic shape already validated for the
+# variance fix.
+.compute_sparse_pearson <- function(row_stats, pair_stats,
+                                     row_keycol, ncells, pairings, fill = 0)
 {
     k <- as.numeric(ncells)
 
-    # Create lookup for row stats
-    row_stats_lookup <- row_stats
-    names(row_stats_lookup)[names(row_stats_lookup) == row_key] <- "gene"
+    # ---- Per-gene true mean/SS over ALL k cells (stored + implicit) ----
+    rs <- row_stats
+    rs$mu <- (rs$sum_val + fill * (k - rs$n)) / k
+    ybar <- ifelse(rs$n > 0, rs$sum_val / rs$n, fill)
+    rs$SS <- (rs$n - 1) * rs$S2 + rs$n * (ybar - rs$mu)^2 +
+        (k - rs$n) * (fill - rs$mu)^2
+    rs <- rs[, c("gene", "n", "sum_val", "mu", "SS")]
 
-    # If no pairs found (all genes have disjoint non-zeros), create all pairs
-    if (nrow(pair_stats) == 0L) {
-        if (is.null(pairings)) {
-            # Generate all pairs
-            genes <- row_keycol
-            n <- length(genes)
-            pairs <- expand.grid(gene1 = genes, gene2 = genes)
-            pairs <- pairs[pairs$gene1 < pairs$gene2, , drop = FALSE]
-            pair_stats <- data.frame(gene1 = pairs$gene1, gene2 = pairs$gene2,
-                                     sum_prod = 0)
-        } else {
-            # Use specified pairings with sum_prod = 0
-            pair_stats <- data.frame(gene1 = pairings[, 1], gene2 = pairings[, 2],
-                                     sum_prod = 0)
-        }
-    }
-
-    # Handle missing pairs (genes with no overlapping non-zeros)
+    # ---- Full pair skeleton, independent of which pairs the join query
+    # ---- happened to return a row for (see below) ----
     if (is.null(pairings)) {
-        genes <- unique(c(pair_stats$gene1, pair_stats$gene2))
-        all_genes <- row_keycol
-        genes <- all_genes[all_genes %in% row_stats_lookup$gene]
-        n <- length(genes)
-
-        # Check if all pairs are present
-        expected_pairs <- n * (n - 1L) / 2L
-        if (nrow(pair_stats) < expected_pairs) {
-            # Add missing pairs with sum_prod = 0
-            existing <- paste(pair_stats$gene1, pair_stats$gene2, sep = "_")
-            all_pairs <- expand.grid(gene1 = genes, gene2 = genes)
-            all_pairs <- all_pairs[all_pairs$gene1 < all_pairs$gene2, , drop = FALSE]
-            all_pairs$key <- paste(all_pairs$gene1, all_pairs$gene2, sep = "_")
-            missing <- all_pairs[!all_pairs$key %in% existing, c("gene1", "gene2")]
-            if (nrow(missing) > 0L) {
-                missing$sum_prod <- 0
-                pair_stats <- rbind(pair_stats, missing)
-            }
+        genes <- unname(row_keycol)
+        all_pairs <- expand.grid(gene1 = genes, gene2 = genes)
+        all_pairs <- all_pairs[all_pairs$gene1 < all_pairs$gene2, , drop = FALSE]
+    } else {
+        if (is.character(pairings)) {
+            pairings <- matrix(match(pairings, names(row_keycol)), ncol = 2)
         }
+        keyed <- matrix(row_keycol[pairings], ncol = 2)
+        all_pairs <- data.frame(gene1 = pmin(keyed[, 1], keyed[, 2]),
+                                gene2 = pmax(keyed[, 1], keyed[, 2]))
     }
 
-    # Merge row stats for gene1 and gene2
+    # A gene pair with NO overlapping explicitly-stored cells at all (e.g.
+    # fully disjoint supports) produces no row in the INNER JOIN behind
+    # pair_stats. left-join onto the full pair skeleton and treat those as
+    # n11 = 0 -- the group-11 population is simply empty for that pair,
+    # which every formula below already handles without special-casing.
+    pair_stats <- merge(all_pairs, pair_stats, by = c("gene1", "gene2"),
+                        all.x = TRUE)
+    pair_stats$n11[is.na(pair_stats$n11)] <- 0
+    pair_stats$sumA11[is.na(pair_stats$sumA11)] <- 0
+    pair_stats$sumB11[is.na(pair_stats$sumB11)] <- 0
+    # cov11 is left NA for n11 < 2 (COVAR_SAMP is undefined there); every
+    # use of cov11 below is guarded by n11 >= 2 so the NA never surfaces.
+
     pair_stats <- merge(pair_stats,
-                        setNames(row_stats_lookup, c("gene1", "sum1", "sum_sq1")),
+                        setNames(rs, c("gene1", "n1", "sum1", "mu1", "SS1")),
                         by = "gene1", all.x = TRUE)
     pair_stats <- merge(pair_stats,
-                        setNames(row_stats_lookup, c("gene2", "sum2", "sum_sq2")),
+                        setNames(rs, c("gene2", "n2", "sum2", "mu2", "SS2")),
                         by = "gene2", all.x = TRUE)
 
-    # Compute Pearson correlation using sparse formula:
-    # r = (sum_prod - sum1 * sum2 / k) / sqrt(SS1 * SS2)
-    # where SS = sum_sq - sum^2 / k
-    pair_stats$SS1 <- pair_stats$sum_sq1 - pair_stats$sum1^2 / k
-    pair_stats$SS2 <- pair_stats$sum_sq2 - pair_stats$sum2^2 / k
+    # ---- Fold in the 10/01/00 populations analytically (see header) ----
+    n11 <- pair_stats$n11
+    n10 <- pair_stats$n1 - n11
+    n01 <- pair_stats$n2 - n11
+    n00 <- k - pair_stats$n1 - pair_stats$n2 + n11
 
-    numerator <- pair_stats$sum_prod - pair_stats$sum1 * pair_stats$sum2 / k
+    sumA10 <- pair_stats$sum1 - pair_stats$sumA11   # ybar10 == fill exactly
+    sumB01 <- pair_stats$sum2 - pair_stats$sumB11   # xbar01 == fill exactly
+
+    mu1 <- pair_stats$mu1
+    mu2 <- pair_stats$mu2
+
+    # C_11: the only possibly-nonzero within-group term. (n11 - 1) <= 0
+    # whenever cov11 is undefined (n11 < 2), so guarding on n11 >= 2 keeps
+    # that NA from ever being multiplied into the result.
+    C11 <- ifelse(n11 >= 2, (n11 - 1) * pair_stats$cov11, 0)
+
+    # Cross terms for groups 10/01/00, written as (group sum - n_g * mu)
+    # rather than n_g * (group mean - mu) so no division by a possibly-zero
+    # n_g ever appears (n_g * xbar_g IS the already-known group sum).
+    term10 <- (sumA10 - n10 * mu1) * (fill - mu2)
+    term01 <- (sumB01 - n01 * mu2) * (fill - mu1)
+    term00 <- n00 * (fill - mu1) * (fill - mu2)
+
+    # Group 11's cross term does need the actual group means; guarded on
+    # n11 > 0 so 0/0 (when n11 == 0) never poisons the ifelse() result.
+    xbar11 <- pair_stats$sumA11 / n11
+    ybar11 <- pair_stats$sumB11 / n11
+    term11 <- ifelse(n11 > 0, n11 * (xbar11 - mu1) * (ybar11 - mu2), 0)
+
+    numerator <- C11 + term10 + term01 + term00 + term11
     denominator <- sqrt(pair_stats$SS1 * pair_stats$SS2)
 
     # Handle edge cases (zero variance)

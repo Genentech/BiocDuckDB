@@ -251,7 +251,7 @@ function(x, subsets = NULL, percent.top = integer(0), threshold = 0, ...,
 })
 
 # Single-query implementation for perCellQCMetrics using JOIN approach
-#' @importFrom dplyr collect filter group_by left_join mutate summarize n
+#' @importFrom dplyr collect group_by inner_join mutate summarize n
 #' @importFrom DuckDBDataFrame keynames tblconn
 #' @importFrom S4Vectors DataFrame make_zero_col_DFrame
 .perCellQCMetrics_DuckDBMatrix <- function(x, subsets, percent.top, threshold, flatten)
@@ -371,12 +371,15 @@ function(x, subsets = NULL, percent.top = integer(0), threshold = 0, ...,
                                              na.rm = TRUE)
         }
 
-        # Filter to only rows in subsets, then join with subset membership
-        all_subset_rows <- unique(unlist(lapply(subsets, function(s) row_keyvals[s])))
-
+        # subset_df's row_key column already contains exactly the rows that
+        # belong to some subset, so an inner join on it is equivalent to (and
+        # replaces) filter(row_key %in% that same set) |> left_join(...): no
+        # row can pass that filter without also matching subset_df. This also
+        # avoids ever materializing a literal IN (...) list of row keys in
+        # the generated SQL, which does not scale to this package's
+        # million-cell benchmarks.
         subset_result <- conn |>
-            filter(!!as.name(row_key) %in% local(all_subset_rows)) |>
-            left_join(subset_df, by = row_key, copy = TRUE) |>
+            inner_join(subset_df, by = row_key, copy = TRUE) |>
             group_by(!!col_sym, !!as.name("subset_name")) |>
             summarize(!!!subset_aggr, .groups = "drop") |>
             collect()
@@ -547,7 +550,7 @@ function(x, subsets = NULL, threshold = 0, ..., flatten = TRUE) {
 })
 
 # Single-query implementation for perFeatureQCMetrics using JOIN approach
-#' @importFrom dplyr collect filter group_by left_join summarize n
+#' @importFrom dplyr collect group_by inner_join summarize n
 #' @importFrom DuckDBDataFrame keynames tblconn
 #' @importFrom S4Vectors DataFrame make_zero_col_DFrame
 .perFeatureQCMetrics_DuckDBMatrix <- function(x, subsets, threshold, flatten)
@@ -650,12 +653,12 @@ function(x, subsets = NULL, threshold = 0, ..., flatten = TRUE) {
                                              na.rm = TRUE)
         }
 
-        # Filter to only columns in subsets, then join with subset membership
-        all_subset_cols <- unique(unlist(lapply(subsets, function(s) col_keyvals[s])))
-
+        # subset_df's col_key column already contains exactly the columns
+        # that belong to some subset, so an inner join on it is equivalent to
+        # (and replaces) filter(col_key %in% that same set) |> left_join(...)
+        # (see the analogous comment in .perCellQCMetrics_DuckDBMatrix()).
         subset_result <- conn |>
-            filter(!!as.name(col_key) %in% local(all_subset_cols)) |>
-            left_join(subset_df, by = col_key, copy = TRUE) |>
+            inner_join(subset_df, by = col_key, copy = TRUE) |>
             group_by(!!row_sym, !!as.name("subset_name")) |>
             summarize(!!!subset_aggr, .groups = "drop") |>
             collect()
@@ -748,6 +751,98 @@ function(x, subset.row = NULL, pseudo.count = 1, ...) {
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Fused library-size normalization (shared by normalizeCounts(),
+### calculateAverage(), and calculateCPM() when size.factors is NULL)
+###
+
+# The common librarySizeFactors(x) -> colSums(x) -> sweep(x, 2L, ..., "/")
+# chain costs a full round trip: colSums() forces a collect() of the
+# per-cell sum into R, then sweep()'s left_join(conn, df, copy = TRUE)
+# re-uploads that small vector as a DuckDB temp table and joins it back in --
+# a second full table scan plus a temp-table upload, on top of the first
+# scan colSums() already did.
+#
+# Replace that with ONE query using two chained window functions instead of
+# a GROUP BY + R round trip + join:
+#
+#   size_factor_c = colsum_c / global_denom
+#   normalized    = value / size_factor_c = value * global_denom / colsum_c
+#
+# where colsum_c = SUM(value) OVER (PARTITION BY cell) and global_denom is
+# either a literal constant (calculateCPM()'s 1e6) or the mean library size
+# across all cells (normalizeCounts()/calculateAverage()'s
+# SUM(value) OVER () / ncells). This compiles to a single physical plan
+# scanning the base table once, with the two window aggregates computed
+# alongside it -- no join, no temp-table upload, no R-side collect() of the
+# per-cell sums.
+#
+# Requires fill == 0, mirroring sweep()'s own hard requirement for the same
+# architectural reason: a DuckDBMatrix's "fill" is a single scalar shared by
+# every absent cell, but dividing by a per-cell size factor would turn a
+# nonzero fill into a *different* normalized value in every column, which
+# the seed's single-scalar fill slot cannot represent. This is not a new
+# restriction introduced by the fusion: the two-pass chain it replaces
+# already failed on a nonzero-fill DuckDBMatrix, because sweep() itself
+# enforces the identical requirement (confirmed empirically:
+# normalizeCounts() on a `fill != 0` DuckDBMatrix already errored with
+# "must be a zero-filled array" before this change).
+#
+# Also reproduces the na.rm = FALSE NA-guard used elsewhere in this
+# codebase (see .na_rm_guard() in DuckDBArray): librarySizeFactors()'s
+# colSums() already makes any cell containing an NA have an NA library
+# size, which poisons mean(lib.sizes) (na.rm = FALSE) and therefore every
+# size factor and every output value in the WHOLE matrix, not just that
+# cell's column (confirmed empirically against the pre-fusion
+# implementation). A single global "any NA anywhere" flag reproduces this
+# exactly, since once it's known no NA exists anywhere, no per-cell
+# distinction is needed.
+#' @importFrom DBI dbQuoteIdentifier
+#' @importFrom dbplyr translate_sql
+#' @importFrom DuckDBDataFrame keynames tblconn
+#' @importFrom dplyr mutate sql
+#' @importFrom stats setNames
+.fused_normalize_by_libsize_DuckDBMatrix <-
+function(x, mode = c("mean", "cpm"))
+{
+    mode <- match.arg(mode)
+    if (x@seed@fill != 0) {
+        stop("must be a zero-filled array")
+    }
+    table <- x@seed@table
+    if (length(table@datacols) != 1L) {
+        stop("requires a single datacol")
+    }
+    col_key <- keynames(table)[2L]
+    ncells <- ncol(x)
+
+    conn <- tblconn(table, select = FALSE)
+    db_conn <- conn$src$con
+    datacol <- table@datacols[[1L]]
+    datacol_sql <- as.character(translate_sql(!!datacol, con = db_conn))
+    col_key_sql <- as.character(dbQuoteIdentifier(db_conn, col_key))
+
+    global_denom_sql <- if (mode == "cpm") {
+        "1000000.0"
+    } else {
+        sprintf("(SUM(%s) OVER () / %s)", datacol_sql, sprintf("%.17g", ncells))
+    }
+    has_na_sql <- sprintf("BOOL_OR((%s) IS NULL) OVER ()", datacol_sql)
+    colsum_cell_sql <- sprintf("SUM(%s) OVER (PARTITION BY %s)", datacol_sql, col_key_sql)
+    normalized_sql <- sprintf(
+        "CASE WHEN %s THEN NULL ELSE (%s) * (%s) / (%s) END",
+        has_na_sql, datacol_sql, global_denom_sql, colsum_cell_sql
+    )
+
+    new_conn <- mutate(conn, normalized_value = sql(normalized_sql))
+    new_datacols <- setNames(as.expression(as.name("normalized_value")),
+                             names(table@datacols))
+    new_table <- replaceSlots(table, conn = new_conn, datacols = new_datacols,
+                              check = FALSE)
+    new_seed <- replaceSlots(x@seed, table = new_table, check = FALSE)
+    replaceSlots(x, seed = new_seed, check = FALSE)
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### normalizeCounts
 ###
 
@@ -764,11 +859,13 @@ function(x, size.factors = NULL, log = TRUE, transform = c("log", "none", "asinh
         x <- x[subset.row, , drop = FALSE]
     }
     if (is.null(size.factors)) {
-        size.factors <- librarySizeFactors(x)
-    } else if (center.size.factors) {
-        size.factors <- size.factors / mean(size.factors)
+        out <- .fused_normalize_by_libsize_DuckDBMatrix(x, mode = "mean")
+    } else {
+        if (center.size.factors) {
+            size.factors <- size.factors / mean(size.factors)
+        }
+        out <- sweep(x, 2L, size.factors, FUN = "/")
     }
-    out <- sweep(x, 2L, size.factors, FUN = "/")
     if (transform == "log" && log) {
         out <- log(out + pseudo.count) / log(2)
     } else if (transform == "asinh") {
@@ -791,11 +888,13 @@ function(x, size.factors = NULL, subset.row = NULL, ...) {
     if (!is.null(subset.row)) {
         x <- x[subset.row, , drop = FALSE]
     }
-    lib.sizes <- colSums(x) / 1e6
-    if (!is.null(size.factors)) {
+    if (is.null(size.factors)) {
+        .fused_normalize_by_libsize_DuckDBMatrix(x, mode = "cpm")
+    } else {
+        lib.sizes <- colSums(x) / 1e6
         lib.sizes <- size.factors / mean(size.factors) * mean(lib.sizes)
+        sweep(x, 2L, lib.sizes, FUN = "/")
     }
-    sweep(x, 2L, lib.sizes, FUN = "/")
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -815,15 +914,15 @@ function(x, size.factors = NULL, subset.row = NULL, BPPARAM = SerialParam(), ...
         x <- x[subset.row, , drop = FALSE]
     }
     if (is.null(size.factors)) {
-        size.factors <- librarySizeFactors(x)
+        x <- .fused_normalize_by_libsize_DuckDBMatrix(x, mode = "mean")
     } else {
         size.factors <- size.factors / mean(size.factors)
+        x <- sweep(x, 2L, size.factors, FUN = "/")
     }
     oldbp <- getAutoBPPARAM()
     setAutoBPPARAM(BPPARAM)
     on.exit(setAutoBPPARAM(oldbp))
 
-    x <- sweep(x, 2L, size.factors, FUN = "/")
     rowMeans(x)
 })
 
@@ -909,7 +1008,7 @@ function(x, lengths = NULL, size.factors = NULL, subset.row = NULL, ...) {
 
 #' @export
 #' @importClassesFrom DuckDBArray DuckDBMatrix
-#' @importFrom dplyr collect filter group_by left_join n summarize
+#' @importFrom dplyr collect group_by inner_join n summarize
 #' @importFrom DuckDBDataFrame keynames tblconn
 #' @importFrom scuttle numDetectedAcrossFeatures
 setMethod("numDetectedAcrossFeatures", "DuckDBMatrix",
@@ -944,9 +1043,12 @@ function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE,
                        call("countif", call(">", call("(", datacol), threshold))
     aggr <- list(detected = detect_expr, stored_n = call("n"))
 
+    # feature_df's row_key column already contains exactly the rows assigned
+    # to a feature group, so an inner join on it is equivalent to (and
+    # replaces) filter(row_key %in% that same set) |> left_join(...) (see the
+    # analogous comment in .perCellQCMetrics_DuckDBMatrix()).
     result <- conn |>
-        filter(!!as.name(row_key) %in% local(feature_df[[row_key]])) |>
-        left_join(feature_df[, c(row_key, feature_col)], by = row_key, copy = TRUE) |>
+        inner_join(feature_df[, c(row_key, feature_col)], by = row_key, copy = TRUE) |>
         group_by(!!as.name(feature_col), !!as.name(col_key)) |>
         summarize(!!!aggr, .groups = "drop") |>
         collect()
@@ -974,7 +1076,7 @@ function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE,
 
 #' @export
 #' @importClassesFrom DuckDBArray DuckDBMatrix
-#' @importFrom dplyr collect filter group_by left_join n summarize
+#' @importFrom dplyr collect group_by inner_join n summarize
 #' @importFrom DuckDBDataFrame keynames tblconn
 #' @importFrom scuttle sumCountsAcrossFeatures
 setMethod("sumCountsAcrossFeatures", "DuckDBMatrix",
@@ -1004,9 +1106,11 @@ function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE, ...) {
 
     aggr <- list(total = call("sum", datacol, na.rm = TRUE), stored_n = call("n"))
 
+    # See the analogous comment in numDetectedAcrossFeatures(): feature_df's
+    # row_key column is already exactly the filtered row set, so inner_join
+    # replaces filter(...) |> left_join(...).
     result <- conn |>
-        filter(!!as.name(row_key) %in% local(feature_df[[row_key]])) |>
-        left_join(feature_df[, c(row_key, feature_col)], by = row_key, copy = TRUE) |>
+        inner_join(feature_df[, c(row_key, feature_col)], by = row_key, copy = TRUE) |>
         group_by(!!as.name(feature_col), !!as.name(col_key)) |>
         summarize(!!!aggr, .groups = "drop") |>
         collect()
@@ -1034,7 +1138,7 @@ function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE, ...) {
 
 #' @export
 #' @importClassesFrom DuckDBArray DuckDBMatrix
-#' @importFrom dplyr collect filter group_by left_join n summarize
+#' @importFrom dplyr collect group_by inner_join n summarize
 #' @importFrom DuckDBDataFrame keynames tblconn
 #' @importFrom S4Vectors DataFrame
 #' @importFrom scuttle summarizeAssayByGroup
@@ -1087,9 +1191,13 @@ function(x, ids, subset.row = NULL, subset.col = NULL,
     )
     aggr <- aggr[!vapply(aggr, is.null, logical(1L))]
 
+    # group_df's col_key column already contains exactly the (valid,
+    # subset.col-filtered) columns being grouped, so an inner join on it is
+    # equivalent to (and replaces) filter(col_key %in% that same set) |>
+    # left_join(...) (see the analogous comment in
+    # .perCellQCMetrics_DuckDBMatrix()).
     result <- conn |>
-        filter(!!as.name(col_key) %in% local(group_df[[col_key]])) |>
-        left_join(group_df, by = col_key, copy = TRUE) |>
+        inner_join(group_df, by = col_key, copy = TRUE) |>
         group_by(!!as.name(row_key), !!as.name(group_col)) |>
         summarize(!!!aggr, .groups = "drop") |>
         collect()

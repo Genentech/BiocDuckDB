@@ -98,6 +98,35 @@ test_that("exceeding memory_limit falls back gracefully instead of erroring", {
     expect_true(inherits(ptr, "externalptr"))
 })
 
+test_that("the memory_limit guard uses the corrected (not the old, dangerous) bytes-per-nonzero estimate", {
+    # The guard's per-nonzero byte estimate was 16 (1 double + 2 integer
+    # keys), which assumed row_key/col_key always collect() as integers and
+    # ignored that the collected data.frame and the sparse matrix being
+    # built from it transiently coexist. Measured empirically on synthetic
+    # string- and integer-keyed COO fixtures at several sizes (see
+    # initializeCpp.R for the full derivation): 92-214 bytes/nonzero for
+    # string keys, ~120 bytes/nonzero for integer keys -- all far above 16,
+    # confirming the old estimate could silently let through a case that
+    # actually peaks several times over the configured memory_limit.
+    #
+    # This fixture's exact nnz is known from setup.R's sparse_df, so a
+    # memory_limit strictly between the old (16 bytes/nonzero) and new (256
+    # bytes/nonzero) estimates demonstrates the gap directly: the old guard
+    # would have let this case through, the new one must refuse it.
+    pqmat <- makeSparseDuckDBMatrix()
+    extract <- BiocDuckDB:::.duckdb_seed_to_sparse_matrix
+    nnz <- nrow(sparse_df)
+
+    limit <- nnz * 64
+    expect_true(nnz * 16 < limit)   # the old estimate would have passed
+    expect_true(nnz * 256 > limit)  # the corrected estimate correctly refuses
+    expect_error(extract(pqmat@seed, memory_limit = limit), "exceeds")
+
+    # A limit comfortably above the corrected estimate still succeeds (the
+    # guard still isn't a hard "always refuse", just a corrected threshold).
+    expect_no_error(extract(pqmat@seed, memory_limit = nnz * 256 * 2))
+})
+
 test_that("initializeOptions get/set round-trips", {
     old <- initializeOptions("realize")
     on.exit(initializeOptions("realize", old))
