@@ -103,7 +103,7 @@ NULL
     col_keycol <- keycols[[dim_idx[2L]]]
     datacol_name <- names(table@datacols)
 
-    conn <- tblconn(table, select = FALSE)
+    conn <- tblconn(table, select = TRUE)
     nnz <- as.numeric(pull(collect(count(conn)), 1L))
     est_bytes <- nnz * 16  # 1 double value + 2 integer keys, rough
     if (!isSingleNumber(memory_limit) || est_bytes > memory_limit) {

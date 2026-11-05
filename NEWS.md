@@ -1,3 +1,28 @@
+# BiocDuckDB 0.99.29
+
+## Bug fixes
+
+- `.duckdb_seed_to_sparse_matrix()` (the `beachmat`/`tatami` fast path behind
+  `initializeCpp,DuckDBArraySeed-method`, used by `BiocSingular::runSVD`'s
+  `compute_center`/`compute_scale` for PCA) materialized the seed's raw,
+  unprojected column instead of its logical (`datacols`-level) one.
+  `tblconn(table, select = FALSE)` deliberately skips column-selection, so
+  the connection it returns reflects the table's base columns, not whatever
+  SQL projection (e.g. a `log1p()` transform applied via `Math`/`Ops`) is
+  recorded in `datacols`; the subsequent `select(conn, all_of(datacol_name))`
+  then picked that raw column up by name, which silently succeeds whenever a
+  transformed datacol keeps its original name (the common case: `Math`/`Ops`
+  rewrite a datacol's expression in place, e.g. `value` to `log(value + 1)`,
+  without renaming it). Reported with a reproducible fixture showing up to a
+  0.405 error in PCA centering on a log-transformed assay versus the
+  correctly-projected result (down to ~1.3e-15, floating-point noise, after
+  the fix). Fixed by using `tblconn(table, select = TRUE)` (the generic's
+  own default) so the same `select()` call afterward operates on the
+  already-projected connection. Confirmed no existing test asserted the
+  previous (buggy) behavior; added regression tests covering both the
+  direct value-extraction path and an end-to-end `runSVD`/PCA comparison
+  against a log1p-transformed oracle.
+
 # BiocDuckDB 0.99.28
 
 ## Bug fixes
