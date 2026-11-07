@@ -1,11 +1,11 @@
 #' A fast SVD path for DuckDB-backed matrices
 #'
 #' @description
-#' \code{DuckDBIrlbaParam} is a \code{\link[BiocSingular]{BiocSingularParam}}
-#' for \code{\link[BiocSingular]{runSVD}} that, for a \linkS4class{DuckDBMatrix},
+#' \code{DuckDBIrlbaParam} is a \code{\link[BiocSingular]{BiocSingularParam-class}}
+#' for \code{\link[BiocSingular]{runSVD}} that, for a \link[DuckDBArray]{DuckDBMatrix},
 #' materializes the matrix once into an in-memory sparse matrix and drives
 #' \pkg{irlba} directly on it, instead of letting \pkg{irlba}'s Lanczos
-#' iteration call \code{\%*\%} on the lazy \linkS4class{DuckDBMatrix} once per
+#' iteration call \code{\%*\%} on the lazy \link[DuckDBArray]{DuckDBMatrix} once per
 #' solver step.
 #'
 #' @details
@@ -30,7 +30,7 @@
 #' undertaking than depending on one stable, public function.
 #'
 #' Whenever the fast path is not applicable (\code{x} is not a
-#' \linkS4class{DuckDBMatrix}, its seed is not zero-filled, or the estimated
+#' \link[DuckDBArray]{DuckDBMatrix}, its seed is not zero-filled, or the estimated
 #' materialized size is over \code{"memory_limit"}), this falls back to
 #' ordinary \code{IrlbaParam} behavior (the lazy SQL-pushdown \code{\%*\%}
 #' path), so it can never turn previously-\emph{working} (if slower) code into
@@ -44,7 +44,7 @@
 #'   estimated size (bytes), falling back to the ordinary lazy path.
 #' @param deferred,fold,extra.work,... Passed to
 #'   \code{\link[BiocSingular]{IrlbaParam}}.
-#' @param x A matrix-like object, typically a \linkS4class{DuckDBMatrix} (the
+#' @param x A matrix-like object, typically a \link[DuckDBArray]{DuckDBMatrix} (the
 #'   fast path only applies to one; any other input falls back to ordinary
 #'   \code{IrlbaParam} behavior).
 #' @param k,nu,nv,center,scale,BPPARAM,BSPARAM See

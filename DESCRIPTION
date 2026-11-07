@@ -1,6 +1,6 @@
 Package: BiocDuckDB
-Version: 0.99.30
-Date: 2026-11-05
+Version: 0.99.31
+Date: 2026-11-07
 Title: Bioconductor DuckDB Integration and High-Level I/O
 Description:
     Integration package providing high-level Parquet I/O functions and optimized
@@ -44,6 +44,7 @@ Imports:
     SingleCellExperiment,
     MultiAssayExperiment,
     MultiAssaySpatialExperiment,
+    BiocBaseUtils,
     metapod,
     beachmat,
     BiocSingular,

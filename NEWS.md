@@ -1,3 +1,50 @@
+# BiocDuckDB 0.99.31
+
+## Bug fixes
+
+- Fixed two Bioconductor `nebbiolo2` build-report `NOTE`s, plus the `ERROR`
+  from `DuckDBDataFrame`'s own undeclared `nanoarrow` dependency (see
+  `DuckDBDataFrame`'s NEWS) that was failing `writeParquet()`-based tests
+  here. Vendored a local `.sampleMapFromData()` helper (used by `.newMAE()`
+  to auto-derive a `sampleMap` when none is supplied) instead of calling
+  unexported `MultiAssayExperiment:::.sampleMapFromData()`. Fixed a
+  malformed Rd cross-reference (`\link[BiocSingular]{BiocSingularParam}`,
+  which has no matching alias; the real target is
+  `BiocSingularParam-class`) and replaced unanchored
+  `\linkS4class{DuckDBMatrix}`/`\linkS4class{DuckDBArraySeed}` references
+  (classes defined in `DuckDBArray`) with explicit
+  `\link[DuckDBArray]{...}` package anchors.
+- **Correctness: `normalizeCounts()` on `DuckDBMatrix` silently ignored
+  `size_factors`/`center_size_factors` (the underscore-spelled arguments
+  `batchelor::fastMNN()`'s cosine-normalization step actually calls it
+  with), and computed library-size normalization instead of the requested
+  explicit-size-factor normalization.** scuttle's own methods accept both
+  the historical dotted argument spellings (`size.factors`,
+  `center.size.factors`, ...) and newer underscore spellings for the same
+  arguments, with a non-NULL underscore value overriding its dotted
+  counterpart; this method only ever declared the dotted formals, so a
+  caller using the underscore spelling had its arguments silently fall
+  into `...` unused. Confirmed up to a 16.9 absolute difference against
+  the correct result on a small fixture, and a full `fastMNN()` divergence
+  on real data. Fixed by also accepting `size_factors`, `pseudo_count`,
+  `center_size_factors`, and `subset_row` as aliases of their dotted
+  counterparts.
+- The same gap existed in 8 other `DuckDBMatrix` methods wherever scuttle
+  itself defines an underscore alias: `calculateAverage()`/`calculateCPM()`/
+  `calculateTPM()` (`size_factors`, `subset_row`), `librarySizeFactors()`
+  (`subset_row`), `numDetectedAcrossFeatures()` (`subset_row`,
+  `subset_col`, `detection_limit`, the last aliasing `threshold`, not just
+  an underscore respelling), `sumCountsAcrossFeatures()` (`subset_row`,
+  `subset_col`), `perCellQCMetrics()` (`percent_top`, `detection_limit`),
+  and `perFeatureQCMetrics()` (`detection_limit`). `geometricSizeFactors()`
+  and `summarizeAssayByGroup()` are unaffected: scuttle defines no
+  underscore aliases for either. Verified by reading scuttle's own source
+  for every alias it defines per generic, not by pattern-matching
+  dotted-to-underscore (several aliases, like `detection_limit`/`threshold`
+  and `percent_top`/`percent.top`, rename the argument outright and would
+  not be caught by a mechanical substitution). Regression tests added for
+  all 9 methods.
+
 # BiocDuckDB 0.99.30
 
 ## Enhancements

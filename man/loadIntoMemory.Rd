@@ -7,7 +7,7 @@
 loadIntoMemory(x, memory_limit = initializeOptions("memory_limit"))
 }
 \arguments{
-\item{x}{A \linkS4class{DuckDBMatrix} or \linkS4class{DuckDBArraySeed}
+\item{x}{A \link[DuckDBArray]{DuckDBMatrix} or \link[DuckDBArray]{DuckDBArraySeed}
 object.}
 
 \item{memory_limit}{Numeric scalar, see the \code{memory_limit} option in
@@ -18,7 +18,7 @@ estimated size (bytes) rather than risking an OOM.}
 An external pointer that can be used in \pkg{tatami}-based functions.
 }
 \description{
-Load a \linkS4class{DuckDBMatrix}'s (or its \linkS4class{DuckDBArraySeed}'s)
+Load a \link[DuckDBArray]{DuckDBMatrix}'s (or its \link[DuckDBArray]{DuckDBArraySeed}'s)
 underlying COO table into memory as an external pointer to a
 \pkg{tatami}-compatible representation, via a single bulk SQL pull. This is
 what \code{\link{initializeCpp}} calls internally when

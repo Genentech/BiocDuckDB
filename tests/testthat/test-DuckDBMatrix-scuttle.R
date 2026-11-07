@@ -493,3 +493,177 @@ test_that("the fused normalize query plan scans the base table once with no join
     expect_false(grepl("Join", plan_text))
     expect_true(grepl("Window", plan_text))
 })
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Regression: scuttle's underscore-spelled aliases (used by callers like
+### batchelor's .apply_cosine_norm(), which calls normalizeCounts(x,
+### size_factors=..., center_size_factors=FALSE, log=FALSE)) must not
+### silently fall into `...` unused. See the normalizeCounts,DuckDBMatrix-
+### method comment in DuckDBMatrix-scuttle.R for the full explanation; this
+### covers every scuttle generic BiocDuckDB implements that scuttle itself
+### gives underscore aliases to (geometricSizeFactors/summarizeAssayByGroup
+### are deliberately excluded: scuttle defines no aliases for either).
+###
+
+test_that("normalizeCounts accepts scuttle's underscore-spelled aliases", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    sf <- seq_len(ncol(pqmat))
+
+    checkDuckDBMatrix(
+        normalizeCounts(pqmat, size_factors = sf, center_size_factors = FALSE, log = FALSE),
+        normalizeCounts(as.matrix(pqmat), size_factors = sf, center_size_factors = FALSE, log = FALSE)
+    )
+    checkDuckDBMatrix(
+        normalizeCounts(pqmat, size_factors = sf, center_size_factors = TRUE, log = FALSE),
+        normalizeCounts(as.matrix(pqmat), size.factors = sf, center.size.factors = TRUE, log = FALSE)
+    )
+    checkDuckDBMatrix(
+        normalizeCounts(pqmat, pseudo_count = 3),
+        normalizeCounts(as.matrix(pqmat), pseudo.count = 3)
+    )
+    checkDuckDBMatrix(
+        normalizeCounts(pqmat, subset_row = 1:10),
+        normalizeCounts(as.matrix(pqmat), subset.row = 1:10)
+    )
+
+    # A non-NULL alias must take precedence over a simultaneously-passed
+    # dotted value with a different value (scuttle's own .replace()
+    # semantics): a caller relying on the alias should never silently get
+    # the dotted value instead.
+    wrong_sf <- rev(sf)
+    checkDuckDBMatrix(
+        normalizeCounts(pqmat, size.factors = wrong_sf, size_factors = sf,
+                        center.size.factors = TRUE, center_size_factors = FALSE, log = FALSE),
+        normalizeCounts(as.matrix(pqmat), size_factors = sf, center_size_factors = FALSE, log = FALSE)
+    )
+
+    # A NULL alias (the default) must leave the dotted value intact, not
+    # overwrite it with NULL and fall through to the is.null(size.factors)
+    # library-size branch -- the exact shape of the original bug.
+    checkDuckDBMatrix(
+        normalizeCounts(pqmat, size.factors = sf, center.size.factors = FALSE, log = FALSE),
+        normalizeCounts(as.matrix(pqmat), size.factors = sf, center.size.factors = FALSE, log = FALSE)
+    )
+})
+
+test_that("calculateCPM accepts scuttle's underscore-spelled aliases", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    sf <- seq_len(ncol(pqmat))
+
+    checkDuckDBMatrix(scuttle::calculateCPM(pqmat, size_factors = sf),
+                      scuttle::calculateCPM(as.matrix(pqmat), size.factors = sf))
+    checkDuckDBMatrix(scuttle::calculateCPM(pqmat, subset_row = 1:10),
+                      scuttle::calculateCPM(as.matrix(pqmat), subset.row = 1:10))
+})
+
+test_that("calculateAverage accepts scuttle's underscore-spelled aliases", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    sf <- seq_len(ncol(pqmat))
+
+    object <- scuttle::calculateAverage(pqmat, size_factors = sf)
+    names(dimnames(object)) <- NULL
+    expected <- as.array(scuttle::calculateAverage(as.matrix(pqmat), size.factors = sf))
+    expect_equal(object, expected)
+
+    object <- scuttle::calculateAverage(pqmat, subset_row = 1:10)
+    names(dimnames(object)) <- NULL
+    expected <- as.array(scuttle::calculateAverage(as.matrix(pqmat), subset.row = 1:10))
+    expect_equal(object, expected)
+})
+
+test_that("calculateTPM accepts scuttle's underscore-spelled aliases", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    sf <- seq_len(ncol(pqmat))
+
+    checkDuckDBMatrix(scuttle::calculateTPM(pqmat, size_factors = sf),
+                      scuttle::calculateTPM(as.matrix(pqmat), size.factors = sf))
+    checkDuckDBMatrix(scuttle::calculateTPM(pqmat, subset_row = 1:10),
+                      scuttle::calculateTPM(as.matrix(pqmat), subset.row = 1:10))
+})
+
+test_that("librarySizeFactors accepts scuttle's underscore-spelled alias", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+
+    expect_equal(librarySizeFactors(pqmat, subset_row = 1:10),
+                 librarySizeFactors(as.matrix(pqmat), subset.row = 1:10))
+})
+
+test_that("numDetectedAcrossFeatures accepts scuttle's underscore-spelled aliases", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    mat <- as.matrix(pqmat)
+    ids <- rep(paste0("Group", 1:100), length.out = nrow(pqmat))
+
+    object <- numDetectedAcrossFeatures(pqmat, ids, subset_row = 1:200)
+    expected <- numDetectedAcrossFeatures(mat, ids, subset.row = 1:200)[rownames(object), ]
+    expect_equal(object, expected)
+
+    object <- numDetectedAcrossFeatures(pqmat, ids, subset_col = 1:5)
+    expected <- numDetectedAcrossFeatures(mat, ids, subset.col = 1:5)[rownames(object), ]
+    expect_equal(object, expected)
+
+    object <- numDetectedAcrossFeatures(pqmat, ids, detection_limit = 5)
+    expected <- numDetectedAcrossFeatures(mat, ids, threshold = 5)[rownames(object), ]
+    expect_equal(object, expected)
+})
+
+test_that("sumCountsAcrossFeatures accepts scuttle's underscore-spelled aliases", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+    mat <- as.matrix(pqmat)
+    ids <- rep(paste0("Group", 1:100), length.out = nrow(pqmat))
+
+    object <- sumCountsAcrossFeatures(pqmat, ids, subset_row = 1:200)
+    expected <- sumCountsAcrossFeatures(mat, ids, subset.row = 1:200)[rownames(object), ]
+    expect_equal(object, expected)
+
+    object <- sumCountsAcrossFeatures(pqmat, ids, subset_col = 1:5)
+    expected <- sumCountsAcrossFeatures(mat, ids, subset.col = 1:5)[rownames(object), ]
+    expect_equal(object, expected)
+})
+
+test_that("perCellQCMetrics accepts scuttle's underscore-spelled aliases", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+
+    expect_equal(perCellQCMetrics(pqmat, detection_limit = 3),
+                 perCellQCMetrics(as.matrix(pqmat), threshold = 3))
+
+    feat_subsets <- list(
+        Group1 = 1:100,
+        Group2 = rownames(pqmat)[101:200]
+    )
+    expect_equal(perCellQCMetrics(pqmat, subsets = feat_subsets, percent_top = c(10L, 50L)),
+                 perCellQCMetrics(as.matrix(pqmat), subsets = feat_subsets, percent.top = c(10L, 50L)))
+})
+
+test_that("perFeatureQCMetrics accepts scuttle's underscore-spelled alias", {
+    names(dimnames(airway_counts)) <- c("index1", "index2")
+    pqmat <- DuckDBMatrix(airway_counts_path, datacol = "value",
+                          keycols = lapply(dimnames(airway_counts),
+                                           function(x) setNames(seq_along(x), x)))
+
+    expect_equal(perFeatureQCMetrics(pqmat, detection_limit = 3),
+                 perFeatureQCMetrics(as.matrix(pqmat), threshold = 3))
+})

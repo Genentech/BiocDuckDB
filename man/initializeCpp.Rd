@@ -13,7 +13,7 @@
 )
 }
 \arguments{
-\item{x}{A \linkS4class{DuckDBArraySeed} object.}
+\item{x}{A \link[DuckDBArray]{DuckDBArraySeed} object.}
 
 \item{...}{Further arguments, passed to \pkg{beachmat}'s generic fallback
 method when the fast path is not applicable.}
@@ -30,8 +30,8 @@ function.
 }
 \description{
 Registers a \code{\link[beachmat]{initializeCpp}} method for
-\linkS4class{DuckDBArraySeed} objects (the seed underlying every
-\linkS4class{DuckDBMatrix}), giving compiled C++ code that goes through
+\link[DuckDBArray]{DuckDBArraySeed} objects (the seed underlying every
+\link[DuckDBArray]{DuckDBMatrix}), giving compiled C++ code that goes through
 \pkg{beachmat}/\pkg{tatami} (e.g. \code{BiocSingular}'s
 \code{compute_center}/\code{compute_scale}) a fast path instead of always
 falling back to \pkg{beachmat}'s generic "unknown matrix" block-processing
@@ -51,7 +51,7 @@ seed within \code{\link{initializeOptions}}'s \code{"memory_limit"}.
 Unlike \code{beachmat.hdf5}/\code{beachmat.tiledb}, the materialized
 pointer is \strong{not} cached across calls with
 \code{\link[beachmat]{checkMemoryCache}}. Verified empirically that doing
-so is unsafe here: two \linkS4class{DuckDBMatrix} objects built from the
+so is unsafe here: two \link[DuckDBArray]{DuckDBMatrix} objects built from the
 same underlying query (the common case, e.g. re-reading the same release
 twice) render identical SQL and would hit the same cache entry, but
 reusing that cached pointer across a later, logically separate computation
@@ -63,7 +63,7 @@ This is purely a performance optimization for anything that already goes
 through \code{initializeCpp} (e.g. \code{BiocSingular::runSVD}'s
 \code{center}/\code{scale} computation). It does \strong{not} speed up
 \code{irlba}'s Lanczos iteration itself, which calls \code{\%*\%} directly
-on the \linkS4class{DuckDBMatrix} object rather than through
+on the \link[DuckDBArray]{DuckDBMatrix} object rather than through
 \code{initializeCpp}; use the SQL-pushdown \code{\%*\%}/\code{crossprod}
 methods in \pkg{DuckDBArray} for that, or materialize small-enough matrices
 with \code{\link{loadIntoMemory}} and drive \code{irlba} directly.

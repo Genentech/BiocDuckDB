@@ -1,7 +1,7 @@
 #' Load a DuckDB-backed matrix into memory
 #'
 #' @description
-#' Load a \linkS4class{DuckDBMatrix}'s (or its \linkS4class{DuckDBArraySeed}'s)
+#' Load a \link[DuckDBArray]{DuckDBMatrix}'s (or its \link[DuckDBArray]{DuckDBArraySeed}'s)
 #' underlying COO table into memory as an external pointer to a
 #' \pkg{tatami}-compatible representation, via a single bulk SQL pull. This is
 #' what \code{\link{initializeCpp}} calls internally when
@@ -10,7 +10,7 @@
 #' generic. Each call re-materializes; the result is deliberately not cached
 #' (see \code{\link{initializeCpp}}'s details for why).
 #'
-#' @param x A \linkS4class{DuckDBMatrix} or \linkS4class{DuckDBArraySeed}
+#' @param x A \link[DuckDBArray]{DuckDBMatrix} or \link[DuckDBArray]{DuckDBArraySeed}
 #'   object.
 #' @param memory_limit Numeric scalar, see the \code{memory_limit} option in
 #'   \code{\link{initializeOptions}}. Materialization is refused above this

@@ -11,7 +11,7 @@
 #' The following options are supported:
 #' \itemize{
 #'   \item \code{realize}, a logical scalar specifying whether to materialize
-#'     a \linkS4class{DuckDBArraySeed}'s underlying COO table into an
+#'     a \link[DuckDBArray]{DuckDBArraySeed}'s underlying COO table into an
 #'     in-memory sparse matrix with \code{\link{loadIntoMemory}} on every
 #'     \code{\link{initializeCpp}} call (unlike \code{beachmat.hdf5}/
 #'     \code{beachmat.tiledb}, this is deliberately \strong{not} cached across

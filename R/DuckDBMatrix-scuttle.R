@@ -235,7 +235,13 @@ NULL
 #' @importFrom scuttle perCellQCMetrics
 setMethod("perCellQCMetrics", "DuckDBMatrix",
 function(x, subsets = NULL, percent.top = integer(0), threshold = 0, ...,
-         flatten = TRUE) {
+         flatten = TRUE, percent_top = NULL, detection_limit = NULL) {
+    if (!is.null(percent_top)) {
+        percent.top <- percent_top
+    }
+    if (!is.null(detection_limit)) {
+        threshold <- detection_limit
+    }
     # Validate subsets
     if (length(subsets) && is.null(names(subsets))) {
         stop("'subsets' must be named")
@@ -537,7 +543,11 @@ function(x, subsets = NULL, percent.top = integer(0), threshold = 0, ...,
 #' @importFrom S4Vectors DataFrame make_zero_col_DFrame
 #' @importFrom scuttle perFeatureQCMetrics
 setMethod("perFeatureQCMetrics", "DuckDBMatrix",
-function(x, subsets = NULL, threshold = 0, ..., flatten = TRUE) {
+function(x, subsets = NULL, threshold = 0, ..., flatten = TRUE,
+         detection_limit = NULL) {
+    if (!is.null(detection_limit)) {
+        threshold <- detection_limit
+    }
     # Validate subsets
     if (length(subsets) && is.null(names(subsets))) {
         stop("'subsets' must be named")
@@ -721,7 +731,10 @@ function(x, subsets = NULL, threshold = 0, ..., flatten = TRUE) {
 #' @importFrom scuttle librarySizeFactors
 #' @importFrom stats setNames
 setMethod("librarySizeFactors", "DuckDBMatrix",
-function(x, subset.row = NULL, ...) {
+function(x, subset.row = NULL, ..., subset_row = NULL) {
+    if (!is.null(subset_row)) {
+        subset.row <- subset_row
+    }
     if (!is.null(subset.row)) {
         x <- x[subset.row, , drop = FALSE]
     }
@@ -853,7 +866,21 @@ function(x, mode = c("mean", "cpm"))
 #' @importFrom scuttle normalizeCounts
 setMethod("normalizeCounts", "DuckDBMatrix",
 function(x, size.factors = NULL, log = TRUE, transform = c("log", "none", "asinh"),
-         pseudo.count = 1, center.size.factors = TRUE, subset.row = NULL, ...) {
+         pseudo.count = 1, center.size.factors = TRUE, subset.row = NULL, ...,
+         size_factors = NULL, center_size_factors = NULL, pseudo_count = NULL,
+         subset_row = NULL) {
+    if (!is.null(size_factors)) {
+        size.factors <- size_factors
+    }
+    if (!is.null(center_size_factors)) {
+        center.size.factors <- center_size_factors
+    }
+    if (!is.null(pseudo_count)) {
+        pseudo.count <- pseudo_count
+    }
+    if (!is.null(subset_row)) {
+        subset.row <- subset_row
+    }
     transform <- match.arg(transform)
     if (!is.null(subset.row)) {
         x <- x[subset.row, , drop = FALSE]
@@ -884,7 +911,14 @@ function(x, size.factors = NULL, log = TRUE, transform = c("log", "none", "asinh
 #' @importFrom MatrixGenerics colSums
 #' @importFrom scuttle calculateCPM
 setMethod("calculateCPM", "DuckDBMatrix",
-function(x, size.factors = NULL, subset.row = NULL, ...) {
+function(x, size.factors = NULL, subset.row = NULL, ...,
+         size_factors = NULL, subset_row = NULL) {
+    if (!is.null(size_factors)) {
+        size.factors <- size_factors
+    }
+    if (!is.null(subset_row)) {
+        subset.row <- subset_row
+    }
     if (!is.null(subset.row)) {
         x <- x[subset.row, , drop = FALSE]
     }
@@ -909,7 +943,14 @@ function(x, size.factors = NULL, subset.row = NULL, ...) {
 #' @importFrom DelayedArray getAutoBPPARAM setAutoBPPARAM
 #' @importFrom scuttle calculateAverage
 setMethod("calculateAverage", "DuckDBMatrix",
-function(x, size.factors = NULL, subset.row = NULL, BPPARAM = SerialParam(), ...) {
+function(x, size.factors = NULL, subset.row = NULL, BPPARAM = SerialParam(), ...,
+         size_factors = NULL, subset_row = NULL) {
+    if (!is.null(size_factors)) {
+        size.factors <- size_factors
+    }
+    if (!is.null(subset_row)) {
+        subset.row <- subset_row
+    }
     if (!is.null(subset.row)) {
         x <- x[subset.row, , drop = FALSE]
     }
@@ -935,7 +976,14 @@ function(x, size.factors = NULL, subset.row = NULL, BPPARAM = SerialParam(), ...
 #' @importFrom DelayedArray sweep
 #' @importFrom scuttle calculateTPM
 setMethod("calculateTPM", "DuckDBMatrix",
-function(x, lengths = NULL, size.factors = NULL, subset.row = NULL, ...) {
+function(x, lengths = NULL, size.factors = NULL, subset.row = NULL, ...,
+         size_factors = NULL, subset_row = NULL) {
+    if (!is.null(size_factors)) {
+        size.factors <- size_factors
+    }
+    if (!is.null(subset_row)) {
+        subset.row <- subset_row
+    }
     if (!is.null(subset.row)) {
         x <- x[subset.row, , drop = FALSE]
         if (!is.null(lengths)) {
@@ -1013,7 +1061,17 @@ function(x, lengths = NULL, size.factors = NULL, subset.row = NULL, ...) {
 #' @importFrom scuttle numDetectedAcrossFeatures
 setMethod("numDetectedAcrossFeatures", "DuckDBMatrix",
 function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE,
-         threshold = 0, ...) {
+         threshold = 0, ..., subset_row = NULL, subset_col = NULL,
+         detection_limit = NULL) {
+    if (!is.null(subset_row)) {
+        subset.row <- subset_row
+    }
+    if (!is.null(subset_col)) {
+        subset.col <- subset_col
+    }
+    if (!is.null(detection_limit)) {
+        threshold <- detection_limit
+    }
     feature_df <- .processFeatureIds(x, ids, subset.row)
 
     if (!is.null(subset.col)) {
@@ -1080,7 +1138,14 @@ function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE,
 #' @importFrom DuckDBDataFrame keynames tblconn
 #' @importFrom scuttle sumCountsAcrossFeatures
 setMethod("sumCountsAcrossFeatures", "DuckDBMatrix",
-function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE, ...) {
+function(x, ids, subset.row = NULL, subset.col = NULL, average = FALSE, ...,
+         subset_row = NULL, subset_col = NULL) {
+    if (!is.null(subset_row)) {
+        subset.row <- subset_row
+    }
+    if (!is.null(subset_col)) {
+        subset.col <- subset_col
+    }
     feature_df <- .processFeatureIds(x, ids, subset.row)
 
     if (!is.null(subset.col)) {

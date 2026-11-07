@@ -711,6 +711,36 @@ function(path,
 ### MultiAssayExperiment objects
 ###
 
+# Vendored from MultiAssayExperiment:::.sampleMapFromData() (unexported; an
+# R CMD check NOTE otherwise flags the ':::' call), which auto-derives a
+# sampleMap from colData rownames and the ExperimentList's own colnames
+# exactly as MultiAssayExperiment()'s own constructor does when no sampleMap
+# is supplied. Kept identical to the original.
+#' @importFrom BiocBaseUtils selectSome
+#' @importFrom S4Vectors DataFrame isEmpty
+.sampleMapFromData <- function(colData, experiments) {
+    samps <- colnames(experiments)
+    assay <- factor(rep(names(samps), lengths(samps)), levels = names(samps))
+    colname <- unlist(samps, use.names = FALSE)
+    matches <- match(colname, rownames(colData))
+    if (length(matches) && all(is.na(matches)))
+        stop("No way to map colData to ExperimentList")
+    else if (!length(matches) && !isEmpty(experiments))
+        stop("colData rownames and ExperimentList colnames are empty")
+    primary <- rownames(colData)[matches]
+    autoMap <- DataFrame(assay = assay, primary = primary, colname = colname)
+    missingPrimary <- is.na(autoMap[["primary"]])
+    if (nrow(autoMap) && any(missingPrimary)) {
+        notFound <- autoMap[missingPrimary, ]
+        warning("Data dropped from ExperimentList (element - column):",
+                selectSome(paste("\n", notFound[["assay"]], "-",
+                                 notFound[["colname"]])),
+                "\nUnable to map to rows of colData", call. = FALSE)
+        autoMap <- autoMap[!missingPrimary, ]
+    }
+    autoMap
+}
+
 #' @importClassesFrom MultiAssayExperiment MultiAssayExperiment
 #' @importClassesFrom S4Vectors DataFrame
 #' @importFrom MultiAssayExperiment ExperimentList
@@ -721,7 +751,7 @@ function(path,
     }
     experiments <- ExperimentList(experiments)
     if (is.null(sampleMap)) {
-        sampleMap <- MultiAssayExperiment:::.sampleMapFromData(colData, experiments)
+        sampleMap <- .sampleMapFromData(colData, experiments)
     }
     new2("MultiAssayExperiment",
          ExperimentList = experiments,
