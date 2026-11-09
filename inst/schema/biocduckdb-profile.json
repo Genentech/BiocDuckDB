@@ -106,9 +106,10 @@
           "description": "Graph topology metadata. Present when layout is 'graph_edges'.",
           "required": ["from", "to", "nnode"],
           "properties": {
-            "from":  {"type": "string",  "description": "Source node field name"},
-            "to":    {"type": "string",  "description": "Target node field name"},
-            "nnode": {"type": "integer", "description": "Total node count", "minimum": 0}
+            "from":   {"type": "string",  "description": "Source node field name"},
+            "to":     {"type": "string",  "description": "Target node field name"},
+            "nnode":  {"type": "integer", "description": "Total node count", "minimum": 0},
+            "weight": {"type": "string",  "description": "Edge weight field name, if the graph is weighted"}
           }
         },
         "spatialCoords": {

@@ -354,6 +354,85 @@ test_that("SingleCellExperiment with colPairs (graph_edges) works", {
     unlink(tmpdir, recursive = TRUE)
 })
 
+test_that("weighted colPairs (graph_edges) round-trip their weight mcol", {
+    set.seed(106)
+    ncells <- 15L
+    ngenes <- 10L
+
+    counts <- matrix(rpois(ngenes * ncells, 5), nrow = ngenes, ncol = ncells)
+    rownames(counts) <- paste0("Gene", seq_len(ngenes))
+    colnames(counts) <- paste0("Cell", seq_len(ncells))
+
+    sce <- SingleCellExperiment(assays = list(counts = counts))
+
+    knn_hits <- SelfHits(
+        from = rep(1:ncells, each = 3),
+        to = sample(1:ncells, ncells * 3, replace = TRUE),
+        nnode = ncells
+    )
+    mcols(knn_hits)$weight <- runif(length(knn_hits))
+    colPair(sce, "knn") <- knn_hits
+
+    tmpdir <- tempfile()
+    writeParquet(sce, tmpdir)
+
+    pkg <- jsonlite::fromJSON(file.path(tmpdir, "datapackage.json"), simplifyVector = FALSE)
+    graph_resource <- Find(function(r) !is.null(r$schema$graphEdges), pkg$resources)
+    expect_false(is.null(graph_resource))
+    expect_identical(graph_resource$schema$graphEdges$weight, "weight")
+
+    sce2 <- readParquet(tmpdir)
+    roundtripped <- colPair(sce2, "knn")
+    expect_true("weight" %in% colnames(mcols(roundtripped)))
+    checkDuckDBSelfHits(roundtripped, colPair(sce, "knn"))
+
+    unlink(tmpdir, recursive = TRUE)
+})
+
+test_that("a re-written DuckDBSelfHits (not just the original in-memory SelfHits) keeps its weight mcol", {
+    set.seed(107)
+    ncells <- 12L
+    ngenes <- 8L
+
+    counts <- matrix(rpois(ngenes * ncells, 5), nrow = ngenes, ncol = ncells)
+    rownames(counts) <- paste0("Gene", seq_len(ngenes))
+    colnames(counts) <- paste0("Cell", seq_len(ncells))
+
+    sce <- SingleCellExperiment(assays = list(counts = counts))
+
+    knn_hits <- SelfHits(
+        from = rep(1:ncells, each = 3),
+        to = sample(1:ncells, ncells * 3, replace = TRUE),
+        nnode = ncells
+    )
+    mcols(knn_hits)$weight <- runif(length(knn_hits))
+    colPair(sce, "knn") <- knn_hits
+
+    tmpdir1 <- tempfile()
+    writeParquet(sce, tmpdir1)
+    sce2 <- readParquet(tmpdir1)
+
+    graph_lazy <- colPair(sce2, "knn")
+    expect_s4_class(graph_lazy, "DuckDBSelfHits")
+    expect_true("weight" %in% colnames(mcols(graph_lazy)))
+
+    tmpdir2 <- tempfile()
+    writeParquet(sce2, tmpdir2)
+
+    pkg2 <- jsonlite::fromJSON(file.path(tmpdir2, "datapackage.json"), simplifyVector = FALSE)
+    graph_resource2 <- Find(function(r) !is.null(r$schema$graphEdges), pkg2$resources)
+    expect_false(is.null(graph_resource2))
+    expect_identical(graph_resource2$schema$graphEdges$weight, "weight")
+
+    sce3 <- readParquet(tmpdir2)
+    roundtripped2 <- colPair(sce3, "knn")
+    expect_true("weight" %in% colnames(mcols(roundtripped2)))
+    checkDuckDBSelfHits(roundtripped2, colPair(sce, "knn"))
+
+    unlink(tmpdir1, recursive = TRUE)
+    unlink(tmpdir2, recursive = TRUE)
+})
+
 # ==============================================================================
 # MultiAssayExperiment Tests
 # ==============================================================================

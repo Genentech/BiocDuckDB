@@ -1124,7 +1124,7 @@ function(x,
 
 #' @export
 #' @importClassesFrom DuckDBDataFrame DuckDBSelfHits
-#' @importFrom S4Vectors nnode
+#' @importFrom S4Vectors mcols nnode
 #' @rdname writeParquet
 setMethod("writeParquet", "DuckDBSelfHits",
 function(x,
@@ -1150,7 +1150,8 @@ function(x,
     if (is.null(resources))
         return(invisible(NULL))
     schema <- resources[[length(resources)]][["schema"]]
-    schema <- .addGraphMetadata(schema, nnode(x))
+    weight_col <- if ("weight" %in% colnames(mcols(x))) "weight" else NULL
+    schema <- .addGraphMetadata(schema, nnode(x), weight = weight_col)
     resources[[length(resources)]][["schema"]] <- schema
     invisible(resources)
 })
@@ -1438,7 +1439,7 @@ function(x,
 
 #' @export
 #' @importClassesFrom S4Vectors SelfHits
-#' @importFrom S4Vectors nnode
+#' @importFrom S4Vectors mcols nnode
 #' @rdname writeParquet
 setMethod("writeParquet", "SelfHits",
 function(x,
@@ -1462,7 +1463,8 @@ function(x,
     schema <- resources[[length(resources)]][["schema"]]
 
     # Add graph metadata and constraints
-    schema <- .addGraphMetadata(schema, nnode(x))
+    weight_col <- if ("weight" %in% colnames(mcols(x))) "weight" else NULL
+    schema <- .addGraphMetadata(schema, nnode(x), weight = weight_col)
 
     resources[[length(resources)]][["schema"]] <- schema
 

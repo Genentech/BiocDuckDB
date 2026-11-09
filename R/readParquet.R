@@ -235,12 +235,13 @@ function(path,
     all_fields <- vapply(schema[["fields"]], `[[`, character(1L), "name")
     keycol <- .schema_keycols(schema)
     pkey <- schema[["primaryKey"]]
+    graph_structural <- unlist(schema[["graphEdges"]][c("from", "to")])
     exclude <- c(keycol,
                  "__element__",
                  if (!is.null(pkey) && !identical(pkey, keycol)) pkey,
                  .schema_partitions(schema),
                  unlist(schema[["genomicCoords"]]),
-                 unlist(schema[["graphEdges"]]))
+                 graph_structural)
     setdiff(all_fields, exclude)
 }
 

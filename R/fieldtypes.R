@@ -251,7 +251,7 @@ function(schema, seqname = "seqnames", start = "start", end = "end",
 }
 
 .addGraphMetadata <-
-function(schema, nnode, from = "from", to = "to")
+function(schema, nnode, from = "from", to = "to", weight = NULL)
 {
     # Store nnode as graph metadata
     schema[["graphEdges"]] <- list(
@@ -259,6 +259,9 @@ function(schema, nnode, from = "from", to = "to")
         to = to,
         nnode = nnode
     )
+    if (!is.null(weight)) {
+        schema[["graphEdges"]][["weight"]] <- weight
+    }
 
     # Mark from/to columns with semantic roles
     role_map <- list(

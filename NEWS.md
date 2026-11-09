@@ -1,3 +1,21 @@
+# BiocDuckDB 0.99.32
+
+## Bug fixes
+
+- **Correctness: weighted `colPair`/`rowPair` graphs (`graph_edges` layout)
+  silently lost their weight column on round trip, in both directions.**
+  `.schema_datacols()` excluded every value listed under the `graphEdges`
+  schema key from the columns it keeps as `mcols` -- including `weight`,
+  which (unlike `from`/`to`) is not a structural column name. The reverse
+  direction had the mirror gap: `.addGraphMetadata()` never recorded a
+  `weight` role when writing a `SelfHits`/`DuckDBSelfHits` with a `weight`
+  mcol. Fixed on both the read side (`.schema_datacols()` now excludes only
+  the structural `from`/`to` names) and the write side (both `writeParquet`
+  methods -- `SelfHits` and the separate, lazy `DuckDBSelfHits` one -- now
+  detect a `weight` mcol and record it).
+  `inst/schema/biocduckdb-profile.json`'s `graphEdges` block now documents
+  the optional `weight` property.
+
 # BiocDuckDB 0.99.31
 
 ## Bug fixes
