@@ -156,6 +156,7 @@ importFrom(DuckDBDataFrame,
   extractNODES,
   keynames,
   reconcileParquetSchema,
+  resolveParquetCompression,
   setupFlatParquetWrite,
   tblconn,
   writeDuckDBTableParquet

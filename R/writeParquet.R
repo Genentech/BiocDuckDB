@@ -821,7 +821,8 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
 }
 
 #' @importFrom arrow Array as_arrow_table write_dataset write_parquet
-#' @importFrom DuckDBDataFrame arrowIntType arrowType reconcileParquetSchema setupFlatParquetWrite clusterSort
+#' @importFrom DuckDBDataFrame arrowIntType arrowType reconcileParquetSchema
+#' @importFrom DuckDBDataFrame setupFlatParquetWrite clusterSort resolveParquetCompression
 #' @importFrom S4Vectors I
 #' @importFrom stats setNames
 .writeDataFrameParquet <-
@@ -933,6 +934,7 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
             }
         }
 
+        cmp <- resolveParquetCompression()
         if (flat_part) {
             # Pin row groups so row-groups-per-file >= query threads. Matches
             # the coord path's fixed 491520 (writeCoordArray-duckdb.R).
@@ -941,10 +943,12 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
                 dots[["chunk_size"]] <- 491520L
             }
             do.call(write_parquet, c(list(write_obj, prep$pq_path,
-                    compression = "zstd", compression_level = 3L), dots))
+                    compression = cmp[["compression"]],
+                    compression_level = cmp[["compression_level"]]), dots))
         } else {
             write_dataset(write_obj, path, format = "parquet",
-                          compression = "zstd", compression_level = 3L, ...)
+                          compression = cmp[["compression"]],
+                          compression_level = cmp[["compression_level"]], ...)
         }
     }
 

@@ -1,3 +1,15 @@
+# BiocDuckDB 0.99.33
+
+## Bug fixes
+
+- `writeParquet()`'s `arrow::write_parquet()`/`write_dataset()` calls
+  hardcoded `compression = "zstd"`, which errors on a "minimal" `arrow`
+  build without zstd codec support (see `DuckDBDataFrame`#1). Now uses
+  `DuckDBDataFrame::resolveParquetCompression()`, which falls back to
+  `snappy` (with no compression level, since a level paired with a
+  non-zstd codec errors on both DuckDB and `arrow`) when zstd is
+  unavailable, and still prefers zstd otherwise.
+
 # BiocDuckDB 0.99.32
 
 ## Bug fixes
