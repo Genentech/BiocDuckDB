@@ -884,7 +884,9 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
         })
         names(images_list) <- sub("^sample_images_", "",
             vapply(img_res, `[[`, character(1L), "name"))
-        images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
+        images_list <- Filter(Negate(is.null), images_list)
+        if (length(images_list))
+            images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
     } else if (!is.null(resources[["images"]])) {
         fullpath <- file.path(path, resources[["images"]][["path"]])
         if (dir.exists(fullpath)) {
@@ -894,7 +896,9 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
                     .readParquetRasterRef(d, list(path = basename(d)), ...)
                 })
                 names(images_list) <- basename(subdirs)
-                images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
+                images_list <- Filter(Negate(is.null), images_list)
+                if (length(images_list))
+                    images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
             }
         }
     }
@@ -919,10 +923,13 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
         })
         names(ref_list) <- sub("^sample_labels_", "",
             vapply(lab_ref, `[[`, character(1L), "name"))
-        if (length(labels))
-            labels[names(ref_list)] <- ref_list
-        else
-            labels <- MultiAssaySpatialExperiment::RasterLayerList(ref_list)
+        ref_list <- Filter(Negate(is.null), ref_list)
+        if (length(ref_list)) {
+            if (length(labels))
+                labels[names(ref_list)] <- ref_list
+            else
+                labels <- MultiAssaySpatialExperiment::RasterLayerList(ref_list)
+        }
     }
 
     # imgData (optional) - must materialize

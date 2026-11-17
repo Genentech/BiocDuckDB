@@ -225,3 +225,66 @@ test_that("a matrix-backed label with an all-zero trailing row/column keeps its 
     expect_equal(dim(lbl), dim(label_mat))
     expect_equal(as.matrix(lbl), label_mat, check.attributes = FALSE)
 })
+
+## Images and labels are stored as references (an image file, or a Zarr store
+## left where it is), never as pixels, so a package must either hold a
+## reference that readParquet() can follow or refuse to be written.
+.raster_mase <- function(images = NULL) {
+    se <- SummarizedExperiment::SummarizedExperiment(
+        assays = list(counts = matrix(1:6, 3, 2)),
+        colData = S4Vectors::DataFrame(row.names = c("c1", "c2")))
+    args <- list(
+        experiments = MultiAssayExperiment::ExperimentList(list(RNA = se)),
+        colData = S4Vectors::DataFrame(row.names = "s1"),
+        sampleMap = S4Vectors::DataFrame(assay = factor(rep("RNA", 2)),
+                                         primary = c("s1", "s1"),
+                                         colname = c("c1", "c2")))
+    if (!is.null(images)) args$images <- images
+    do.call(MultiAssaySpatialExperiment::MultiAssaySpatialExperiment, args)
+}
+
+test_that("a ZarrArray image is written as a reference to its store and read back", {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+    skip_if_not_installed("ZarrArray")
+    store <- tempfile()
+    on.exit(unlink(store, recursive = TRUE), add = TRUE)
+    arr <- array(as.numeric(1:24), c(2, 3, 4))
+    suppressMessages(ZarrArray::writeZarrArray(arr, store, chunkdim = c(2, 3, 2)))
+    m <- .raster_mase(MultiAssaySpatialExperiment::RasterLayerList(
+        list(im = ZarrArray::ZarrArray(store))))
+
+    out <- tempfile()
+    on.exit(unlink(out, recursive = TRUE), add = TRUE)
+    writeParquet(m, out)
+    back <- readParquet(out)
+    im <- MultiAssaySpatialExperiment::spatialImages(back)[["im"]]
+    expect_s4_class(im, "ZarrArray")
+    expect_identical(dim(im), c(2L, 3L, 4L))
+    expect_equal(as.array(im), arr)
+})
+
+test_that("an image held in memory is refused with a message that says what to do", {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+    m <- .raster_mase(MultiAssaySpatialExperiment::RasterLayerList(
+        list(im = matrix(1:16, 4, 4))))
+    out <- tempfile()
+    on.exit(unlink(out, recursive = TRUE), add = TRUE)
+    expect_error(writeParquet(m, out), "image 'im'.*in memory.*Zarr")
+})
+
+test_that("a raster reference that no longer resolves is left out with a warning", {
+    skip_if_not_installed("MultiAssaySpatialExperiment")
+    skip_if_not_installed("ZarrArray")
+    store <- tempfile()
+    arr <- array(as.numeric(1:8), c(2, 2, 2))
+    suppressMessages(ZarrArray::writeZarrArray(arr, store, chunkdim = c(2, 2, 2)))
+    m <- .raster_mase(MultiAssaySpatialExperiment::RasterLayerList(
+        list(im = ZarrArray::ZarrArray(store))))
+    out <- tempfile()
+    on.exit(unlink(out, recursive = TRUE), add = TRUE)
+    writeParquet(m, out)
+
+    unlink(store, recursive = TRUE)
+    expect_warning(back <- readParquet(out), "raster 'im' is left out")
+    expect_length(MultiAssaySpatialExperiment::spatialImages(back), 0L)
+})

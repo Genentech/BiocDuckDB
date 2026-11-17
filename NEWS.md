@@ -1,3 +1,27 @@
+# BiocDuckDB 0.99.34
+
+## Bug fixes
+
+- `writeParquet()` of a `MultiAssaySpatialExperiment` with an image or label
+  that is not a file or a label matrix wrote only a `metadata.json` holding the
+  name and type, with no path and no pixels, and `readParquet()` then failed on
+  the whole package with "RasterLayerList ... must have dim()". Images and
+  labels are stored as references, so a package must hold one that
+  `readParquet()` can follow or refuse to be written:
+  - A `ZarrArray` is now written as a reference to its store, which stays where
+    it is, and read back as a `ZarrArray`.
+  - An image held in memory, which has no file or store to refer to, is now an
+    error at write time, and the message says to save it as an image file (a
+    `StoredSpatialImage`) or as a Zarr store. A `StoredSpatialImage` whose file
+    no longer exists is an error too, where before it was written without a
+    path. A label matrix is unchanged: it is stored as coordinates.
+  - A reference that cannot be followed when reading, because the file or the
+    store has gone or `ZarrArray` is not installed, now leaves that image or
+    label out with a warning that names it, instead of failing the package.
+  - The branch that wrote empty `scale_i` directories for a list of
+    `ZarrArray`s is gone: a `RasterLayerList` cannot hold such a list, so it
+    could not be reached.
+
 # BiocDuckDB 0.99.33
 
 ## Bug fixes

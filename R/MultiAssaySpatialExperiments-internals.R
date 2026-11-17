@@ -62,52 +62,68 @@ replaceSlots <- BiocGenerics:::replaceSlots
 #' @importFrom jsonlite read_json write_json
 .readParquetRasterRef <- function(path, resource, ...) {
     meta_path <- file.path(path, "metadata.json")
-    if (file.exists(meta_path)) {
-        meta <- read_json(meta_path, simplifyVector = TRUE)
-        if (!is.null(meta[["zarr_path"]]) && requireNamespace("ZarrArray", quietly = TRUE)) {
-            ds <- meta[["datasets"]]
-            if (is.null(ds))
-                ds <- list(meta[["zarr_path"]])
-            arrays <- lapply(ds, function(p) {
-                ZarrArray::ZarrArray(file.path(path, p))
-            })
-            return(list(data = arrays, metadata = meta))
+    if (!file.exists(meta_path))
+        return(list(path = path, resource = resource))
+    meta <- read_json(meta_path, simplifyVector = TRUE)
+    nm <- meta[["name"]] %||% basename(path)
+    resolve <- function(p)
+        if (file.exists(p)) p else file.path(path, p)
+    zp <- meta[["zarr_path"]]
+    if (!is.null(zp) && !is.na(zp)) {
+        zp <- resolve(zp)
+        if (!requireNamespace("ZarrArray", quietly = TRUE) || !file.exists(zp)) {
+            warning("raster '", nm, "' is left out: its Zarr store ", zp,
+                    if (file.exists(zp)) " needs the ZarrArray package"
+                    else " does not exist", call. = FALSE)
+            return(NULL)
         }
-        if (!is.null(meta[["file_path"]]) && requireNamespace("SpatialExperiment", quietly = TRUE)) {
-            fp <- meta[["file_path"]]
-            if (!file.exists(fp))
-                fp <- file.path(path, fp)
-            return(SpatialExperiment::SpatialImage(fp))
-        }
-        return(meta)
+        return(ZarrArray::ZarrArray(zp))
     }
-    list(path = path, resource = resource)
+    fp <- meta[["file_path"]]
+    if (!is.null(fp) && !is.na(fp)) {
+        fp <- resolve(fp)
+        if (!requireNamespace("SpatialExperiment", quietly = TRUE) ||
+                !file.exists(fp)) {
+            warning("raster '", nm, "' is left out: its image file ", fp,
+                    " does not exist", call. = FALSE)
+            return(NULL)
+        }
+        return(SpatialExperiment::SpatialImage(fp))
+    }
+    warning("raster '", nm, "' is left out: it records no file or Zarr store",
+            call. = FALSE)
+    NULL
 }
 
 .writeRasterRef <- function(x, path, name, type = c("image", "label")) {
     type <- match.arg(type)
-    dir.create(path, recursive = TRUE, showWarnings = FALSE)
     meta <- list(name = name, type = type)
     if (requireNamespace("SpatialExperiment", quietly = TRUE) &&
             is(x, "StoredSpatialImage")) {
         src <- SpatialExperiment::imgSource(x)
-        if (length(src) && file.exists(src[[1L]])) {
-            dest <- file.path(path, basename(src[[1L]]))
-            if (!file.exists(dest))
-                file.copy(src[[1L]], dest)
-            meta[["file_path"]] <- basename(dest)
-        }
-    } else if (is.list(x) && length(x) && requireNamespace("ZarrArray", quietly = TRUE) &&
-               all(vapply(x, function(a) inherits(a, "ZarrArray"), logical(1L)))) {
-        meta[["zarr_path"]] <- path
-        meta[["datasets"]] <- vapply(seq_along(x), function(i) {
-            zp <- file.path(path, paste0("scale_", i))
-            if (!dir.exists(zp)) dir.create(zp, recursive = TRUE)
-            zp
-        }, character(1L))
-    } else if (is.matrix(x) || is.array(x)) {
-        meta[["file_path"]] <- NA_character_
+        if (!length(src) || !file.exists(src[[1L]]))
+            stop(type, " '", name, "' refers to an image file that does not ",
+                 "exist: ", if (length(src)) src[[1L]] else "<none>",
+                 call. = FALSE)
+        dir.create(path, recursive = TRUE, showWarnings = FALSE)
+        dest <- file.path(path, basename(src[[1L]]))
+        if (!file.exists(dest))
+            file.copy(src[[1L]], dest)
+        meta[["file_path"]] <- basename(dest)
+    } else if (is(x, "ZarrArray")) {
+        zp <- DelayedArray::path(x)
+        if (!length(zp) || !nzchar(zp[[1L]]))
+            stop(type, " '", name, "' is a ZarrArray with no store path",
+                 call. = FALSE)
+        dir.create(path, recursive = TRUE, showWarnings = FALSE)
+        meta[["zarr_path"]] <- normalizePath(zp[[1L]], mustWork = FALSE)
         meta[["dim"]] <- dim(x)
+    } else {
+        stop(type, " '", name, "' is ", paste(class(x)[1L], "in memory"),
+             ", which has no file or store to refer to. Save it as an image ",
+             "file (a StoredSpatialImage) or as a Zarr store (a ZarrArray), ",
+             "or use a matrix for a label, which is stored as coordinates.",
+             call. = FALSE)
     }
     write_json(meta, file.path(path, "metadata.json"),
                auto_unbox = TRUE, pretty = TRUE)
