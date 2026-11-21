@@ -21,7 +21,8 @@
     },
     "annotations": {
       "type": ["object", "null"],
-      "description": "Scalar metadata from metadata() slot (unstructured)"
+      "description": "Metadata from the metadata() slot. Values are JSON, or a stub object tagged by __type__: parquet_ref points at an unbound Parquet resource, nested_mapping wraps a list that contains such stubs (see $defs).",
+      "additionalProperties": { "$ref": "#/$defs/metadata_value" }
     },
     "resources": {
       "type": "array",
@@ -33,6 +34,39 @@
   },
   "required": ["resources"],
   "$defs": {
+    "metadata_value": {
+      "$comment": "Any JSON value. An object tagged with __type__ parquet_ref or nested_mapping must have the stub's shape.",
+      "allOf": [
+        {
+          "if": { "type": "object", "required": ["__type__"], "properties": { "__type__": { "const": "parquet_ref" } } },
+          "then": { "$ref": "#/$defs/parquet_ref" }
+        },
+        {
+          "if": { "type": "object", "required": ["__type__"], "properties": { "__type__": { "const": "nested_mapping" } } },
+          "then": { "$ref": "#/$defs/nested_mapping" }
+        }
+      ]
+    },
+    "parquet_ref": {
+      "type": "object",
+      "required": ["__type__", "resource"],
+      "properties": {
+        "__type__": { "const": "parquet_ref" },
+        "resource": { "type": "string", "description": "Name of an unbound resource in resources[]" }
+      }
+    },
+    "nested_mapping": {
+      "type": "object",
+      "required": ["__type__", "children"],
+      "properties": {
+        "__type__": { "const": "nested_mapping" },
+        "children": {
+          "type": "object",
+          "description": "Members of the nested list, keyed by their own names. Any name is allowed, including __type__ and children.",
+          "additionalProperties": { "$ref": "#/$defs/metadata_value" }
+        }
+      }
+    },
     "biocduckdb_resource": {
       "type": "object",
       "required": ["name", "path"],

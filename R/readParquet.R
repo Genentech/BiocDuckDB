@@ -137,7 +137,8 @@
 #'   \item \code{annotations} — non-relational metadata from \code{metadata(x)}
 #'     (scalars, vectors, 1-D arrays, JSON-safe nested lists). Tabular items
 #'     are referenced via \code{parquet_ref} stubs pointing at \code{unbound}
-#'     Parquet sidecars; mixed nested lists use a \code{nested_mapping} wrapper.
+#'     Parquet sidecars; mixed nested lists use a \code{nested_mapping} wrapper
+#'     whose members sit under a \code{children} key.
 #' }
 #'
 #' \strong{Resource level} (entries in \code{resources} array):
@@ -288,6 +289,13 @@ function(path,
     is.list(x) && !is.null(x[["__type__"]]) && is.character(x[["__type__"]])
 }
 
+.nestedMappingChildren <- function(x) {
+    nms <- setdiff(names(x), "__type__")
+    if (identical(nms, "children") && is.list(x[["children"]]))
+        return(x[["children"]])
+    x[nms]
+}
+
 .referencedMetadataResources <- function(annotations) {
     .collectRefs <- function(x) {
         if (!.isMetadataStub(x)) {
@@ -298,8 +306,8 @@ function(path,
         if (identical(x[["__type__"]], "parquet_ref"))
             return(x[["resource"]])
         if (identical(x[["__type__"]], "nested_mapping")) {
-            nms <- setdiff(names(x), "__type__")
-            return(unlist(lapply(x[nms], .collectRefs), use.names = FALSE))
+            return(unlist(lapply(.nestedMappingChildren(x), .collectRefs),
+                          use.names = FALSE))
         }
         character(0L)
     }
@@ -327,7 +335,7 @@ function(path,
                .readParquetResource(path, res, ...)
            },
            nested_mapping = {
-               children <- value[setdiff(names(value), "__type__")]
+               children <- .nestedMappingChildren(value)
                lapply(children, .deserializeMetadataValue,
                       resources_by_name = resources_by_name,
                       path = path, ...)

@@ -233,3 +233,20 @@ test_that("MASE conforms spatialMap via an spatial_element_registry + monomorphi
 
     unlink(tmpdir, recursive = TRUE)
 })
+
+test_that("the profile checks the metadata stubs", {
+    validator <- .profileValidator()
+    pkg <- function(annotations) {
+        jsonlite::toJSON(list(
+            resources = list(list(name = "r", path = "r.parquet")),
+            annotations = annotations), auto_unbox = TRUE)
+    }
+    ok <- list(g = list(`__type__` = "nested_mapping", children = list(
+        t = list(`__type__` = "parquet_ref", resource = "r"),
+        `__type__` = "free text")))
+    expect_true(validator$validate(pkg(ok)))
+    expect_false(validator$validate(pkg(
+        list(g = list(`__type__` = "parquet_ref")))))
+    expect_false(validator$validate(pkg(
+        list(g = list(`__type__` = "nested_mapping", a = 1)))))
+})

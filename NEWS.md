@@ -1,3 +1,17 @@
+# BiocDuckDB 0.99.35
+
+## Bug fixes
+
+- A `nested_mapping` entry in `annotations` (a list in `metadata()` that holds
+  a table or array) now keeps its members under a `children` key. They used to
+  sit beside the `__type__` tag, so a member named `__type__` was silently
+  renamed to `__type__.1` on write, and other readers of the package had to
+  guess which keys were members. `readParquet()` still reads packages written
+  the old way. A package is read the new way only when `children` is the single
+  key next to `__type__`.
+- The data package profile now defines the `parquet_ref` and `nested_mapping`
+  stubs, and the conformance test checks them.
+
 # BiocDuckDB 0.99.34
 
 ## Bug fixes

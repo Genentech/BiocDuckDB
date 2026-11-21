@@ -656,11 +656,11 @@ test_that("Nested metadata serializes JSON leaves and tabular sidecars", {
     expect_null(pkg$annotations$bulk_labels_colors$`__type__`)
     expect_equal(pkg$annotations$louvain$params$resolution, 1.0)
     expect_length(pkg$annotations$pca$variance, 50L)
-    expect_identical(pkg$annotations$rank_genes_groups$`__type__`,
-                     "nested_mapping")
-    expect_identical(pkg$annotations$rank_genes_groups$names$`__type__`,
-                     "parquet_ref")
-    expect_identical(pkg$annotations$rank_genes_groups$params$groupby,
+    rgg <- pkg$annotations$rank_genes_groups
+    expect_identical(rgg$`__type__`, "nested_mapping")
+    expect_named(rgg, c("__type__", "children"))
+    expect_identical(rgg$children$names$`__type__`, "parquet_ref")
+    expect_identical(rgg$children$params$groupby,
                      "bulk_labels")
     expect_identical(pkg$annotations$qc_stats$`__type__`, "parquet_ref")
 
@@ -936,3 +936,47 @@ test_that("readParquet reads a model='experiment_list' package", {
 })
 
 cat("All readParquet/writeParquet tests defined.\n")
+
+
+test_that("a nested metadata list keeps a member named __type__ or children", {
+    se <- SummarizedExperiment(
+        assays = list(counts = matrix(1:6, 3L, 2L,
+                                      dimnames = list(letters[1:3], LETTERS[1:2]))),
+        metadata = list(grp = list(
+            tbl = DataFrame(a = 1:2),
+            `__type__` = "user value",
+            children = "also a member"))
+    )
+    tmpdir <- tempfile()
+    writeParquet(se, tmpdir)
+    back <- metadata(readParquet(tmpdir))$grp
+    expect_identical(back[["__type__"]], "user value")
+    expect_identical(back$children, "also a member")
+    expect_equal(as.data.frame(back$tbl)$a, 1:2)
+})
+
+test_that("a package written with members beside __type__ still reads", {
+    se <- SummarizedExperiment(
+        assays = list(counts = matrix(1:6, 3L, 2L,
+                                      dimnames = list(letters[1:3], LETTERS[1:2]))),
+        metadata = list(grp = list(tbl = DataFrame(a = 1:2), note = "x"))
+    )
+    tmpdir <- tempfile()
+    writeParquet(se, tmpdir)
+    f <- file.path(tmpdir, "datapackage.json")
+    pkg <- jsonlite::fromJSON(f, simplifyVector = FALSE)
+    kids <- pkg$annotations$grp$children
+    pkg$annotations$grp <- c(list(`__type__` = "nested_mapping"), kids)
+    writeLines(jsonlite::toJSON(pkg, auto_unbox = TRUE, null = "null"), f)
+    back <- metadata(readParquet(tmpdir))$grp
+    expect_identical(back$note, "x")
+    expect_equal(as.data.frame(back$tbl)$a, 1:2)
+
+    # an old-layout member that is itself called "children" is not unwrapped
+    pkg$annotations$grp <- list(`__type__` = "nested_mapping",
+                                children = "plain", tbl = kids$tbl)
+    writeLines(jsonlite::toJSON(pkg, auto_unbox = TRUE, null = "null"), f)
+    back <- metadata(readParquet(tmpdir))$grp
+    expect_identical(back$children, "plain")
+    expect_equal(as.data.frame(back$tbl)$a, 1:2)
+})

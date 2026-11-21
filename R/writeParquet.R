@@ -341,7 +341,8 @@
 #'     relational items (\code{DataFrame}, \code{matrix}, 2-D arrays) are
 #'     written as \code{unbound} Parquet sidecars and referenced here via
 #'     \code{parquet_ref} stubs; mixed nested lists use a
-#'     \code{nested_mapping} wrapper.
+#'     \code{nested_mapping} wrapper that holds the members under a
+#'     \code{children} key.
 #' }
 #'
 #' \strong{Per-resource fields} (each entry in the \code{resources} array):
@@ -568,7 +569,7 @@ function(x, path, ...)
                         has_parquet = FALSE, skip = TRUE))
         }
         value <- if (child_has_parquet) {
-            c(list("__type__" = "nested_mapping"), children)
+            list("__type__" = "nested_mapping", children = children)
         } else {
             children
         }

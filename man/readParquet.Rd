@@ -155,7 +155,8 @@ specification (extended by the BiocDuckDB profile), parsing the
   \item \code{annotations} — non-relational metadata from \code{metadata(x)}
     (scalars, vectors, 1-D arrays, JSON-safe nested lists). Tabular items
     are referenced via \code{parquet_ref} stubs pointing at \code{unbound}
-    Parquet sidecars; mixed nested lists use a \code{nested_mapping} wrapper.
+    Parquet sidecars; mixed nested lists use a \code{nested_mapping} wrapper
+    whose members sit under a \code{children} key.
 }
 
 \strong{Resource level} (entries in \code{resources} array):
