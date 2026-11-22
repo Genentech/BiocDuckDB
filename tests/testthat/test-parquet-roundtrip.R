@@ -980,3 +980,30 @@ test_that("a package written with members beside __type__ still reads", {
     expect_identical(back$children, "plain")
     expect_equal(as.data.frame(back$tbl)$a, 1:2)
 })
+
+test_that("an experiment that is read lazily and written again keeps its sample order and names", {
+    # The second write goes through the lazy path. The sample names are the names
+    # of an aliased key there, and they used to be lost (the samples came back
+    # numbered 1, 2, 3, ...); the index was also numbered in the order of the file.
+    cells <- c("cell_c", "cell_a", "cell_d", "cell_b")
+    counts <- matrix(c(5L, 1L, 7L, 2L, 9L, 3L, 4L, 8L, 6L, 0L, 2L, 5L, 1L, 3L, 7L, 4L, 6L, 9L, 8L, 2L),
+                     nrow = 5L, dimnames = list(paste0("g", 1:5), cells))
+    se <- SummarizedExperiment(list(counts = counts),
+                               colData = DataFrame(n = c(30, 10, 40, 20), row.names = cells))
+
+    d1 <- tempfile()
+    d2 <- tempfile()
+    on.exit(unlink(c(d1, d2), recursive = TRUE), add = TRUE)
+    writeParquet(se, d1)
+    r1 <- readParquet(d1)
+    writeParquet(r1, d2)
+    r2 <- readParquet(d2)
+
+    expect_identical(colnames(r1), cells)
+    expect_identical(colnames(r2), cells)
+    expect_identical(as.vector(colData(r2)$n), as.vector(colData(r1)$n))
+    m1 <- as.matrix(assay(r1, "counts"))
+    m2 <- as.matrix(assay(r2, "counts"))
+    expect_equal(unname(m2), unname(m1))
+    expect_equal(m2[, cells], counts[, cells], check.attributes = FALSE)
+})

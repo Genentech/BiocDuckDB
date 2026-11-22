@@ -1,3 +1,28 @@
+# BiocDuckDB 0.99.36
+
+## Bug fixes
+
+- `writeParquet()` of an experiment that had been read with `readParquet()` lost
+  the names of its samples and features. `rownames()` and `colnames()` of the
+  result of reading it again were `1, 2, 3, ...` where they had been `g3, g1, g5,
+  ...` and `cell_c, cell_a, ...`. The tables of a lazily read experiment keep
+  their names as the names of a key that stands for row numbers, and the lazy
+  writer wrote the numbers. The fix is in `writeDuckDBTableParquet()` of
+  DuckDBDataFrame 0.99.37, which this package calls.
+- The same writer numbered `__index__` in the order in which DuckDB scans the
+  file and wrote the rows in that order, so for a table read from a file that is
+  not in key order the index was not the position of the row in the table, and
+  `readParquet()`, which keys a table by `__index__`, returned the rows in the
+  order of the file. The index is now the position of the row in the order of the
+  table, whether the key order is derived from the file or was given.
+
+## Testing
+
+- A new test writes an experiment, reads it, writes the lazy result again and
+  reads that, and checks that the sample names and order, the counts and the
+  `colData` are the same after the second write. It fails with the previous
+  DuckDBDataFrame.
+
 # BiocDuckDB 0.99.35
 
 ## Bug fixes
