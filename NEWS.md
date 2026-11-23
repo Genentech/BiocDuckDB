@@ -1,3 +1,11 @@
+# BiocDuckDB 0.99.37
+
+## Changes
+
+- Added the `Normalization` biocView to the DESCRIPTION, since the package
+  provides `normalizeCounts()` and `librarySizeFactors()` methods for a
+  `DuckDBMatrix`. Only the metadata of the package changed.
+
 # BiocDuckDB 0.99.36
 
 ## Bug fixes
