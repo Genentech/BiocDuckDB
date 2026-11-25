@@ -1,3 +1,62 @@
+# BiocDuckDB 1.1.1
+
+## Significant changes
+
+- `writeParquet()` refuses names that it used to change, and says which names are
+  the problem. A name that is changed on the way to the file reads back as other
+  data, and two names that DuckDB takes for one return the values of the first for
+  either. It is now an error when
+  - two columns of a table have names that are the same up to case, as `Sex` and
+    `sex` are, or repeated names, which were made unique with a suffix;
+  - a column of a table is named `__name__` or `__index__`, which were renamed
+    `__name___1`; or its name is `NA` or empty, which `as.data.frame()` turned
+    into `Var.2`;
+  - the row names or column names of a `SummarizedExperiment` or a
+    `SingleCellExperiment` are repeated, `NA` or empty, where repeated names were
+    made unique as `g`, `g_1`. An experiment without dimnames is still numbered;
+  - the names of the assays, of the experiments of a `MultiAssayExperiment` or of
+    the spatial regions are `NA`, empty or missing, have a `/`, a backslash or a
+    control character, are `.` or `..`, or are the same up to case, as `counts`
+    and `Counts` are; or the name of a metadata item that is written to Parquet
+    has a `/`, a backslash or a control character, or is `.` or `..`. They are the
+    names of directories, and failed with an error from arrow that did not say
+    which name, or wrote two directories that are one on macOS and Windows;
+  - the names of the reduced dimensions, of the row loadings or of the metadata
+    columns of a list are repeated or the same up to case; or
+  - the metadata of an experiment has items whose names are the same up to case.
+  Rename them before writing.
+- Writing an experiment to a `path` that already holds files is an error, where it
+  wrote into the directory. Give `overwrite = TRUE` to replace a package that is
+  there (see below), or write to another `path`. An empty directory is written
+  into as before.
+- `readParquet()` warns when the file of a table has columns that
+  `datapackage.json` does not list, which are not read, and it is an error when
+  the file lacks a column that the manifest lists. Files that another tool has
+  added a column to still read.
+
+## New features
+
+- `writeParquet()` of a `SummarizedExperiment`, a `SingleCellExperiment`, a
+  `MultiAssayExperiment` or a `MultiAssaySpatialExperiment` is atomic. The package
+  is written into a directory beside `path`, and moved into place when every
+  resource and `datapackage.json` are written, so a write that fails, or is
+  interrupted, leaves `path` as it was and nothing beside it, and never a package
+  with some of its resources. `overwrite = TRUE` replaces a package that is at
+  `path`, and only a directory that is a package, with a `datapackage.json` and no
+  entries that the manifest does not list: a directory of other files is not
+  removed.
+- `readParquet()` checks `datapackage.json` before it reads. A manifest that is not
+  an object with `resources` that have a `name` and a `path`, or in which two
+  resources have one path, is an error of class `biocduckdb_manifest_error`, and
+  so is a resource whose path is absolute, a URL, or climbs out of the package
+  with `..`. A symbolic link inside the package is read.
+
+## Bug fixes
+
+- A package can be read from a directory whose name has `[`, `*`, `?` or a quote.
+  `readParquet("br[1]ck")` failed with "No files found", because DuckDB read the
+  name as a pattern. This is a fix of DuckDBDataFrame, which BiocDuckDB uses.
+
 # BiocDuckDB 0.99.37
 
 ## Changes

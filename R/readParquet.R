@@ -186,6 +186,7 @@ function(path,
          model = package[["model"]],
          ...)
 {
+    .validateDatapackage(package)
     if (is.null(model))
         return(.readParquetSimpleList(path, package, ...))
     switch(model,
@@ -218,6 +219,89 @@ function(path,
     }
     read_json(dp, simplifyVector = TRUE, simplifyDataFrame = FALSE,
               simplifyMatrix = FALSE)
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Safety of what is read
+###
+### A package is read on the word of its datapackage.json, which can have been
+### written by another tool, or edited. The manifest has to be the shape that
+### the reader walks, and a resource can only name a place inside the package.
+###
+
+.manifestError <- function(...) {
+    stop(structure(class = c("biocduckdb_manifest_error", "error", "condition"),
+                   list(message = paste0("invalid datapackage.json: ", ...), call = NULL)))
+}
+
+.validateDatapackage <- function(package) {
+    if (!is.list(package) || is.data.frame(package))
+        .manifestError("it must be a JSON object")
+    resources <- package[["resources"]]
+    if (is.null(resources))
+        return(invisible(package))
+    if (!is.list(resources))
+        .manifestError("'resources' must be an array")
+    for (i in seq_along(resources)) {
+        r <- resources[[i]]
+        if (!is.list(r))
+            .manifestError("resource ", i, " must be an object")
+        for (field in c("name", "path")) {
+            v <- r[[field]]
+            if (!is.character(v) || length(v) != 1L || is.na(v) || !nzchar(v))
+                .manifestError("resource ", i, " needs a '", field, "' that is a non-empty string")
+        }
+        .checkResourcePath(r[["path"]], i)
+    }
+    paths <- vapply(resources, `[[`, character(1L), "path")
+    dup <- unique(paths[duplicated(paths)])
+    if (length(dup))
+        .manifestError("these resources have the same path: ",
+                       paste(sprintf("'%s'", head(dup, 5L)), collapse = ", "))
+    invisible(package)
+}
+
+.checkResourcePath <- function(relpath, index = NULL) {
+    where <- if (is.null(index)) "" else paste0("resource ", index, ": ")
+    if (grepl("^([A-Za-z][A-Za-z0-9+.-]*://|/|\\\\|~|[A-Za-z]:)", relpath))
+        .manifestError(where, "the path '", relpath, "' is not relative to the package")
+    parts <- strsplit(relpath, "[/\\\\]")[[1L]]
+    if (any(parts == ".."))
+        .manifestError(where, "the path '", relpath, "' leaves the package")
+    if (grepl("[[:cntrl:]]", relpath))
+        .manifestError(where, "the path has a control character")
+    invisible(relpath)
+}
+
+.resourcePath <- function(path, relpath) {
+    .checkResourcePath(relpath)
+    file.path(path, relpath)
+}
+
+#' @importFrom DuckDBDataFrame readParquetSchema
+.checkSchemaDrift <- function(fullpath, resource) {
+    if (grepl("^[A-Za-z][A-Za-z0-9+.-]*://", fullpath) || !file.exists(fullpath))
+        return(invisible(NULL))
+    schema <- resource[["schema"]]
+    listed <- vapply(schema[["fields"]], `[[`, character(1L), "name")
+    actual <- tryCatch(names(readParquetSchema(fullpath)), error = function(e) NULL)
+    if (is.null(actual) || length(listed) == 0L)
+        return(invisible(NULL))
+    partitions <- .schema_partitions(schema)
+    missing <- setdiff(listed, c(actual, partitions))
+    if (length(missing))
+        stop("the file of resource '", resource[["name"]], "' has no column for ",
+             paste(sprintf("'%s'", head(missing, 5L)), collapse = ", "),
+             if (length(missing) > 5L) ", ...",
+             ", which datapackage.json lists. The package is not complete.",
+             call. = FALSE)
+    extra <- setdiff(actual, c(listed, partitions))
+    if (length(extra))
+        warning("the file of resource '", resource[["name"]], "' has columns that ",
+                "datapackage.json does not list, which are not read: ",
+                paste(sprintf("'%s'", head(extra, 5L)), collapse = ", "),
+                if (length(extra) > 5L) ", ...", call. = FALSE)
+    invisible(NULL)
 }
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -383,7 +467,9 @@ function(path,
 }
 
 .readParquetResource <- function(path, resource, ...) {
-    fullpath <- file.path(path, resource[["path"]])
+    fullpath <- .resourcePath(path, resource[["path"]])
+    if (isTRUE(resource[["layout"]] %in% c("data_frame", "embedding_table", "nested_data_frame")))
+        .checkSchemaDrift(fullpath, resource)
     switch(resource[["layout"]],
            "data_frame"            =,
            "embedding_table"       =,
@@ -584,7 +670,7 @@ function(path,
         pkey <- schema[["primaryKey"]]
         name <- if (!identical(pkey, keycol)) pkey else NULL
         partitions <- .schema_partitions(schema)
-        df <- DuckDBDataFrame(file.path(path, res[["path"]]),
+        df <- DuckDBDataFrame(.resourcePath(path, res[["path"]]),
                               datacols = c(name, partitions),
                               keycol = keycol)
         df <- as.data.frame(df, optional = TRUE)
@@ -707,7 +793,7 @@ function(path,
 .readParquetExps <- function(path, resources, ...) {
     exps <- lapply(resources, function(res) {
         if (isTRUE(res[["layout"]] == "nested_experiment")) {
-            readParquet(file.path(path, res[["path"]]), ...)
+            readParquet(.resourcePath(path, res[["path"]]), ...)
         } else { # array-like object
             .readParquetResource(path, res, ...)
         }
@@ -808,7 +894,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     index <- .schema_keycols(subject_schema)
     pkey <- subject_schema[["primaryKey"]]
     name <- if (!is.null(pkey) && !identical(pkey, index)) pkey else NULL
-    fullpath <- file.path(path, subject_res[["path"]])
+    fullpath <- .resourcePath(path, subject_res[["path"]])
     keycol <- .readParquetDataFrame(fullpath, resource = subject_res,
                                     datacols = name, keycol = index)
     keycol <- as.list(as.data.frame(keycol, optional = TRUE))
@@ -821,7 +907,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
         sample_map <- NULL
     } else {
         index <- .schema_keycols(sample_map_res[["schema"]])
-        fullpath <- file.path(path, sample_map_res[["path"]])
+        fullpath <- .resourcePath(path, sample_map_res[["path"]])
         sample_map <- .readParquetDataFrame(fullpath, resource = sample_map_res,
                                             keycol = index)
         sample_map <- as.data.frame(sample_map, optional = TRUE)
@@ -888,7 +974,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     img_res <- img_res[grep("^sample_images_", img_names)]
     if (length(img_res)) {
         images_list <- lapply(img_res, function(r) {
-            .readParquetRasterRef(file.path(path, r[["path"]]), r, ...)
+            .readParquetRasterRef(.resourcePath(path, r[["path"]]), r, ...)
         })
         names(images_list) <- sub("^sample_images_", "",
             vapply(img_res, `[[`, character(1L), "name"))
@@ -896,7 +982,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
         if (length(images_list))
             images <- MultiAssaySpatialExperiment::RasterLayerList(images_list)
     } else if (!is.null(resources[["images"]])) {
-        fullpath <- file.path(path, resources[["images"]][["path"]])
+        fullpath <- .resourcePath(path, resources[["images"]][["path"]])
         if (dir.exists(fullpath)) {
             subdirs <- list.dirs(fullpath, recursive = FALSE, full.names = TRUE)
             if (length(subdirs)) {
@@ -919,7 +1005,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     lab_ref <- lab_ref[grep("^sample_labels_", lab_names)]
     if (length(lab_coord)) {
         labels_list <- lapply(lab_coord, function(r) {
-            .readParquetArray(file.path(path, r[["path"]]), r, ...)
+            .readParquetArray(.resourcePath(path, r[["path"]]), r, ...)
         })
         names(labels_list) <- sub("^sample_labels_", "",
             vapply(lab_coord, `[[`, character(1L), "name"))
@@ -927,7 +1013,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     }
     if (length(lab_ref)) {
         ref_list <- lapply(lab_ref, function(r) {
-            .readParquetRasterRef(file.path(path, r[["path"]]), r, ...)
+            .readParquetRasterRef(.resourcePath(path, r[["path"]]), r, ...)
         })
         names(ref_list) <- sub("^sample_labels_", "",
             vapply(lab_ref, `[[`, character(1L), "name"))
@@ -943,7 +1029,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     # imgData (optional) - must materialize
     img_data <- NULL
     if (!is.null(resources[["img_data"]])) {
-        fullpath <- file.path(path, resources[["img_data"]][["path"]])
+        fullpath <- .resourcePath(path, resources[["img_data"]][["path"]])
         img_data <- .readParquetDataFrame(fullpath,
                                           resource = resources[["img_data"]],
                                           ...)
@@ -960,7 +1046,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
                 }
 
                 # Convert relative path to absolute path
-                img_fullpath <- file.path(path, img_relpath)
+                img_fullpath <- .resourcePath(path, img_relpath)
 
                 if (file.exists(img_fullpath)) {
                     # Create StoredSpatialImage pointing to the materialized PNG
@@ -992,7 +1078,7 @@ function(mae, images, labels, points, shapes, imgData, spatialMap)
     if (!is.null(resources[["spatial_map"]])) {
         spatial_map_res <- resources[["spatial_map"]]
         index <- .schema_keycols(spatial_map_res[["schema"]])
-        fullpath <- file.path(path, spatial_map_res[["path"]])
+        fullpath <- .resourcePath(path, spatial_map_res[["path"]])
         x <- .readParquetDataFrame(fullpath, resource = spatial_map_res,
                                    keycol = index, ...)
         spatial_map <- as.data.frame(x, optional = TRUE)
