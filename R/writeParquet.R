@@ -115,6 +115,13 @@
 #' writes.
 #' @param part_digits Zero-padding width for \code{part} in the filename (e.g.
 #' \code{2L} yields \code{part-00.parquet}). Table methods (in-memory and lazy).
+#' @param overwrite For experiment-level methods, whether to replace a package
+#' that is already at \code{path}. The package is written into a directory
+#' beside \code{path} and moved into place when it is complete, so a write that
+#' fails leaves \code{path} as it was. With \code{FALSE}, the default, a
+#' \code{path} that holds files is an error. With \code{TRUE}, only a directory
+#' that is a package, with a \code{datapackage.json} and no entries that it does
+#' not list, is replaced.
 #' @param package For experiment-level methods (\code{SummarizedExperiment},
 #' etc.), a list used to accumulate \code{datapackage.json} contents before
 #' writing. Primitive \code{data.frame} methods ignore this argument; capture
@@ -526,6 +533,7 @@ function(x, path, ...)
                     has_parquet = FALSE))
     }
     if (.isMetadataTabular(x)) {
+        checkEntryNames("metadata items", name)
         path_k <- file.path(path, sprintf("unbound_%s", name))
         res <- try(writeParquet(.metadataTabularValue(x), path = path_k,
                                 name = name, dimension = "unbound",
@@ -576,6 +584,7 @@ function(x, path, ...)
         return(list(value = value, resources = resources,
                     has_parquet = child_has_parquet))
     }
+    checkEntryNames("metadata items", name)
     path_k <- file.path(path, sprintf("unbound_%s", name))
     res <- try(writeParquet(x, path = path_k, name = name,
                             dimension = "unbound", ...),
@@ -599,10 +608,16 @@ function(x, path, ...)
     if (length(md) == 0L)
         return(list(annotations = NULL, resources = resources))
     annotations <- list()
+    mdnames <- names(md) %||% rep(NA_character_, length(md))
+    mdnames[is.na(mdnames) | !nzchar(mdnames)] <-
+        sprintf("item-%d", which(is.na(mdnames) | !nzchar(mdnames)))
+    dup <- unique(tolower(mdnames)[duplicated(tolower(mdnames))])
+    if (length(dup))
+        stop("the metadata of 'x' has items whose names are the same, ignoring ",
+             "case: ", paste(sprintf("'%s'", dup), collapse = ", "),
+             ". Rename them.", call. = FALSE)
     for (k in seq_along(md)) {
-        nm <- names(md)[k] %||% sprintf("item-%d", k)
-        if (!nzchar(nm))
-            nm <- sprintf("item-%d", k)
+        nm <- mdnames[k]
         ser <- .serializeMetadataValue(md[[k]], path = path, name = nm,
                                        resources = resources, ...)
         if (!isTRUE(ser$skip))
@@ -652,10 +667,7 @@ function(x,
         x <- unclass(x)
     }
 
-    # Make column names unique
-    unique_names <- make.unique(c(indexcols, datacol), sep = "_")
-    indexcols <- head(unique_names, -1L)
-    datacol <- tail(unique_names, 1L)
+    .columnNames(c(indexcols, datacol), 1L, "index and value columns")
 
     # Manage dimnames
     dimnames_x <- dimnames(x) %||% lapply(dim(x), function(d) NULL)
@@ -824,6 +836,7 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
 #' @importFrom arrow Array as_arrow_table write_dataset write_parquet
 #' @importFrom DuckDBDataFrame arrowIntType arrowType reconcileParquetSchema
 #' @importFrom DuckDBDataFrame setupFlatParquetWrite clusterSort resolveParquetCompression
+#' @importFrom DuckDBDataFrame checkParquetColumnNames
 #' @importFrom S4Vectors I
 #' @importFrom stats setNames
 .writeDataFrameParquet <-
@@ -881,8 +894,9 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
             stop("DuckDBSpatial package required for GeoParquet support; ",
                  "install with BiocManager::install('DuckDBSpatial')")
         }
+        .columnNames(c(names(index), names(key), names(dimtbl), names(x)), 1L, "columns")
         x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
-        colnames(x) <- make.unique(colnames(x), sep = "_")
+        checkParquetColumnNames(colnames(x))
         x <- sf::st_sf(x)
         DuckDBSpatial::writeGeoParquet(x, prep$pq_path,
                          geom = attr(x, "sf_column"), ...)
@@ -892,8 +906,9 @@ function(x, path, indexcol, keycol, dimtbl, name, dimension, layout,
                 x[[j]] <- I(x[[j]])
             }
         }
+        .columnNames(c(names(index), names(key), names(dimtbl), names(x)), 1L, "columns")
         x <- do.call(cbind.data.frame, c(index, key, dimtbl, x))
-        colnames(x) <- make.unique(colnames(x), sep = "_")
+        checkParquetColumnNames(colnames(x))
 
         # Right-size the INTERNAL index columns (the integer key spine + graph
         # from/to) to their smallest Arrow integer type. On append the widths
@@ -1019,6 +1034,7 @@ function(x,
          ...)
 {
     dimension <- match.arg(dimension)
+    .columnNames(colnames(x), 1L, "columns")
     df <- as.data.frame(x, optional = TRUE)
 
     geom <- .geometryCol(df)
@@ -1257,6 +1273,67 @@ function(x,
 })
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Names that are written: refused, not repaired
+###
+### The names of the assays, experiments and spatial layers become directory
+### names, the names of reduced dimensions and loadings become column names, and
+### the dimnames of an experiment become the keys of its rows. A name that would
+### be renamed, merged with another or turned into a path is an error that says
+### what to change, as a rename behind the back of the caller can read back as
+### other data.
+###
+
+#' @importFrom DuckDBDataFrame checkEntryNames
+.entryNames <- function(nms, n, what, fill = FALSE) {
+    if (n == 0L)
+        return(character())
+    if (is.null(nms)) {
+        if (!fill)
+            stop("the ", what, " have no names, and each becomes a directory ",
+                 "of its own. Name every one of them.", call. = FALSE)
+        nms <- rep(NA_character_, n)
+    }
+    if (fill) {
+        blank <- is.na(nms) | !nzchar(nms)
+        nms[blank] <- sprintf("item-%d", which(blank))
+    }
+    checkEntryNames(what, nms)
+}
+
+#' @importFrom DuckDBDataFrame checkParquetColumnNames
+.columnNames <- function(nms, n, what) {
+    if (is.null(nms) && n > 0L)
+        stop("the ", what, " have no names. Name every one of them.", call. = FALSE)
+    tryCatch(checkParquetColumnNames(nms),
+             error = function(e) {
+                 stop("the names of the ", what, " cannot be written: ",
+                      conditionMessage(e), call. = FALSE)
+             })
+}
+
+.dimensionNames <- function(nms, n, axis) {
+    if (is.null(nms))
+        return(as.character(seq_len(n)))
+    bad <- is.na(nms) | !nzchar(nms)
+    if (any(bad))
+        stop("the ", axis, " names of 'x' must not be NA or empty; those at ",
+             "positions ", paste(head(which(bad), 5L), collapse = ", "),
+             if (sum(bad) > 5L) ", ...", " are. Set them with ",
+             if (axis == "row") "rownames(x)" else "colnames(x)",
+             " <- ..., or remove them to number the ", axis, "s.", call. = FALSE)
+    repeated <- unique(nms[duplicated(nms)])
+    if (length(repeated))
+        stop("the ", axis, " names of 'x' have repeats, and each ", axis,
+             " needs a name of its own to be read back as the same ", axis,
+             ": ", paste(sprintf("'%s'", head(repeated, 5L)), collapse = ", "),
+             if (length(repeated) > 5L) ", ...",
+             ". Make them unique, as in ", if (axis == "row") "rownames(x)" else "colnames(x)",
+             " <- make.unique(", if (axis == "row") "rownames(x)" else "colnames(x)",
+             ").", call. = FALSE)
+    nms
+}
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ### list helper functions
 ###
 
@@ -1281,9 +1358,10 @@ function(x,
     }
 
     resources <- list()
+    nms <- .entryNames(names(x), length(x), "list elements", fill = TRUE)
     for (i in seq_along(x)) {
         x_i <- getListElement(x, i)
-        nms_i <- names(x)[i] %||% sprintf("item-%d", i)
+        nms_i <- nms[i]
         path_i <- sprintf("%s%s", prefix, nms_i)
         resources <- c(resources,
                        writeParquet(x_i, path = file.path(path, path_i),
@@ -1415,8 +1493,9 @@ function(x,
 
     # Add list element-level metadata, if present
     if (NCOL(mcols(x)) > 0L) {
+        .columnNames(c(colnames(df), colnames(mcols(x))), 1L,
+                     "columns of the list and of its metadata columns")
         df <- cbind(df, mcols(x))
-        colnames(df) <- make.unique(colnames(df), sep = "_")
     }
 
     df <- as.data.frame(df, optional = TRUE)
@@ -1521,8 +1600,9 @@ function(x,
     indexrefs <- rev(indexrefs)
     grid <- t(grid)
     resources <- list()
+    nms <- .entryNames(names(x), length(x), "assays")
     for (i in seq_along(x)) {
-        nms_i <- names(x)[i]
+        nms_i <- nms[i]
         x_i <- t(getListElement(x, i))
         path_i <- paste0("assay_", nms_i)
         if (is(x_i, "DataFrame")) {
@@ -1579,13 +1659,14 @@ function(x,
                                        "ranged_summarized_experiment",
                                        "summarized_experiment"),
                         resources = list()),
+         overwrite = FALSE,
          ...)
 {
-    # Make dimnames unique
-    rownames(x) <- make.unique(rownames(x) %||% as.character(seq_len(nrow(x))),
-                               sep = "_")
-    colnames(x) <- make.unique(colnames(x) %||% as.character(seq_len(ncol(x))),
-                               sep = "_")
+    if (!.atomicState$active)
+        return(.writePackage(path, overwrite, function(stage)
+            writeParquet(x, path = stage, indexcols = indexcols, package = package, ...)))
+    rownames(x) <- .dimensionNames(rownames(x), nrow(x), "row")
+    colnames(x) <- .dimensionNames(colnames(x), ncol(x), "column")
 
     # Dimension Tables
     grid <- defaultAutoGrid(COO_SparseArray(dim(assays(x)[[1L]])))
@@ -1684,13 +1765,14 @@ function(x,
          indexcols = c("__feature__", "__sample__"),
          package = list(model = "single_cell_experiment",
                         resources = list()),
+         overwrite = FALSE,
          ...)
 {
-    # Make dimnames unique
-    rownames(x) <- make.unique(rownames(x) %||% as.character(seq_len(nrow(x))),
-                               sep = "_")
-    colnames(x) <- make.unique(colnames(x) %||% as.character(seq_len(ncol(x))),
-                               sep = "_")
+    if (!.atomicState$active)
+        return(.writePackage(path, overwrite, function(stage)
+            writeParquet(x, path = stage, indexcols = indexcols, package = package, ...)))
+    rownames(x) <- .dimensionNames(rownames(x), nrow(x), "row")
+    colnames(x) <- .dimensionNames(colnames(x), ncol(x), "column")
 
     # Unnest rowData
     rdata <- rowData(x)
@@ -1730,7 +1812,7 @@ function(x,
         })
         loadings <- do.call(data.frame, loadings)
         rownames(loadings) <- rownames(x)
-        colnames(loadings) <- make.unique(rowLoadingNames(x), sep = "_")
+        colnames(loadings) <- .columnNames(rowLoadingNames(x), length(loadings), "row loadings")
         resources <- callGeneric(loadings,
                                  path = file.path(path, "feature_embeddings"),
                                  indexcol = indexcols[1L],
@@ -1754,7 +1836,7 @@ function(x,
         })
         rdims <- do.call(data.frame, rdims)
         rownames(rdims) <- colnames(x)
-        colnames(rdims) <- make.unique(reducedDimNames(x), sep = "_")
+        colnames(rdims) <- .columnNames(reducedDimNames(x), length(rdims), "reduced dimensions")
         resources <- callGeneric(rdims,
                                  path = file.path(path, "sample_embeddings"),
                                  indexcol = indexcols[2L],
@@ -1839,8 +1921,9 @@ function(x,
          ...)
 {
     resources <- list()
+    nms <- .entryNames(names(x), length(x), "experiments")
     for (i in seq_along(x)) {
-        nms_i <- names(x)[i]
+        nms_i <- nms[i]
         x_i <- x[[i]]
         path_i <- paste0("experiment_", nms_i)
         if (is(x_i, "SummarizedExperiment")) {
@@ -1878,8 +1961,12 @@ function(x,
          indexcols = c("__feature__", "__sample__"),
          package = list(model = "multi_assay_experiment",
                         resources = list()),
+         overwrite = FALSE,
          ...)
 {
+    if (!.atomicState$active)
+        return(.writePackage(path, overwrite, function(stage)
+            writeParquet(x, path = stage, indexcols = indexcols, package = package, ...)))
     # Subject Data
     subj_res <- callGeneric(colData(x), path = file.path(path, "subjects"),
                             dimension = "sample", ...)
@@ -1991,8 +2078,9 @@ function(ll, etype, path, elem_key, ...)
     prefix <- sprintf("sample_%s_", etype)
     ref <- if (is.null(elem_key)) NULL else .elementRegistryRef()
     resources <- list()
+    regions <- .entryNames(names(ll), length(ll), "spatial regions")
     for (i in seq_along(ll)) {
-        region <- names(ll)[i]
+        region <- regions[i]
         lyr <- ll[[i]]
         if (!is.null(elem_key)) {
             k <- paste(etype, region, as.character(lyr[["instance_id"]]),
@@ -2022,8 +2110,12 @@ function(x,
          indexcols = c("__feature__", "__sample__"),
          package = list(model = "multi_assay_spatial_experiment",
                         resources = list()),
+         overwrite = FALSE,
          ...)
 {
+    if (!.atomicState$active)
+        return(.writePackage(path, overwrite, function(stage)
+            writeParquet(x, path = stage, indexcols = indexcols, package = package, ...)))
     pts <- MultiAssaySpatialExperiment::spatialPoints(x)
     shps <- MultiAssaySpatialExperiment::spatialShapes(x)
 

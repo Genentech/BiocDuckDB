@@ -254,6 +254,7 @@ writeParquet(x, path, ...)
   indexcols = c("__feature__", "__sample__"),
   package = list(model = ifelse(.hasRealRowRanges(x), "ranged_summarized_experiment",
     "summarized_experiment"), resources = list()),
+  overwrite = FALSE,
   ...
 )
 
@@ -262,6 +263,7 @@ writeParquet(x, path, ...)
   path,
   indexcols = c("__feature__", "__sample__"),
   package = list(model = "single_cell_experiment", resources = list()),
+  overwrite = FALSE,
   ...
 )
 
@@ -272,6 +274,7 @@ writeParquet(x, path, ...)
   path,
   indexcols = c("__feature__", "__sample__"),
   package = list(model = "multi_assay_experiment", resources = list()),
+  overwrite = FALSE,
   ...
 )
 
@@ -284,6 +287,7 @@ writeParquet(x, path, ...)
   path,
   indexcols = c("__feature__", "__sample__"),
   package = list(model = "multi_assay_spatial_experiment", resources = list()),
+  overwrite = FALSE,
   ...
 )
 }
@@ -458,6 +462,14 @@ within a single call and write \code{datapackage.json} at the end. Primitive
 separate invocations; capture the list returned from the first
 \code{writeParquet} call and merge manually (see \strong{Flat table append}
 below).}
+
+\item{overwrite}{For experiment-level methods, whether to replace a package
+that is already at \code{path}. The package is written into a directory
+beside \code{path} and moved into place when it is complete, so a write that
+fails leaves \code{path} as it was. With \code{FALSE}, the default, a
+\code{path} that holds files is an error. With \code{TRUE}, only a directory
+that is a package, with a \code{datapackage.json} and no entries that it does
+not list, is replaced.}
 }
 \value{
 For primitive methods (\code{ANY}, \code{data.frame}, \code{DataFrame},

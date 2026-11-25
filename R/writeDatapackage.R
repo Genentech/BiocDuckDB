@@ -123,3 +123,100 @@ writeDatapackage <- function(model, resources, path,
 
     invisible(package)
 }
+
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+### Atomic package writes
+###
+### A package is written into a directory of its own beside the target, and
+### moved into place when every resource and the manifest are written. A write
+### that fails, or is interrupted, leaves the target as it was, and never a
+### package that has some of its resources. An existing package is replaced only
+### when 'overwrite = TRUE', and only a directory that is a package of this
+### format, whose entries are all in its manifest, is replaced.
+###
+
+.atomicState <- new.env(parent = emptyenv())
+.atomicState$active <- FALSE
+
+.isRemoteTarget <- function(path) {
+    grepl("^[A-Za-z][A-Za-z0-9+.-]*://", path)
+}
+
+#' @importFrom jsonlite read_json
+.whyNotReplaceable <- function(path) {
+    manifest <- file.path(path, "datapackage.json")
+    if (!file.exists(manifest))
+        return("it has no datapackage.json, so it is not a package")
+    dp <- tryCatch(read_json(manifest, simplifyVector = TRUE, simplifyDataFrame = FALSE,
+                             simplifyMatrix = FALSE),
+                   error = function(e) NULL)
+    if (is.null(dp) || !is.list(dp))
+        return("its datapackage.json cannot be read")
+    listed <- vapply(dp[["resources"]] %||% list(), function(r) {
+        strsplit(as.character(r[["path"]]), "[/\\\\]")[[1L]][1L]
+    }, character(1L))
+    entries <- list.files(path, all.files = TRUE, no.. = TRUE)
+    unknown <- setdiff(entries, c("datapackage.json", "_INCOMPLETE", listed))
+    if (length(unknown))
+        return(paste0("it has entries that its manifest does not list: ",
+                      paste(sprintf("'%s'", head(unknown, 5L)), collapse = ", "),
+                      if (length(unknown) > 5L) ", ..."))
+    NULL
+}
+
+.writePackage <- function(path, overwrite, write) {
+    if (!isTRUE(overwrite) && !isFALSE(overwrite))
+        stop("'overwrite' must be TRUE or FALSE", call. = FALSE)
+    if (.atomicState$active || !is.character(path) || length(path) != 1L ||
+        is.na(path) || .isRemoteTarget(path))
+        return(write(path))
+
+    existing <- file.exists(path)
+    if (existing && !dir.exists(path))
+        stop("'", path, "' exists and is not a directory", call. = FALSE)
+    nonempty <- existing && length(list.files(path, all.files = TRUE, no.. = TRUE)) > 0L
+    if (nonempty) {
+        if (!overwrite)
+            stop("'", path, "' already exists and is not empty. Write to another ",
+                 "path, or use overwrite = TRUE to replace it, which is done only ",
+                 "for a package that writeParquet() wrote.", call. = FALSE)
+        why <- .whyNotReplaceable(path)
+        if (!is.null(why))
+            stop("'", path, "' is not replaced because ", why, ".", call. = FALSE)
+    }
+
+    parent <- dirname(path)
+    dir.create(parent, recursive = TRUE, showWarnings = FALSE)
+    stage <- tempfile(pattern = paste0(".", basename(path), ".writing-"), tmpdir = parent)
+    done <- FALSE
+    on.exit(if (!done) unlink(stage, recursive = TRUE), add = TRUE)
+
+    .atomicState$active <- TRUE
+    on.exit(.atomicState$active <- FALSE, add = TRUE)
+    res <- write(stage)
+    .atomicState$active <- FALSE
+
+    if (!file.exists(file.path(stage, "datapackage.json")))
+        stop("the package was not written: no datapackage.json in '", stage, "'",
+             call. = FALSE)
+
+    aside <- NULL
+    if (existing) {
+        aside <- tempfile(pattern = paste0(".", basename(path), ".old-"), tmpdir = parent)
+        if (!file.rename(path, aside))
+            stop("could not move '", path, "' aside; it is unchanged, and the new ",
+                 "package is not written", call. = FALSE)
+    }
+    if (!file.rename(stage, path)) {
+        if (!is.null(aside) && !file.rename(aside, path))
+            stop("could not move the new package into '", path, "', and the old ",
+                 "one could not be put back: it is at '", aside, "'", call. = FALSE)
+        stop("could not move the new package into '", path, "'; ",
+             if (existing) "the old one is back in place" else "nothing was written",
+             call. = FALSE)
+    }
+    done <- TRUE
+    if (!is.null(aside))
+        unlink(aside, recursive = TRUE)
+    res
+}
